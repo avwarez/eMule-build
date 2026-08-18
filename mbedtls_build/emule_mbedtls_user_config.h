@@ -7,9 +7,9 @@
 // Enables the MBEDTLS_THREADING_ALT extension point: TLSthreading.cpp/.h
 // implement mbedtls's mutex/condition-variable callbacks directly on top of
 // Win32 CRITICAL_SECTION, with the matching type definitions supplied by
-// threading_alt.h in this same directory (found via the same #include
-// "threading_alt.h" / #include "emule_mbedtls_user_config.h" search-path
-// mechanism as this file).
+// threading_alt.h - vendored inside the emule submodule itself (see the
+// include_directories() call in the top-level CMakeLists.txt), not in this
+// directory.
 #pragma once
 
 #define MBEDTLS_THREADING_C

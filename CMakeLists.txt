@@ -36,19 +36,23 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 # ---------------------------------------------------------------------------
 # mbedtls - vanilla git submodule (mbedtls/, with nested tf-psa-crypto/ and
-# framework/ submodules), pinned to v4.2.0. Never edited in place; see
-# mbedtls_build/README.md for how eMule's two required customizations
-# (threading_alt.h and enabling MBEDTLS_THREADING_ALT) are supplied from
-# outside the submodule instead, using mechanisms mbedtls itself documents
-# for exactly this purpose.
+# framework/ submodules), pinned to v4.2.0. Never edited in place. eMule
+# needs two customizations on top of it, both supplied from outside the
+# submodule via extension points mbedTLS itself documents for this purpose,
+# so there is nothing to re-apply after updating the submodule to a newer
+# tag:
+# - mbedtls_build/emule_mbedtls_user_config.h defines MBEDTLS_THREADING_ALT,
+#   wired in below via MBEDTLS_USER_CONFIG_FILE.
+# - threading_alt.h (MBEDTLS_THREADING_ALT's actual implementation) is not
+#   duplicated here - see the include_directories() call below.
 # ---------------------------------------------------------------------------
-set(MBEDTLS_USER_CONFIG_FILE "${CMAKE_SOURCE_DIR}/mbedtls_build/mbedtls/emule_mbedtls_user_config.h"
+set(MBEDTLS_USER_CONFIG_FILE "${CMAKE_SOURCE_DIR}/mbedtls_build/emule_mbedtls_user_config.h"
     CACHE FILEPATH "" FORCE)
 # mbedTLS 4.0 cross-checks the legacy config against the PSA crypto config
 # and errors ("MBEDTLS_THREADING_ALT must be configured in psa/crypto_config.h")
 # if a threading option is set on only one side - confirmed by an actual
 # build attempt with only MBEDTLS_USER_CONFIG_FILE set above.
-set(TF_PSA_CRYPTO_USER_CONFIG_FILE "${CMAKE_SOURCE_DIR}/mbedtls_build/mbedtls/emule_psa_crypto_user_config.h"
+set(TF_PSA_CRYPTO_USER_CONFIG_FILE "${CMAKE_SOURCE_DIR}/mbedtls_build/emule_psa_crypto_user_config.h"
     CACHE FILEPATH "" FORCE)
 set(ENABLE_PROGRAMS OFF CACHE BOOL "Don't build mbedtls's own example programs" FORCE)
 
@@ -60,14 +64,18 @@ set(ENABLE_PROGRAMS OFF CACHE BOOL "Don't build mbedtls's own example programs" 
 # without it). Requires Python 3 on PATH.
 set(GEN_FILES ON CACHE BOOL "Generate mbedtls's auto-generated sources (required for a submodule checkout)" FORCE)
 
-# Directory-scoped (not target_include_directories): threading.c, compiled
-# deep inside tf-psa-crypto's own CMake targets, needs to see this override
-# directory too - include_directories() here is inherited by everything
-# add_subdirectory()'d below, without having to chase mbedtls's internal
-# target names across versions.
-# threading_alt.h itself lives inside the emule/ submodule (not duplicated
-# here) - see mbedtls_build/README.md for why the same file is already
-# vendored there, at emule/mbedtls/tf-psa-crypto/include/mbedtls/.
+# threading_alt.h (eMule's own mbedtls_platform_mutex_t/condition_variable_t
+# implementation on top of Win32 CRITICAL_SECTION, consumed as an unqualified
+# #include "threading_alt.h" by both mbedtls/tf-psa-crypto's threading.c and
+# srchybrid/TLSthreading.h) is not vendored in this repo: the eMule devs
+# already ship the exact same file inside the emule submodule itself, at
+# emule/mbedtls/tf-psa-crypto/include/mbedtls/threading_alt.h - a leftover
+# from the project's pre-CMake build setup. Pointing include_directories()
+# straight at it avoids a second copy to keep in sync. Directory-scoped (not
+# target_include_directories): threading.c, compiled deep inside
+# tf-psa-crypto's own CMake targets, needs to see it too - include_directories()
+# here is inherited by everything add_subdirectory()'d below, without having
+# to chase mbedtls's internal target names across versions.
 include_directories("${CMAKE_SOURCE_DIR}/emule/mbedtls/tf-psa-crypto/include/mbedtls")
 
 # ---------------------------------------------------------------------------
