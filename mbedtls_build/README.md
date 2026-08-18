@@ -16,7 +16,7 @@ CMake cache variable (set in the top-level `CMakeLists.txt` before
 `MbedTLS::mbedtls` target, so `srchybrid` gets it too just by linking against
 that target, no separate wiring needed there.
 
-## `mbedtls/threading_alt.h`
+## `threading_alt.h`
 
 eMule's own file (not from mbedTLS), authored by the eMule devs: implements
 `mbedtls_platform_mutex_t` / `mbedtls_platform_condition_variable_t` on top
@@ -33,13 +33,13 @@ including file's own directory, then falls through to the `/I` search path.
 mbedTLS deliberately ships no `threading_alt.h` in its real include tree (it
 only has dummies under `tests/include/alt-dummy/`, which aren't on the
 build's include path), so that first check always misses and the compiler
-picks up this directory instead - added via a single `include_directories()`
-call in the top-level `CMakeLists.txt`, ahead of both `add_subdirectory(mbedtls)`
-and `add_subdirectory(srchybrid)`, so it reaches every translation unit that
-needs it without hardcoding mbedtls's internal CMake target names.
+picks up this directory instead.
 
-## Why the directory is called `mbedtls/`
-
-Not required by the mechanism above (both includes are unqualified, so a
-flat directory would resolve too) - kept for readability, so the override
-tree's shape mirrors the header it's standing in for.
+This file is not duplicated here: the eMule devs already vendor the exact
+same file (byte-identical) inside the `emule` submodule itself, at
+`emule/mbedtls/tf-psa-crypto/include/mbedtls/threading_alt.h` - a leftover
+from the project's pre-CMake build setup. The top-level `CMakeLists.txt`
+points a single `include_directories()` call directly at that path, ahead of
+both `add_subdirectory(mbedtls)` and `add_subdirectory(emule_build)`, so it
+reaches every translation unit that needs it without hardcoding mbedtls's
+internal CMake target names, and without a second copy to keep in sync.

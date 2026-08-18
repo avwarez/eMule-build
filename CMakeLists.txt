@@ -65,7 +65,10 @@ set(GEN_FILES ON CACHE BOOL "Generate mbedtls's auto-generated sources (required
 # directory too - include_directories() here is inherited by everything
 # add_subdirectory()'d below, without having to chase mbedtls's internal
 # target names across versions.
-include_directories("${CMAKE_SOURCE_DIR}/mbedtls_build/mbedtls")
+# threading_alt.h itself lives inside the emule/ submodule (not duplicated
+# here) - see mbedtls_build/README.md for why the same file is already
+# vendored there, at emule/mbedtls/tf-psa-crypto/include/mbedtls/.
+include_directories("${CMAKE_SOURCE_DIR}/emule/mbedtls/tf-psa-crypto/include/mbedtls")
 
 # ---------------------------------------------------------------------------
 # Crypto++ - vanilla git submodule (cryptopp/, weidai11/cryptopp pinned to
@@ -127,29 +130,29 @@ add_subdirectory(mbedtls)
 # errors in emule/srchybrid/WebSocket.cpp (CString->CStringA path conversion
 # for mbedtls_x509_crt_parse_file()/mbedtls_pk_parse_keyfile(), and
 # mbedtls_sha1() having moved to a private header) are fixed by applying
-# patches/websocket-mbedtls4.patch below instead, since v0.72a itself stays
+# emule_build/websocket-mbedtls4.patch below instead, since v0.72a itself stays
 # untouched. Idempotent: `git apply --check --reverse` succeeds once the
 # patch is already applied, so a second configure run doesn't reapply it.
 # ---------------------------------------------------------------------------
 find_package(Git REQUIRED)
 execute_process(
-    COMMAND ${GIT_EXECUTABLE} apply --check --reverse "${CMAKE_SOURCE_DIR}/patches/websocket-mbedtls4.patch"
+    COMMAND ${GIT_EXECUTABLE} apply --check --reverse "${CMAKE_SOURCE_DIR}/emule_build/websocket-mbedtls4.patch"
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/emule"
     RESULT_VARIABLE _websocket_patch_already_applied
     OUTPUT_QUIET ERROR_QUIET
 )
 if(NOT _websocket_patch_already_applied EQUAL 0)
-    message(STATUS "eMule: applying patches/websocket-mbedtls4.patch to emule/srchybrid/WebSocket.cpp")
+    message(STATUS "eMule: applying emule_build/websocket-mbedtls4.patch to emule/srchybrid/WebSocket.cpp")
     execute_process(
-        COMMAND ${GIT_EXECUTABLE} apply "${CMAKE_SOURCE_DIR}/patches/websocket-mbedtls4.patch"
+        COMMAND ${GIT_EXECUTABLE} apply "${CMAKE_SOURCE_DIR}/emule_build/websocket-mbedtls4.patch"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/emule"
         RESULT_VARIABLE _websocket_patch_result
     )
     if(NOT _websocket_patch_result EQUAL 0)
-        message(FATAL_ERROR "eMule: failed to apply patches/websocket-mbedtls4.patch to emule/srchybrid/WebSocket.cpp")
+        message(FATAL_ERROR "eMule: failed to apply emule_build/websocket-mbedtls4.patch to emule/srchybrid/WebSocket.cpp")
     endif()
 else()
-    message(STATUS "eMule: patches/websocket-mbedtls4.patch already applied")
+    message(STATUS "eMule: emule_build/websocket-mbedtls4.patch already applied")
 endif()
 
 add_subdirectory(emule_build)
