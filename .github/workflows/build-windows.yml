@@ -101,6 +101,61 @@ jobs:
       contents: write
 
     steps:
+      # Runs first (before download-artifact below): actions/checkout defaults
+      # to `clean: true`, which git-cleans the workspace before checking out -
+      # that would delete the downloaded artifacts/release-assets if this ran
+      # after them.
+      - name: Checkout (with submodules, full history + tags)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          # fetch-depth: 0 alone only guarantees full history/tags for the
+          # top-level repo. Submodule tags still need an explicit fetch below,
+          # since actions/checkout's own submodule clone only fetches
+          # refs/heads/* (confirmed locally: `git config --get-all
+          # remote.origin.fetch` on a freshly-cloned submodule is just
+          # "+refs/heads/*:refs/remotes/origin/*", no tags refspec, and git's
+          # automatic tag auto-follow only picks up tags that already point at
+          # commits already fetched by that refspec, which excludes tags added
+          # on their own after the branch history was written, e.g. a tag
+          # created later on an already-published commit).
+          fetch-depth: 0
+
+      - name: Fetch submodule tags
+        # Belt-and-braces companion to the fetch-depth:0 comment above -
+        # explicitly pull every submodule's own tags, not just what
+        # auto-follow happened to bring along.
+        run: git submodule foreach --recursive 'git fetch --tags --force origin || true'
+
+      - name: Resolve submodule versions
+        # Prefer an exact tag match (cryptopp/mbedtls/miniupnp/resizablelib/
+        # zlib/emule are all pinned to real tags). avwarez/id3lib pins to a
+        # *branch* named v3.9.1 instead of a tag (confirmed locally - no tag
+        # object exists there at all, `git tag -l` is empty for that repo) -
+        # fall back to any remote branch pointing at the same commit, and
+        # only fall back further to the bare short SHA if neither exists.
+        run: |
+          {
+            echo "Automated build from commit ${{ github.sha }}."
+            echo
+            echo "### Submodule versions"
+            echo
+            git submodule foreach --quiet '
+              ref=$(git describe --tags --exact-match 2>/dev/null)
+              if [ -z "$ref" ]; then
+                ref=$(git for-each-ref --points-at=HEAD --format="%(refname:short)" refs/remotes/origin | grep -v "^origin/HEAD$" | grep -v "^origin$" | head -1)
+                ref=${ref#origin/}
+              fi
+              sha=$(git rev-parse --short=8 HEAD)
+              if [ -z "$ref" ]; then
+                echo "- **$name**: \`$sha\`"
+              else
+                echo "- **$name**: $ref (\`$sha\`)"
+              fi
+            '
+          } > release-notes.md
+          cat release-notes.md
+
       - name: Download all build artifacts
         uses: actions/download-artifact@v4
         with:
@@ -143,6 +198,6 @@ jobs:
             --repo "${{ github.repository }}" \
             --target "${{ github.sha }}" \
             --title "${{ steps.meta.outputs.tag }}" \
-            --notes "Automated build from commit ${{ github.sha }}." \
+            --notes-file release-notes.md \
             --prerelease \
             release-assets/*
