@@ -155,6 +155,13 @@ set_target_properties(cryptopp PROPERTIES
     OUTPUT_NAME "cryptlib"
     MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
     INTERPROCEDURAL_OPTIMIZATION ON               # WholeProgramOptimization=true
+    # ImageHasSafeExceptionHandlers=true, Win32 only (cryptlib.vcxproj's own
+    # <Lib> settings) - STATIC_LIBRARY_OPTIONS is CMake's documented way to
+    # pass extra flags straight to the librarian (lib.exe here), same tool
+    # this property targets in the vcxproj. Harmless to request on x64/ARM64
+    # too, but scoped to Win32 for fidelity with the vcxproj, which only sets
+    # it under its Win32 <ItemDefinitionGroup>.
+    STATIC_LIBRARY_OPTIONS "$<$<STREQUAL:${_cryptopp_platform},Win32>:/SAFESEH>"
 )
 
 target_include_directories(cryptopp PUBLIC "${CRYPTOPP_SRC_DIR}")
@@ -190,6 +197,13 @@ target_compile_options(cryptopp PRIVATE
     $<$<COMPILE_LANGUAGE:CXX>:$<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Debug>>:/Oi>>
     $<$<COMPILE_LANGUAGE:CXX>:$<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Release>>:/Oy>>              # OmitFramePointers
     $<$<COMPILE_LANGUAGE:CXX>:$<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Release>>:/Oi>>
+    # Optimization=MaxSpeed in the vcxproj (cryptlib.vcxproj's Release
+    # <ClCompile> block sets this explicitly, unlike e.g. emule.vcxproj's
+    # Release block, which leaves Optimization unset and relies on MSBuild's
+    # own default). CMake's CMAKE_CXX_FLAGS_RELEASE already includes /O2,
+    # so this is a no-op in practice - spelled out here instead of left
+    # implicit, since the vcxproj itself is explicit about it.
+    $<$<COMPILE_LANGUAGE:CXX>:$<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Release>>:/O2>>
     $<$<COMPILE_LANGUAGE:CXX>:$<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Release>>:/Ob2>>             # InlineFunctionExpansion=AnySuitable
     $<$<COMPILE_LANGUAGE:CXX>:$<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Release>>:/Gy>>              # FunctionLevelLinking
     $<$<COMPILE_LANGUAGE:CXX>:$<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Release>>:/GF>>              # StringPooling
