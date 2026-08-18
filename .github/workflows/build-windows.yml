@@ -1,0 +1,148 @@
+name: Build eMule (Windows)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+# Two pushes to v0.72a-build in quick succession would otherwise run two full
+# matrices in parallel and each publish their own release for the branch -
+# cancel the older run instead so only the latest commit's build ever reaches
+# the release job.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [x64, Win32, ARM64]
+        configuration: [Debug, Release]
+
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Python
+        # Pin an exact interpreter and put it first on PATH, so the "pip
+        # install" below and CMake's own find_package(Python3) (used to run
+        # mbedtls/tf-psa-crypto's code-gen scripts) resolve to the SAME
+        # Python. Without this, plain "pip install jsonschema" installed into
+        # a different interpreter than the one CMake found on its own
+        # (C:/hostedtoolcache/windows/Python/3.14.6/x64/python3.exe) -
+        # confirmed by an actual run: the install step reported success, but
+        # the build still failed with ModuleNotFoundError.
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install mbedtls code-gen Python dependencies
+        # Installed from mbedtls's own requirements file rather than named
+        # ad-hoc, so this tracks whatever upstream actually needs instead of
+        # us guessing/discovering packages one ModuleNotFoundError at a time.
+        # Verified which scripts our exact build config runs (GEN_FILES=ON,
+        # ENABLE_TESTING=OFF on MSVC): only
+        # tf-psa-crypto/scripts/generate_driver_wrappers.py needs third-party
+        # packages (jsonschema, jinja2) - everything else invoked
+        # (generate_config_checks.py, generate_ssl_debug_helpers.py) is
+        # stdlib-only. driver.requirements.txt is exactly those two packages.
+        run: pip install -r mbedtls/tf-psa-crypto/scripts/driver.requirements.txt
+
+      - name: Configure (CMake)
+        # No -G: let CMake auto-detect whatever Visual Studio version is
+        # actually on the runner image, instead of hardcoding a generator
+        # name that stops matching once GitHub updates windows-latest to a
+        # newer VS release (confirmed the cause of the first run's failure -
+        # "could not find any instance of Visual Studio" for a hardcoded
+        # "Visual Studio 17 2022" generator).
+        #
+        # No -T version=... either: pinning to this project's own dev-machine
+        # toolset (14.50) was tried and confirmed NOT installed on this runner
+        # image (only 14.51.36231 is) - CMake failed fast with a clear "does
+        # not seem to be installed" error. cryptopp_build/CMakeLists.txt now
+        # detects and works around the one real incompatibility that toolset
+        # difference exposed (removed stdext:: array iterator shims), so
+        # there's no reason left to fight the runner's own default toolset.
+        run: cmake -S . -B build -A ${{ matrix.platform }}
+
+      - name: Build
+        run: cmake --build build --config ${{ matrix.configuration }} --target emule
+
+      - name: Upload emule.exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: emule-${{ matrix.platform }}-${{ matrix.configuration }}
+          path: build/srchybrid_build/${{ matrix.configuration }}/emule.exe
+          if-no-files-found: error
+          # These are just short-lived build-verification artifacts (require
+          # a GitHub login to download, and would otherwise pile up for 90
+          # days). Release-config pushes that get this far also get a public,
+          # permanent GitHub Release below with the same binaries attached,
+          # so there's no reason to keep those artifact copies around too;
+          # Debug configs are never published (see the release job below)
+          # and only live here for the 1 day.
+          retention-days: 1
+
+  release:
+    name: Publish release
+    needs: build
+    # Only real pushes to v0.72a-build become a permanent public release -
+    # manual workflow_dispatch runs (ad-hoc/test builds) stay as the 1-day
+    # artifacts above and don't clutter the Releases page.
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Zip each Release build into a uniquely-named release asset
+        # download-artifact restores each of the 6 upload-artifact names
+        # (emule-<platform>-<configuration>) as its own subfolder, each
+        # containing an emule.exe. Only the *-Release subfolders are zipped
+        # here - Debug builds are build-verification output (unoptimized,
+        # /RTC1 runtime checks enabled) with no reason to reach end users, so
+        # they stay as the 1-day artifacts from the build job instead of
+        # being attached to the public release. Zipping each one individually
+        # (one archive per matrix combination, rather than one big archive)
+        # instead of attaching the raw .exe - direct .exe download links are
+        # routinely blocked or flagged by browsers/mail/chat tools, while a
+        # .zip isn't. Naming the archive after the subfolder also keeps every
+        # release asset unique, since release assets share one flat namespace.
+        run: |
+          mkdir -p release-assets
+          for dir in artifacts/*-Release/; do
+            name=$(basename "$dir")
+            (cd "$dir" && zip -j "${GITHUB_WORKSPACE}/release-assets/${name}.zip" emule.exe)
+          done
+          ls -l release-assets
+
+      - name: Compute release tag
+        id: meta
+        # Tag/title = branch name + UTC generation timestamp, e.g.
+        # "v0.72a-build-20260716-144500", so every run gets its own permanent,
+        # chronologically sortable release instead of one being overwritten
+        # by the next.
+        run: echo "tag=${{ github.ref_name }}-$(date -u +%Y%m%d-%H%M%S)" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.meta.outputs.tag }}" \
+            --repo "${{ github.repository }}" \
+            --target "${{ github.sha }}" \
+            --title "${{ steps.meta.outputs.tag }}" \
+            --notes "Automated build from commit ${{ github.sha }}." \
+            --prerelease \
+            release-assets/*

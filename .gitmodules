@@ -1,0 +1,23 @@
+[submodule "cryptopp"]
+	path = cryptopp
+	url = https://github.com/weidai11/cryptopp.git
+[submodule "id3lib"]
+	path = id3lib
+	url = https://github.com/avwarez/id3lib.git
+	branch = v3.9.1
+[submodule "mbedtls"]
+	path = mbedtls
+	url = https://github.com/Mbed-TLS/mbedtls.git
+[submodule "miniupnp"]
+	path = miniupnp
+	url = https://github.com/miniupnp/miniupnp.git
+[submodule "resizablelib"]
+	path = resizablelib
+	url = https://github.com/ppescher/resizablelib.git
+[submodule "zlib"]
+	path = zlib
+	url = https://github.com/madler/zlib.git
+[submodule "emule"]
+	path = emule
+	url = git@github.com:avwarez/eMule.git
+	branch = v0.72a
