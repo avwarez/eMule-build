@@ -78,7 +78,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: emule-${{ matrix.platform }}-${{ matrix.configuration }}
-          path: build/srchybrid_build/${{ matrix.configuration }}/emule.exe
+          path: build/emule_build/${{ matrix.configuration }}/emule.exe
           if-no-files-found: error
           # These are just short-lived build-verification artifacts (require
           # a GitHub login to download, and would otherwise pile up for 90

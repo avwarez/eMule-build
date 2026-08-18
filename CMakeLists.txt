@@ -37,18 +37,18 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 # ---------------------------------------------------------------------------
 # mbedtls - vanilla git submodule (mbedtls/, with nested tf-psa-crypto/ and
 # framework/ submodules), pinned to v4.2.0. Never edited in place; see
-# mbedtls_overrides/README.md for how eMule's two required customizations
+# mbedtls_build/README.md for how eMule's two required customizations
 # (threading_alt.h and enabling MBEDTLS_THREADING_ALT) are supplied from
 # outside the submodule instead, using mechanisms mbedtls itself documents
 # for exactly this purpose.
 # ---------------------------------------------------------------------------
-set(MBEDTLS_USER_CONFIG_FILE "${CMAKE_SOURCE_DIR}/mbedtls_overrides/mbedtls/emule_mbedtls_user_config.h"
+set(MBEDTLS_USER_CONFIG_FILE "${CMAKE_SOURCE_DIR}/mbedtls_build/mbedtls/emule_mbedtls_user_config.h"
     CACHE FILEPATH "" FORCE)
 # mbedTLS 4.0 cross-checks the legacy config against the PSA crypto config
 # and errors ("MBEDTLS_THREADING_ALT must be configured in psa/crypto_config.h")
 # if a threading option is set on only one side - confirmed by an actual
 # build attempt with only MBEDTLS_USER_CONFIG_FILE set above.
-set(TF_PSA_CRYPTO_USER_CONFIG_FILE "${CMAKE_SOURCE_DIR}/mbedtls_overrides/mbedtls/emule_psa_crypto_user_config.h"
+set(TF_PSA_CRYPTO_USER_CONFIG_FILE "${CMAKE_SOURCE_DIR}/mbedtls_build/mbedtls/emule_psa_crypto_user_config.h"
     CACHE FILEPATH "" FORCE)
 set(ENABLE_PROGRAMS OFF CACHE BOOL "Don't build mbedtls's own example programs" FORCE)
 
@@ -65,7 +65,7 @@ set(GEN_FILES ON CACHE BOOL "Generate mbedtls's auto-generated sources (required
 # directory too - include_directories() here is inherited by everything
 # add_subdirectory()'d below, without having to chase mbedtls's internal
 # target names across versions.
-include_directories("${CMAKE_SOURCE_DIR}/mbedtls_overrides/mbedtls")
+include_directories("${CMAKE_SOURCE_DIR}/mbedtls_build/mbedtls")
 
 # ---------------------------------------------------------------------------
 # Crypto++ - vanilla git submodule (cryptopp/, weidai11/cryptopp pinned to
@@ -152,4 +152,4 @@ else()
     message(STATUS "eMule: patches/websocket-mbedtls4.patch already applied")
 endif()
 
-add_subdirectory(srchybrid_build)
+add_subdirectory(emule_build)

@@ -92,7 +92,7 @@ set_target_properties(emule PROPERTIES
 # present, no v14x_xp/v141/v140_xp component). Accepted as-is for now; install
 # the matching "Windows XP support for C++" / VS2017/VS2015 toolset components
 # via the Visual Studio Installer and set PlatformToolset (top-level
-# CMakeLists.txt, before add_subdirectory(srchybrid_build)/(id3lib_build)/
+# CMakeLists.txt, before add_subdirectory(emule_build)/(id3lib_build)/
 # (resizablelib_build)) if XP-compatible code generation is ever required.
 
 # Stdafx.h directly #includes <afximpl.h>, an MFC *implementation* header

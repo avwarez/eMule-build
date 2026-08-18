@@ -1,4 +1,4 @@
-# mbedtls_overrides/
+# mbedtls_build/
 
 `eMule/mbedtls` (and its nested `tf-psa-crypto`/`framework` submodules) is a
 vanilla, unmodified checkout of upstream mbedTLS - never edited in place.
