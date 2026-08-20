@@ -1,8 +1,8 @@
 diff --git a/srchybrid/WebSocket.cpp b/srchybrid/WebSocket.cpp
-index 05eddbc..b859d8f 100644
+index 4e316de..d7d35e7 100644
 --- a/srchybrid/WebSocket.cpp
 +++ b/srchybrid/WebSocket.cpp
-@@ -499,9 +499,13 @@ int StartSSL()
+@@ -500,9 +500,13 @@ int StartSSL()
  	mbedtls_ssl_ticket_init(&ticket_ctx);
  	int ret = (int)psa_crypto_init();
  	if (!ret) { // PSA_SUCCESS is 0
@@ -18,10 +18,10 @@ index 05eddbc..b859d8f 100644
  			if (!ret) {
  				ret = mbedtls_ssl_config_defaults(&conf, MBEDTLS_SSL_IS_SERVER, MBEDTLS_SSL_TRANSPORT_STREAM, MBEDTLS_SSL_PRESET_DEFAULT);
  				if (!ret) {
-@@ -521,7 +525,11 @@ int StartSSL()
+@@ -522,7 +526,11 @@ int StartSSL()
  		DebugLogError(_T("Web Interface start failed: %s"), (LPCTSTR)SSLerror(ret));
  	else {
- 		unsigned char fingerprint[20];
+ 		unsigned char fingerprint[PSA_HASH_LENGTH(PSA_ALG_SHA_1)];
 -		mbedtls_sha1(srvcert.raw.p, srvcert.raw.len, fingerprint);
 +		size_t fingerprint_len;
 +		// mbedtls_sha1() moved to a "private" (non-public) header in mbedTLS 4.0;
