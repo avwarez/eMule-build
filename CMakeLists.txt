@@ -45,7 +45,16 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #
 # Idempotent: `git apply --check --reverse` succeeds exactly when a patch is
 # already applied, so re-configuring an existing build tree is a no-op
-# instead of a failure. Patches within one directory are applied in sorted
+# instead of a failure.
+#
+# --ignore-whitespace: these patches are generated against the repository's
+# own bytes (LF line endings), but a Windows checkout with core.autocrlf=true
+# - the default on GitHub's windows runner images - rewrites the working tree
+# to CRLF, and git apply then refuses the LF context. Confirmed by an actual
+# reproduction: with a CRLF working tree and core.autocrlf=false, every patch
+# here fails with "patch does not apply"; --ignore-whitespace makes all of
+# them apply in both cases. The CI workflow additionally pins
+# core.autocrlf=false so the tree matches the patches byte for byte. Patches within one directory are applied in sorted
 # filename order; give them a numeric prefix if two of them ever have to
 # touch the same hunk in a defined sequence.
 # ---------------------------------------------------------------------------
@@ -57,7 +66,7 @@ function(emule_apply_patches _submodule _patch_dir)
     foreach(_patch IN LISTS _patches)
         get_filename_component(_patch_name "${_patch}" NAME)
         execute_process(
-            COMMAND ${GIT_EXECUTABLE} apply --check --reverse "${_patch}"
+            COMMAND ${GIT_EXECUTABLE} apply --ignore-whitespace --check --reverse "${_patch}"
             WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/${_submodule}"
             RESULT_VARIABLE _already_applied
             OUTPUT_QUIET ERROR_QUIET
@@ -67,7 +76,7 @@ function(emule_apply_patches _submodule _patch_dir)
         else()
             message(STATUS "${_submodule}: applying ${_patch_dir}/${_patch_name}")
             execute_process(
-                COMMAND ${GIT_EXECUTABLE} apply "${_patch}"
+                COMMAND ${GIT_EXECUTABLE} apply --ignore-whitespace "${_patch}"
                 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/${_submodule}"
                 RESULT_VARIABLE _apply_result
             )

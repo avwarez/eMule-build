@@ -29,10 +29,32 @@ jobs:
         configuration: [Release]
 
     steps:
+      - name: Pin deterministic line endings before checkout
+        # GitHub's windows runner images ship core.autocrlf=true globally, so
+        # actions/checkout below would rewrite every source file in the emule
+        # submodule to CRLF. The patch files in emule_build/ are generated
+        # against the repository's own bytes (LF), and git apply then refuses
+        # the mismatched context - confirmed by an actual run, where
+        # 30-conformant-parsing.patch failed with "patch does not apply" on
+        # srchybrid/QArray.h (the one hunk whose context reaches a file end,
+        # and every file in this codebase lacks a trailing newline).
+        # Pinning this to false makes the working tree byte-identical to what
+        # the patches were generated against. MSVC and rc.exe read LF sources
+        # without complaint, so nothing else in the build cares.
+        run: git config --global core.autocrlf false
+
       - name: Checkout (with submodules)
         uses: actions/checkout@v4
         with:
           submodules: recursive
+
+      - name: Report checkout line endings
+        # Cheap forensics for the patch-application step below: if a patch
+        # ever fails again with "does not apply", the first question is
+        # whether the working tree really came out as LF.
+        run: |
+          git config --get core.autocrlf
+          python -c "d=open('emule/srchybrid/QArray.h','rb').read(); print('QArray.h CR count:', d.count(b'\r'), '| ends with newline:', d.endswith(b'\n'))"
 
       - name: Set up Python
         # Pin an exact interpreter and put it first on PATH, so the "pip
