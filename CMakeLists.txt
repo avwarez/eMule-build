@@ -35,6 +35,64 @@ cmake_policy(SET CMP0091 NEW)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 # ---------------------------------------------------------------------------
+# Submodule patching
+#
+# Every submodule in this repo is vanilla and is never edited in place. When
+# one of them needs a source change - an upstream bug, an incompatibility
+# with a newer dependency, or a construct the C++ standard we compile at has
+# removed - the fix lives as a .patch file in that submodule's *_build/
+# directory here, and is applied at configure time by the function below.
+#
+# Idempotent: `git apply --check --reverse` succeeds exactly when a patch is
+# already applied, so re-configuring an existing build tree is a no-op
+# instead of a failure. Patches within one directory are applied in sorted
+# filename order; give them a numeric prefix if two of them ever have to
+# touch the same hunk in a defined sequence.
+# ---------------------------------------------------------------------------
+find_package(Git REQUIRED)
+
+function(emule_apply_patches _submodule _patch_dir)
+    file(GLOB _patches "${CMAKE_SOURCE_DIR}/${_patch_dir}/*.patch")
+    list(SORT _patches)
+    foreach(_patch IN LISTS _patches)
+        get_filename_component(_patch_name "${_patch}" NAME)
+        execute_process(
+            COMMAND ${GIT_EXECUTABLE} apply --check --reverse "${_patch}"
+            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/${_submodule}"
+            RESULT_VARIABLE _already_applied
+            OUTPUT_QUIET ERROR_QUIET
+        )
+        if(_already_applied EQUAL 0)
+            message(STATUS "${_submodule}: ${_patch_dir}/${_patch_name} already applied")
+        else()
+            message(STATUS "${_submodule}: applying ${_patch_dir}/${_patch_name}")
+            execute_process(
+                COMMAND ${GIT_EXECUTABLE} apply "${_patch}"
+                WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/${_submodule}"
+                RESULT_VARIABLE _apply_result
+            )
+            if(NOT _apply_result EQUAL 0)
+                message(FATAL_ERROR "${_submodule}: failed to apply ${_patch_dir}/${_patch_name}")
+            endif()
+        endif()
+    endforeach()
+endfunction()
+
+# Applied up front, before any add_subdirectory() below - emule_build's own
+# CMakeLists.txt reads emule.vcxproj at configure time, so a patch must never
+# land after the directory that consumes it has already been processed.
+# An empty (or patch-less) *_build directory is simply a no-op here, so these
+# calls stay valid whether or not that submodule currently needs anything.
+# Only the C++ submodules whose headers eMule actually includes are listed:
+# eMule is the only target that compiles at C++23 (see emule_build/
+# CMakeLists.txt), but cryptopp/id3lib/resizablelib headers get pulled into
+# its translation units and are therefore parsed under that same standard.
+emule_apply_patches(emule emule_build)
+emule_apply_patches(cryptopp cryptopp_build)
+emule_apply_patches(id3lib id3lib_build)
+emule_apply_patches(resizablelib resizablelib_build)
+
+# ---------------------------------------------------------------------------
 # mbedtls - vanilla git submodule (mbedtls/, with nested tf-psa-crypto/ and
 # framework/ submodules), pinned to v4.2.0. Never edited in place. eMule
 # needs two customizations on top of it, both supplied from outside the
@@ -134,33 +192,8 @@ add_subdirectory(mbedtls)
 
 # ---------------------------------------------------------------------------
 # eMule sources - vanilla git submodule (emule/, avwarez/eMule pinned to
-# branch v0.72a), never edited in place. Two upstream mbedtls-4.0 compile
-# errors in emule/srchybrid/WebSocket.cpp (CString->CStringA path conversion
-# for mbedtls_x509_crt_parse_file()/mbedtls_pk_parse_keyfile(), and
-# mbedtls_sha1() having moved to a private header) are fixed by applying
-# emule_build/websocket-mbedtls4.patch below instead, since v0.72a itself stays
-# untouched. Idempotent: `git apply --check --reverse` succeeds once the
-# patch is already applied, so a second configure run doesn't reapply it.
+# branch v0.72a), never edited in place. Everything it needs on top of that
+# tag is supplied as patch files under emule_build/, applied by
+# emule_apply_patches() near the top of this file.
 # ---------------------------------------------------------------------------
-find_package(Git REQUIRED)
-execute_process(
-    COMMAND ${GIT_EXECUTABLE} apply --check --reverse "${CMAKE_SOURCE_DIR}/emule_build/websocket-mbedtls4.patch"
-    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/emule"
-    RESULT_VARIABLE _websocket_patch_already_applied
-    OUTPUT_QUIET ERROR_QUIET
-)
-if(NOT _websocket_patch_already_applied EQUAL 0)
-    message(STATUS "eMule: applying emule_build/websocket-mbedtls4.patch to emule/srchybrid/WebSocket.cpp")
-    execute_process(
-        COMMAND ${GIT_EXECUTABLE} apply "${CMAKE_SOURCE_DIR}/emule_build/websocket-mbedtls4.patch"
-        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/emule"
-        RESULT_VARIABLE _websocket_patch_result
-    )
-    if(NOT _websocket_patch_result EQUAL 0)
-        message(FATAL_ERROR "eMule: failed to apply emule_build/websocket-mbedtls4.patch to emule/srchybrid/WebSocket.cpp")
-    endif()
-else()
-    message(STATUS "eMule: emule_build/websocket-mbedtls4.patch already applied")
-endif()
-
 add_subdirectory(emule_build)
