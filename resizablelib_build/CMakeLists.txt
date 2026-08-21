@@ -39,6 +39,11 @@ set(CMAKE_MFC_FLAG 1)
 
 add_library(resizablelib STATIC ${RESIZABLELIB_SOURCES})
 
+# C++23, matching the emule target - see cryptopp_build/CMakeLists.txt for why
+# the dependencies are raised along with it (ODR consistency for headers that
+# eMule's own translation units already parse at C++23).
+target_compile_features(resizablelib PRIVATE cxx_std_23)
+
 # PUBLIC: consumers (srchybrid) #include "ResizableLib/ResizableDialog.h"
 # etc. - the "ResizableLib/" segment is the real directory name inside the
 # submodule, so the parent of that directory (not the directory itself) is

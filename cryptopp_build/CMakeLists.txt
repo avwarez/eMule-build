@@ -137,6 +137,22 @@ endif()
 
 add_library(cryptopp STATIC ${CRYPTOPP_SOURCES} ${CRYPTOPP_ASM_SOURCES})
 
+# C++23, matching the emule target (emule_build/CMakeLists.txt). Not cosmetic:
+# eMule's own translation units include cryptopp headers and parse them at
+# C++23, so building the library itself at the MSVC default (C++14) would mean
+# every inline function, template and class in those headers has two different
+# definitions inside one binary - an ODR violation whose visible failure mode
+# is exactly the noexcept-in-the-type-system mismatch that already showed up
+# inside eMule (see emule_build/80-noexcept-in-function-type.patch).
+#
+# Safe for a crypto library specifically because Crypto++'s own feature gates
+# key off CRYPTOPP_MSC_VERSION, not the language flag: config_cxx.h guards
+# every CRYPTOPP_CXX11/14/17 macro with "(CRYPTOPP_MSC_VERSION >= 1900) ||
+# (__cplusplus >= ...)", and no file in the submodule consults _MSVC_LANG at
+# all (verified: zero occurrences). Raising the standard therefore flips no
+# #if and changes no compiled code path here.
+target_compile_features(cryptopp PRIVATE cxx_std_23)
+
 if(CRYPTOPP_ASM_SOURCES)
     # The VS generator's MASM custom-build step (unlike ClCompile) does not
     # create its own output directory: for a source outside this
