@@ -5,11 +5,13 @@ on:
   push:
     branches:
       - v0.72a
+      - v0.72a-cpp23
 
-# Two pushes to v0.72a in quick succession would otherwise run two full
-# matrices in parallel and each publish their own release for the branch -
+# Two pushes to the same branch in quick succession would otherwise run two
+# full matrices in parallel and each publish their own release for it -
 # cancel the older run instead so only the latest commit's build ever reaches
-# the release job.
+# the release job. Keyed on github.ref, so the two release branches never
+# cancel each other.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -114,9 +116,12 @@ jobs:
   release:
     name: Publish release
     needs: build
-    # Only real pushes to v0.72a become a permanent public release -
-    # manual workflow_dispatch runs (ad-hoc/test builds) stay as the 1-day
-    # artifacts above and don't clutter the Releases page.
+    # Only real pushes to one of the release branches above become a
+    # permanent public release - manual workflow_dispatch runs (ad-hoc/test
+    # builds) stay as the 1-day artifacts above and don't clutter the
+    # Releases page. Everything below is branch-agnostic (the tag is derived
+    # from github.ref_name and the release targets github.sha), so each
+    # branch publishes its own independently named releases.
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
@@ -207,7 +212,8 @@ jobs:
       - name: Compute release tag
         id: meta
         # Tag/title = branch name + UTC generation timestamp, e.g.
-        # "v0.72a-20260716-144500", so every run gets its own permanent,
+        # "v0.72a-20260716-144500" or "v0.72a-cpp23-20260821-144500", so
+        # every run gets its own permanent,
         # chronologically sortable release instead of one being overwritten
         # by the next.
         run: echo "tag=${{ github.ref_name }}-$(date -u +%Y%m%d-%H%M%S)" >> "$GITHUB_OUTPUT"
