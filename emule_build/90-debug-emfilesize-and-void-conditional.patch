@@ -1,0 +1,145 @@
+diff --git a/srchybrid/DownloadClient.cpp b/srchybrid/DownloadClient.cpp
+index 38b5a40..ab40a7a 100644
+--- a/srchybrid/DownloadClient.cpp
++++ b/srchybrid/DownloadClient.cpp
+@@ -95,7 +95,7 @@ void CUpDownClient::DrawStatusBar(CDC &dc, const CRect &rect, bool onlygreyrect,
+ 			for (UINT i = 0; i < m_nPartCount; ++i)
+ 				if (m_abyPartStatus[i]) {
+ 					uint64 uBegin = PARTSIZE * i;
+-					uint64 uEnd = min(uBegin + PARTSIZE, m_reqfile->GetFileSize());
++					uint64 uEnd = min(uBegin + PARTSIZE, (uint64)m_reqfile->GetFileSize());
+ 
+ 					COLORREF colour;
+ 					if (m_reqfile->IsComplete(uBegin, uEnd - 1))
+diff --git a/srchybrid/FileIdentifier.cpp b/srchybrid/FileIdentifier.cpp
+index 9f872cc..01f3f5f 100644
+--- a/srchybrid/FileIdentifier.cpp
++++ b/srchybrid/FileIdentifier.cpp
+@@ -415,7 +415,7 @@ bool CFileIdentifier::VerifyAICHHashSet()
+ 		return true; // No AICH Part Hashes
+ 	for (uint32 nPart = 0; nPart < uPartCount; ++nPart) {
+ 		uint64 nPartStartPos = nPart * PARTSIZE;
+-		uint64 nPartSize = min(PARTSIZE, GetFileSize() - nPartStartPos);
++		uint64 nPartSize = min(PARTSIZE, (uint64)(GetFileSize() - nPartStartPos));
+ 		CAICHHashTree *pPartHashTree = tmpAICHHashSet.m_pHashTree.FindHash(nPartStartPos, nPartSize);
+ 		if (pPartHashTree == NULL) {
+ 			ASSERT(0);
+diff --git a/srchybrid/IPFilter.cpp b/srchybrid/IPFilter.cpp
+index 69b09f2..de8bcd1 100644
+--- a/srchybrid/IPFilter.cpp
++++ b/srchybrid/IPFilter.cpp
+@@ -203,7 +203,7 @@ INT_PTR CIPFilter::AddFromFile(LPCTSTR pszFilePath, bool bShowResponse)
+ 						AddIPRange(start, end, level, desc);
+ 						++iFoundRanges;
+ 					} else {
+-						DEBUG_ONLY(sbuffer.IsEmpty() ? 0 : TRACE("IP filter: ignored line %u\n", iLine));
++						DEBUG_ONLY(sbuffer.IsEmpty() ? (void)0 : TRACE("IP filter: ignored line %u\n", iLine));
+ 						m_bModified = true;
+ 					}
+ 				}
+diff --git a/srchybrid/PartFile.cpp b/srchybrid/PartFile.cpp
+index 3fc083e..bd13bcc 100644
+--- a/srchybrid/PartFile.cpp
++++ b/srchybrid/PartFile.cpp
+@@ -1769,7 +1769,7 @@ bool CPartFile::GetNextEmptyBlockInPart(UINT partNumber, Requested_Block_Struct
+ 	uint64 start = partStart;
+ 
+ 	// The end of the part must be within file size
+-	uint64 partEnd = min(partStart + PARTSIZE, m_nFileSize) - 1;
++	uint64 partEnd = min(partStart + PARTSIZE, (uint64)m_nFileSize) - 1;
+ 	ASSERT(partStart <= partEnd);
+ 
+ 	// Loop until a suitable gap is found and return true, or no more gaps and return false
+@@ -4120,7 +4120,7 @@ void CPartFile::FlushBuffer(bool bForceICH, bool bNoAICH)
+ 			m_aChangedPart[uPartNumber] = false;
+ 
+ 			const uint64 uStart = PARTSIZE * uPartNumber;
+-			const uint64 uEnd = min(uStart + PARTSIZE, m_nFileSize) - 1;
++			const uint64 uEnd = min(uStart + PARTSIZE, (uint64)m_nFileSize) - 1;
+ 			// Is this 9MB part complete
+ 			if (IsCompleteBD(uStart, uEnd)) {
+ 				// Is part corrupt
+@@ -4648,7 +4648,7 @@ bool CPartFile::GetNextRequestedBlock(CUpDownClient *sender, Requested_Block_Str
+ 				// Offsets of chunk
+ 				UINT uCurChunkPart = cur_chunk.part; // help VC71...
+ 				const uint64 uStart = uCurChunkPart * PARTSIZE;
+-				const uint64 uEnd = min(uStart + PARTSIZE, m_nFileSize) - 1;
++				const uint64 uEnd = min(uStart + PARTSIZE, (uint64)m_nFileSize) - 1;
+ 				ASSERT(uStart <= uEnd);
+ 
+ 				// Criterion 2. Parts used for preview
+diff --git a/srchybrid/Preview.cpp b/srchybrid/Preview.cpp
+index a200027..953ca77 100644
+--- a/srchybrid/Preview.cpp
++++ b/srchybrid/Preview.cpp
+@@ -339,7 +339,7 @@ CPreviewApps::ECanPreviewRes CPreviewApps::CanPreview(const CPartFile *file)
+ 	if (file->GetCompletedSize() < rApp.ullMinCompletedSize)
+ 		return No;
+ 
+-	if (rApp.ullMinStartOfFile &&!file->IsComplete(0, min(rApp.ullMinStartOfFile, file->GetFileSize()) - 1))
++	if (rApp.ullMinStartOfFile &&!file->IsComplete(0, min(rApp.ullMinStartOfFile, (uint64)file->GetFileSize()) - 1))
+ 		return No;
+ 
+ 	return Yes;
+diff --git a/srchybrid/SHAHashSet.cpp b/srchybrid/SHAHashSet.cpp
+index 19d9031..5d578d0 100644
+--- a/srchybrid/SHAHashSet.cpp
++++ b/srchybrid/SHAHashSet.cpp
+@@ -547,7 +547,7 @@ bool CAICHRecoveryHashSet::GetPartHashes(CArray<CAICHHash> &rResult) const
+ 		return true; // No AICH Part hashes
+ 	for (uint32 nPart = 0; nPart < uPartCount; ++nPart) {
+ 		uint64 nPartStartPos = nPart * PARTSIZE;
+-		uint64 nPartSize = min(PARTSIZE, m_pOwner->GetFileSize() - nPartStartPos);
++		uint64 nPartSize = min(PARTSIZE, (uint64)(m_pOwner->GetFileSize() - nPartStartPos));
+ 		const CAICHHashTree *pPartHashTree = m_pHashTree.FindExistingHash(nPartStartPos, nPartSize);
+ 		if (pPartHashTree == NULL || !pPartHashTree->m_bHashValid) {
+ 			rResult.RemoveAll();
+@@ -566,7 +566,7 @@ const CAICHHashTree* CAICHRecoveryHashSet::FindPartHash(uint16 nPart)
+ 	if (fsize <= PARTSIZE)
+ 		return &m_pHashTree;
+ 	uint64 nPartStartPos = nPart * PARTSIZE;
+-	uint64 nPartSize = min(PARTSIZE, fsize - nPartStartPos);
++	uint64 nPartSize = min(PARTSIZE, (uint64)(fsize - nPartStartPos));
+ 	const CAICHHashTree *phtResult = m_pHashTree.FindHash(nPartStartPos, nPartSize);
+ 	ASSERT(phtResult != NULL);
+ 	return phtResult;
+@@ -590,7 +590,7 @@ bool CAICHRecoveryHashSet::CreatePartRecoveryData(uint64 nPartStartPos, CFileDat
+ 	}
+ 	bool bResult;
+ 	uint8 nLevel = 0;
+-	uint64 nPartSize = min(PARTSIZE, m_pOwner->GetFileSize() - nPartStartPos);
++	uint64 nPartSize = min(PARTSIZE, (uint64)(m_pOwner->GetFileSize() - nPartStartPos));
+ 	m_pHashTree.FindHash(nPartStartPos, nPartSize, &nLevel);
+ 	uint16 nHashesToWrite = (uint16)((nLevel - 1) + nPartSize / EMBLOCKSIZE + static_cast<unsigned>(nPartSize % EMBLOCKSIZE != 0));
+ 	const bool bUse32BitIdentifier = m_pOwner->IsLargeFile();
+@@ -637,7 +637,7 @@ bool CAICHRecoveryHashSet::ReadRecoveryData(uint64 nPartStartPos, CSafeMemFile &
+ 	// all hash are then taken into the tree, depending on there hash identifier (except the masterhash)
+ 
+ 	uint8 nLevel = 0;
+-	uint64 nPartSize = min(PARTSIZE, m_pOwner->GetFileSize() - nPartStartPos);
++	uint64 nPartSize = min(PARTSIZE, (uint64)(m_pOwner->GetFileSize() - nPartStartPos));
+ 	m_pHashTree.FindHash(nPartStartPos, nPartSize, &nLevel);
+ 	uint16 nHashsToRead = (uint16)((nLevel - 1) + nPartSize / EMBLOCKSIZE + static_cast<unsigned>(nPartSize % EMBLOCKSIZE != 0));
+ 
+@@ -1064,7 +1064,7 @@ bool CAICHRecoveryHashSet::IsPartDataAvailable(uint64 nPartStartPos)
+ 		ASSERT(0);
+ 		return false;
+ 	}
+-	uint64 nPartSize = min(PARTSIZE, m_pOwner->GetFileSize() - nPartStartPos);
++	uint64 nPartSize = min(PARTSIZE, (uint64)(m_pOwner->GetFileSize() - nPartStartPos));
+ 	for (uint64 nPartPos = 0; nPartPos < nPartSize; nPartPos += EMBLOCKSIZE) {
+ 		const CAICHHashTree *phtToCheck = m_pHashTree.FindExistingHash(nPartStartPos + nPartPos, min(EMBLOCKSIZE, nPartSize - nPartPos));
+ 		if (phtToCheck == NULL || !phtToCheck->m_bHashValid)
+diff --git a/srchybrid/UploadClient.cpp b/srchybrid/UploadClient.cpp
+index 612f2be..61ad554 100644
+--- a/srchybrid/UploadClient.cpp
++++ b/srchybrid/UploadClient.cpp
+@@ -69,7 +69,7 @@ void CUpDownClient::DrawUpStatusBar(CDC &dc, const CRect &rect, bool onlygreyrec
+ 
+ 	// wistily: UpStatusFix
+ 	CKnownFile *currequpfile = theApp.sharedfiles->GetFileByID(requpfileid);
+-	EMFileSize filesize = currequpfile ? currequpfile->GetFileSize() : PARTSIZE * m_nUpPartCount;
++	EMFileSize filesize = currequpfile ? (uint64)currequpfile->GetFileSize() : PARTSIZE * m_nUpPartCount;
+ 	// wistily: UpStatusFix
+ 
+ 	if (filesize > 0ull) {
