@@ -1,0 +1,22 @@
+diff --git a/srchybrid/OtherFunctions.cpp b/srchybrid/OtherFunctions.cpp
+index 5189e35..081826f 100644
+--- a/srchybrid/OtherFunctions.cpp
++++ b/srchybrid/OtherFunctions.cpp
+@@ -3196,7 +3196,7 @@ int __cdecl CompareCStringPtrLocaleString(const void *p1, const void *p2)
+ 	return CompareLocaleString(*(CString*)p1, *(CString*)p2);
+ }
+ 
+-void Sort(CStringArray &astr, int(__cdecl *pfnCompare)(const void*, const void*) noexcept)
++void Sort(CStringArray &astr, int(__cdecl *pfnCompare)(const void*, const void*))
+ {
+ 	qsort(astr.GetData(), astr.GetCount(), sizeof(CString*), pfnCompare);
+ }
+@@ -3211,7 +3211,7 @@ int __cdecl CompareCStringPtrPtrLocaleString(const void *p1, const void *p2)
+ 	return CompareLocaleString(**(CString**)p1, **(CString**)p2);
+ }
+ 
+-void Sort(CSimpleArray<const CString*> &apstr, int(__cdecl *pfnCompare)(const void*, const void*) noexcept)
++void Sort(CSimpleArray<const CString*> &apstr, int(__cdecl *pfnCompare)(const void*, const void*))
+ {
+ 	qsort(apstr.GetData(), apstr.GetSize(), sizeof(CString*), pfnCompare);
+ }
