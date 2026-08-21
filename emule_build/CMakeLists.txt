@@ -84,6 +84,26 @@ set_target_properties(emule PROPERTIES
     VS_DPI_AWARE "OFF"                          # EnableDpiAwareness=false in the vcxproj (both configs)
 )
 
+# ---------------------------------------------------------------------------
+# C++23 - the point of this branch. emule.vcxproj sets no <LanguageStandard>
+# at all, so the baseline being left behind here is MSVC's own default,
+# C++14: this single line jumps three rounds of standard-library removals
+# (C++17, C++20, C++23) at once.
+#
+# Deliberately a target_compile_features() on emule and NOT a top-level
+# CMAKE_CXX_STANDARD: the latter would drag cryptopp, id3lib and
+# resizablelib along too (C++98-era codebases with no reason to move), and
+# would fight mbedtls/tf-psa-crypto, which pin their own CMAKE_CXX_STANDARD
+# 11 for their C++ bits. Scoped like this, every dependency keeps building
+# at the MSVC default and only eMule's own 244 translation units change
+# standard - which also keeps any build break attributable to one target.
+#
+# CMake maps cxx_std_23 to /std:c++23preview on toolsets that have it and to
+# /std:c++latest otherwise; both are fine here, since nothing in this build
+# depends on the standard being final rather than preview.
+# ---------------------------------------------------------------------------
+target_compile_features(emule PRIVATE cxx_std_23)
+
 # KNOWN LIMITATION: emule.vcxproj targets PlatformToolset v141_xp for Win32/x64
 # (a Windows-XP-compatible VS2017 toolset) and v145 for ARM64; id3lib.vcxproj
 # wants v141, ResizableLib.vcxproj wants v140_xp. None of those toolsets are
