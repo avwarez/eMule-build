@@ -1,0 +1,70 @@
+diff --git a/srchybrid/HighColorTab.hpp b/srchybrid/HighColorTab.hpp
+index 7d49d1f..a25e659 100644
+--- a/srchybrid/HighColorTab.hpp
++++ b/srchybrid/HighColorTab.hpp
+@@ -27,21 +27,21 @@ namespace HighColorTab
+ 	ensure that there is a Win32 image list associated with the CImageList.
+ 	If this is not the case, a NULL pointer shall be returned.
+ 
+-	Returned image list is wrapped in an std::auto_ptr.
++	Returned image list is wrapped in an std::unique_ptr.
+ 
+ 	\sa UpdateImageListFull
+ */
+ 	struct CHighColorListCreator
+ 	{
+ 	  /*! Create the image list.
+-		  \retval std::auto_ptr<CImageList> Not null if success. */
+-		static std::auto_ptr<CImageList> CreateImageList()
++		  \retval std::unique_ptr<CImageList> Not null if success. */
++		static std::unique_ptr<CImageList> CreateImageList()
+ 		{
+-			std::auto_ptr<CImageList> apILNew(new CImageList());
++			std::unique_ptr<CImageList> apILNew(new CImageList());
+ 			if (FALSE == apILNew->Create(16, 16, theApp.m_iDfltImageListColorFlags | ILC_MASK, 0, 1)) {
+ 			  // ASSERT: The image list (Win32) creation failed.
+ 				ASSERT(0);
+-				return std::auto_ptr<CImageList>();
++				return std::unique_ptr<CImageList>();
+ 			}
+ 			return apILNew;
+ 		}
+@@ -53,7 +53,7 @@ namespace HighColorTab
+ 
+ 	  This method provides full customization via policy over image list creation. The policy
+ 	  must have a method with the signature:
+-	  <code>static std::auto_ptr<CImageList> CreateImageList()</code>
++	  <code>static std::unique_ptr<CImageList> CreateImageList()</code>
+ 
+ 	  \author Yves Tkaczyk (yves@tkaczyk.net)
+ 	  \date 02/2004 */
+@@ -68,7 +68,7 @@ namespace HighColorTab
+ 		}
+ 
+ 		// Create the replacement image list via policy.
+-		std::auto_ptr<CImageList> apILNew(TListCreator::CreateImageList());
++		std::unique_ptr<CImageList> apILNew(TListCreator::CreateImageList());
+ 
+ 		// Reload the icons from the property pages.
+ 		int nTotalPageCount = rSheet.GetPageCount();
+diff --git a/srchybrid/UPnPImplWinServ.h b/srchybrid/UPnPImplWinServ.h
+index b416a52..c102396 100644
+--- a/srchybrid/UPnPImplWinServ.h
++++ b/srchybrid/UPnPImplWinServ.h
+@@ -113,14 +113,14 @@ protected:
+ 
+ // Implementation
+ 	static FinderPointer CreateFinderInstance();
+-	struct FindDevice : private std::unary_function<DevicePointer, bool>
++	struct FindDevice
+ 	{
+ 		explicit FindDevice(const CComBSTR &udn)
+ 			: m_udn(udn)
+ 		{
+ 		}
+ 
+-		result_type operator()(argument_type device) const
++		bool operator()(DevicePointer device) const
+ 		{
+ 			CComBSTR deviceName;
+ 			HRESULT hr = device->get_UniqueDeviceName(&deviceName);

@@ -1,0 +1,66 @@
+diff --git a/srchybrid/PartFile.cpp b/srchybrid/PartFile.cpp
+index 8f45164..3fc083e 100644
+--- a/srchybrid/PartFile.cpp
++++ b/srchybrid/PartFile.cpp
+@@ -4852,8 +4852,8 @@ CString CPartFile::GetInfoSummary(bool bNoFormatCommands) const
+ 	if (!IsPartFile())
+ 		return CKnownFile::GetInfoSummary();
+ 
+-	CString compl(GetResString(IDS_DL_TRANSFCOMPL));
+-	compl.AppendFormat(_T(": %s/%s (%.1f%%)")
++	CString strCompl(GetResString(IDS_DL_TRANSFCOMPL));
++	strCompl.AppendFormat(_T(": %s/%s (%.1f%%)")
+ 		, (LPCTSTR)CastItoXBytes(GetCompletedSize())
+ 		, (LPCTSTR)CastItoXBytes(m_nFileSize)
+ 		, GetPercentCompleted());
+@@ -4898,7 +4898,7 @@ CString CPartFile::GetInfoSummary(bool bNoFormatCommands) const
+ 		, bNoFormatCommands ? _T("") : _T("<br_head>")
+ 		, (LPCTSTR)GetResString(IDS_FD_MET), (LPCTSTR)GetPartMetFileName()
+ 		, (LPCTSTR)GetResString(IDS_STATUS), (LPCTSTR)sStatus
+-		, (LPCTSTR)compl
++		, (LPCTSTR)strCompl
+ 		, (LPCTSTR)sourcesinfo, (LPCTSTR)avail
+ 		, (LPCTSTR)GetResString(IDS_LASTSEENCOMPL), (LPCTSTR)lsc
+ 		, (LPCTSTR)GetResString(IDS_FD_LASTCHANGE), (LPCTSTR)lastdwl
+diff --git a/srchybrid/TransferWnd.cpp b/srchybrid/TransferWnd.cpp
+index 5182375..5a56858 100644
+--- a/srchybrid/TransferWnd.cpp
++++ b/srchybrid/TransferWnd.cpp
+@@ -1217,7 +1217,7 @@ CString CTransferWnd::GetTabStatistic(int tab)
+ 	}
+ 
+ 	int total;
+-	int compl = downloadlistctrl.GetCompleteDownloads(tab, total);
++	int iCompl = downloadlistctrl.GetCompleteDownloads(tab, total);
+ 
+ 	UINT uid;
+ 	switch (thePrefs.GetCategory(tab)->prio) {
+@@ -1233,11 +1233,11 @@ CString CTransferWnd::GetTabStatistic(int tab)
+ 
+ 	CString title(GetResString(IDS_FILES));
+ 	title.AppendFormat(_T(": %i\n\n%s: %i\n%s: %i\n%s: %i\n%s: %i\n\n%s: %s\n\n%s: %.1f %s\n%s: %s/%s\n%s%s") TOOLTIP_AUTOFORMAT_SUFFIX
+-		, count + compl
++		, count + iCompl
+ 		, (LPCTSTR)GetResString(IDS_DOWNLOADING), dwl
+ 		, (LPCTSTR)GetResString(IDS_PAUSED), paus
+ 		, (LPCTSTR)GetResString(IDS_ERRORLIKE), err
+-		, (LPCTSTR)GetResString(IDS_DL_TRANSFCOMPL), compl
++		, (LPCTSTR)GetResString(IDS_DL_TRANSFCOMPL), iCompl
+ 		, (LPCTSTR)GetResString(IDS_PRIORITY), (LPCTSTR)GetResString(uid)
+ 		, (LPCTSTR)GetResString(IDS_DL_SPEED), speed, (LPCTSTR)GetResString(IDS_KBYTESPERSEC)
+ 		, (LPCTSTR)GetResString(IDS_DL_SIZE), (LPCTSTR)CastItoXBytes(trsize), (LPCTSTR)CastItoXBytes(size)
+diff --git a/srchybrid/WebServer.cpp b/srchybrid/WebServer.cpp
+index ba4fce7..35996bc 100644
+--- a/srchybrid/WebServer.cpp
++++ b/srchybrid/WebServer.cpp
+@@ -3628,8 +3628,8 @@ CString CWebServer::_GetDownloadGraph(const ThreadData &Data, const CString &fil
+ 	} else {
+ 		const CStringA &s_ChunkBar(pPartFile->GetProgressString(pThis->m_Templates.iProgressbarWidth));
+ 		// now draw progress bars based on the character array
+-		int compl = static_cast<int>((pThis->m_Templates.iProgressbarWidth / 100.0f) * pPartFile->GetPercentCompleted());
+-		Out.Format(pThis->m_Templates.sProgressbarImgsPercent, barcolours[compl > 0 ? 10 : 11], (compl > 0 ? compl : 5));
++		int iCompl = static_cast<int>((pThis->m_Templates.iProgressbarWidth / 100.0f) * pPartFile->GetPercentCompleted());
++		Out.Format(pThis->m_Templates.sProgressbarImgsPercent, barcolours[iCompl > 0 ? 10 : 11], (iCompl > 0 ? iCompl : 5));
+ 		Out += _T("<br>");
+ 
+ 		BYTE lastcolor = 1;

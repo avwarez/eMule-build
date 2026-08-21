@@ -1,0 +1,63 @@
+diff --git a/srchybrid/MediaInfo.cpp b/srchybrid/MediaInfo.cpp
+index bb9b81b..7658b8f 100644
+--- a/srchybrid/MediaInfo.cpp
++++ b/srchybrid/MediaInfo.cpp
+@@ -632,6 +632,7 @@ bool GetRIFFHeaders(LPCTSTR pszFileName, SMediaInfo *mi, bool &rbIsAVI, bool bFu
+ 	FOURCC fccType;
+ 	DWORD dwLength;
+ 	DWORD dwMovieChunkSize = 0;
++	bool bHaveReadAllStreams;		// declared here (uninitialized) so the "goto cleanup"s below do not jump over an initialization
+ 	DWORD uVideoFrames = 0;
+ 	DWORD dwAllNonVideoAvgBytesPerSec = 0;
+ 	int	iNonAVStreams = 0;
+@@ -663,7 +664,7 @@ bool GetRIFFHeaders(LPCTSTR pszFileName, SMediaInfo *mi, bool &rbIsAVI, bool bFu
+ 		goto cleanup;
+ 
+ 	// We need to read almost all streams (regardless of 'bFullInfo' mode) because we need to get the 'dwMovieChunkSize'
+-	bool bHaveReadAllStreams = false;
++	bHaveReadAllStreams = false;
+ 	while (!bHaveReadAllStreams && dwLengthLeft >= sizeof(DWORD) * 2) {
+ 		if (!ReadChunkHeader(hAviFile, &fccType, &dwLength))
+ 			goto inv_format_errno;
+diff --git a/srchybrid/SendMail.cpp b/srchybrid/SendMail.cpp
+index b4650cf..6714843 100644
+--- a/srchybrid/SendMail.cpp
++++ b/srchybrid/SendMail.cpp
+@@ -269,6 +269,7 @@ void CNotifierMailThread::sendmail()
+ 	mbedtls_ssl_ticket_context ticket_ctx;
+ 	LPCTSTR pmsg = NULL;
+ 	int ret;
++	bool bEncrypt;		// declared here (uninitialized) so the "goto failed"/"goto exit"s below do not jump over an initialization
+ 
+ 	mbedtls_threading_set_alt(threading_mutex_init_alt, threading_mutex_destroy_alt, threading_mutex_lock_alt, threading_mutex_unlock_alt
+ 							, cond_init_alt, cond_destroy_alt, cond_signal_alt, cond_broadcast_alt, cond_wait_alt);
+@@ -454,7 +455,7 @@ void CNotifierMailThread::sendmail()
+ 			"Content-Transfer-Encoding: 8bit\r\n\r\n%s"
+ 			, (LPCSTR)(NeedUTF8String(m_strBody) ? wc2utf8(m_strBody) : (CStringA)m_strBody));
+ 
+-	bool bEncrypt = !m_mail.sEncryptCertName.IsEmpty();
++	bEncrypt = !m_mail.sEncryptCertName.IsEmpty();
+ 	if (bEncrypt) {
+ 		CByteArray aEncrypted;
+ 		if (!Encrypt(sBodyA, aEncrypted, m_mail.sEncryptCertName))
+diff --git a/srchybrid/WebSocket.cpp b/srchybrid/WebSocket.cpp
+index d7d35e7..9a47132 100644
+--- a/srchybrid/WebSocket.cpp
++++ b/srchybrid/WebSocket.cpp
+@@ -297,6 +297,8 @@ UINT AFX_CDECL WebSocketAcceptedFunc(LPVOID pD)
+ 			stWebSocket.m_dwHttpHeaderLen = 0;
+ 			stWebSocket.m_dwHttpContentLen = 0;
+ 			stWebSocket.m_ssl = &ssl;
++			// declared before the "goto thread_exit"s below, which would otherwise jump over its initialization
++			HANDLE pWait[] = {hEvent, s_hTerminate};
+ 
+ 			if (thePrefs.GetWebUseHttps()) {
+ 				mbedtls_ssl_init(&ssl);
+@@ -310,7 +312,6 @@ UINT AFX_CDECL WebSocketAcceptedFunc(LPVOID pD)
+ 						goto thread_exit;
+ 					}
+ 			}
+-			HANDLE pWait[] = {hEvent, s_hTerminate};
+ 
+ 			while (WAIT_OBJECT_0 == ::WaitForMultipleObjects(DWORD(_countof(pWait)), pWait, FALSE, INFINITE)) {
+ 				while (stWebSocket.m_bValid) {

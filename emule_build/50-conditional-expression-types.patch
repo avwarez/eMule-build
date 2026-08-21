@@ -1,0 +1,148 @@
+diff --git a/srchybrid/AddFriend.cpp b/srchybrid/AddFriend.cpp
+index fbca6cb..f59a072 100644
+--- a/srchybrid/AddFriend.cpp
++++ b/srchybrid/AddFriend.cpp
+@@ -68,7 +68,7 @@ BOOL CAddFriend::OnInitDialog()
+ 		SetDlgItemInt(IDC_IP, m_pShowFriend->m_dwLastUsedIP, FALSE);
+ 		SetDlgItemInt(IDC_PORT, m_pShowFriend->m_nLastUsedPort, FALSE);
+ 		SetDlgItemText(IDC_USERNAME, m_pShowFriend->m_strName);
+-		SetDlgItemText(IDC_USERHASH, (m_pShowFriend->HasUserhash() ? md4str(m_pShowFriend->m_abyUserhash) : _T("")));
++		SetDlgItemText(IDC_USERHASH, (m_pShowFriend->HasUserhash() ? (LPCTSTR)md4str(m_pShowFriend->m_abyUserhash) : _T("")));
+ 
+ 		if (m_pShowFriend->m_tLastSeen) {
+ 			CTime t(m_pShowFriend->m_tLastSeen);
+diff --git a/srchybrid/ChatWnd.cpp b/srchybrid/ChatWnd.cpp
+index 6f72650..ff9e808 100644
+--- a/srchybrid/ChatWnd.cpp
++++ b/srchybrid/ChatWnd.cpp
+@@ -456,7 +456,7 @@ void CChatWnd::ScrollHistory(bool down)
+ 	else
+ 		--ci->history_pos;
+ 
+-	const CString &sTxt((ci->history_pos < last) ? ci->history[ci->history_pos] : _T(""));
++	const CString &sTxt((ci->history_pos < last) ? ci->history[ci->history_pos] : CString());
+ 	m_wndMessage.SetWindowText(sTxt);
+ 	int len = sTxt.GetLength();
+ 	m_wndMessage.SetSel(len, len);
+diff --git a/srchybrid/FileInfoDialog.cpp b/srchybrid/FileInfoDialog.cpp
+index b9746b6..af4802a 100644
+--- a/srchybrid/FileInfoDialog.cpp
++++ b/srchybrid/FileInfoDialog.cpp
+@@ -648,7 +648,7 @@ LRESULT CFileInfoDialog::OnMediaInfoResult(WPARAM, LPARAM lParam)
+ 		if (!bDiffVideoStreamCount && ami.iVideoStreams > 1)
+ 			SetDlgItemText(IDC_FD_XI3, GetResString(IDS_VIDEO) + _T(" #1"));
+ 
+-		SetDlgItemText(IDC_VCODEC, bDiffVideoCompression ? _T("") : ami.strVideoFormat);
++		SetDlgItemText(IDC_VCODEC, bDiffVideoCompression ? _T("") : (LPCTSTR)ami.strVideoFormat);
+ 
+ 		if (!bDiffVideoBitRate && ami.video.dwBitRate) {
+ 			if (ami.video.dwBitRate == _UI32_MAX)
+@@ -685,7 +685,7 @@ LRESULT CFileInfoDialog::OnMediaInfoResult(WPARAM, LPARAM lParam)
+ 		if (!bDiffAudioStreamCount && ami.iAudioStreams > 1)
+ 			SetDlgItemText(IDC_FD_XI4, GetResString(IDS_AUDIO) + _T(" #1"));
+ 
+-		SetDlgItemText(IDC_ACODEC, bDiffAudioCompression ? _T("") : ami.strAudioFormat);
++		SetDlgItemText(IDC_ACODEC, bDiffAudioCompression ? _T("") : (LPCTSTR)ami.strAudioFormat);
+ 
+ 		LPCTSTR pChan;
+ 		if (!bDiffAudioChannels && ami.audio.nChannels) {
+@@ -723,7 +723,7 @@ LRESULT CFileInfoDialog::OnMediaInfoResult(WPARAM, LPARAM lParam)
+ 		} else
+ 			SetDlgItemText(IDC_ABITRATE, _T(""));
+ 
+-		SetDlgItemText(IDC_ALANGUAGE, bDiffAudioLanguage ? _T("") : ami.strAudioLanguage);
++		SetDlgItemText(IDC_ALANGUAGE, bDiffAudioLanguage ? _T("") : (LPCTSTR)ami.strAudioLanguage);
+ 	}
+ 
+ 	if (!m_bReducedDlg) {
+diff --git a/srchybrid/HTRichEditCtrl.cpp b/srchybrid/HTRichEditCtrl.cpp
+index 0edb18e..e3b9107 100644
+--- a/srchybrid/HTRichEditCtrl.cpp
++++ b/srchybrid/HTRichEditCtrl.cpp
+@@ -553,7 +553,7 @@ BOOL CHTRichEditCtrl::OnCommand(WPARAM wParam, LPARAM)
+ bool CHTRichEditCtrl::SaveLog(LPCTSTR pszDefName)
+ {
+ 	bool bResult = false;
+-	const CString &fname(pszDefName ? pszDefName : m_strTitle);
++	const CString &fname(pszDefName ? CString(pszDefName) : m_strTitle);
+ 	CFileDialog dlg(FALSE, _T("log"), (LPCTSTR)ValidFilename(fname), OFN_HIDEREADONLY | OFN_OVERWRITEPROMPT, _T("Log Files (*.log)|*.log||"), this, 0);
+ 	if (dlg.DoModal() == IDOK) {
+ 		FILE *fp = _tfsopen(dlg.GetPathName(), _T("wb"), _SH_DENYWR);
+diff --git a/srchybrid/IPFilter.cpp b/srchybrid/IPFilter.cpp
+index a12cf9a..69b09f2 100644
+--- a/srchybrid/IPFilter.cpp
++++ b/srchybrid/IPFilter.cpp
+@@ -417,7 +417,7 @@ bool CIPFilter::IsFiltered(uint32 ip, uint32 level) /*const*/
+ 
+ CString CIPFilter::GetLastHit() const
+ {
+-	return CString(m_pLastHit ? m_pLastHit->desc : "Not available");
++	return CString(m_pLastHit ? (LPCSTR)m_pLastHit->desc : "Not available");
+ }
+ 
+ bool CIPFilter::RemoveIPFilter(const SIPFilter *pFilter)
+diff --git a/srchybrid/MuleListCtrl.cpp b/srchybrid/MuleListCtrl.cpp
+index 370fae1..f1248fe 100644
+--- a/srchybrid/MuleListCtrl.cpp
++++ b/srchybrid/MuleListCtrl.cpp
+@@ -406,7 +406,7 @@ void CMuleListCtrl::SetColors()
+ 
+ 	CIni *ini = thePrefs.GetSkinIni();
+ 	if (ini) {
+-		const CString strKey(m_strSkinKey.IsEmpty() ? _T("DefLv") : m_strSkinKey);
++		const CString strKey(m_strSkinKey.IsEmpty() ? CString(_T("DefLv")) : m_strSkinKey);
+ 
+ 		if (theApp.LoadSkinColorAlt(strKey + _T("Bk"), _T("DefLvBk"), m_crWindow))
+ 			m_crWindowTextBk = m_crWindow;
+diff --git a/srchybrid/Pinger.cpp b/srchybrid/Pinger.cpp
+index 2eebd5e..cf84a90 100644
+--- a/srchybrid/Pinger.cpp
++++ b/srchybrid/Pinger.cpp
+@@ -405,7 +405,7 @@ void Pinger::PIcmpErr(LPCTSTR pszMsg, DWORD nICMPErr)
+ 	bool b = (nICMPErr >= IP_STATUS_BASE && nICMPErr < IP_STATUS_BASE + _countof(aszSendEchoErr));
+ 	theApp.QueueDebugLogLine(false, _T("%sPinger: %s")
+ 		, pszMsg ? pszMsg : _T("")
+-		, (LPCTSTR)(b ? aszSendEchoErr[nICMPErr - IP_STATUS_BASE] : GetErrorMessage(nICMPErr, 1)));
++		, b ? aszSendEchoErr[nICMPErr - IP_STATUS_BASE] : (LPCTSTR)GetErrorMessage(nICMPErr, 1));
+ #else
+ 	DWORD dwSize = 511;
+ 	CStringW sErr;
+diff --git a/srchybrid/Server.cpp b/srchybrid/Server.cpp
+index 1659d9f..cfac7ed 100644
+--- a/srchybrid/Server.cpp
++++ b/srchybrid/Server.cpp
+@@ -248,7 +248,7 @@ bool CServer::AddTagFromFile(CFileDataIO &servermet)
+ 
+ LPCTSTR CServer::GetAddress() const
+ {
+-	return m_strDynIP.IsEmpty() ? ipfull : m_strDynIP;
++	return m_strDynIP.IsEmpty() ? ipfull : (LPCTSTR)m_strDynIP;
+ }
+ 
+ void CServer::SetIP(uint32 newip)
+diff --git a/srchybrid/SharedFilesCtrl.cpp b/srchybrid/SharedFilesCtrl.cpp
+index e9a69b1..e0ba896 100644
+--- a/srchybrid/SharedFilesCtrl.cpp
++++ b/srchybrid/SharedFilesCtrl.cpp
+@@ -1761,7 +1761,7 @@ BOOL CSharedFilesCtrl::CShareDropTarget::OnDrop(CWnd*, COleDataObject *pDataObje
+ 					VERIFY(theApp.emuledlg->sharedfileswnd->m_ctlSharedDirTree.ShowFileSystemDirectory(strSingleDirectory));
+ 				} else if (!liToAddDirs.IsEmpty() && !bHaveFiles) {
+ 					// only directories added, if only one select the specific shared dir, otherwise the Shared Directories section
+-					const CString &sShow(liToAddDirs.GetCount() == 1 ? liToAddDirs.GetHead() : _T(""));
++					const CString &sShow(liToAddDirs.GetCount() == 1 ? liToAddDirs.GetHead() : CString());
+ 					theApp.emuledlg->sharedfileswnd->m_ctlSharedDirTree.ShowSharedDirectory(sShow);
+ 				} else {
+ 					// otherwise select the All Shared Files category
+diff --git a/srchybrid/SharedFilesWnd.cpp b/srchybrid/SharedFilesWnd.cpp
+index 4c27606..1013db2 100644
+--- a/srchybrid/SharedFilesWnd.cpp
++++ b/srchybrid/SharedFilesWnd.cpp
+@@ -421,7 +421,7 @@ void CSharedFilesWnd::ShowSelectedFilesDetails(bool bForce)
+ 			}
+ 		}
+ 		static_cast<CStatic*>(GetDlgItem(IDC_SF_FICON))->SetIcon(pFile ? icon_files : NULL);
+-		const CString &sName(pFile ? pFile->GetFileName() : _T(""));
++		const CString &sName(pFile ? pFile->GetFileName() : CString());
+ 		SetDlgItemText(IDC_SF_FNAME, sName);
+ 	}
+ 	if (bForce || nItems != (UINT)selectedList.GetCount())
