@@ -19,14 +19,9 @@ jobs:
     runs-on: windows-latest
     strategy:
       fail-fast: false
-      # TEMPORARY (v0.72a-cpp23 bring-up): trimmed from the full
-      # [x64, Win32, ARM64] x [Debug, Release] matrix down to the single
-      # configuration used to discover the C++23 build breaks, so each
-      # iteration costs one MFC build instead of six and the logs stay
-      # readable. RESTORE THE FULL MATRIX before this branch is merged back.
       matrix:
-        platform: [x64]
-        configuration: [Release]
+        platform: [x64, Win32, ARM64]
+        configuration: [Debug, Release]
 
     steps:
       - name: Pin deterministic line endings before checkout
