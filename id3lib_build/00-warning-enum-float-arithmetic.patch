@@ -1,0 +1,32 @@
+diff --git a/src/mp3_parse.cpp b/src/mp3_parse.cpp
+index fca681b..569d892 100644
+--- a/src/mp3_parse.cpp
++++ b/src/mp3_parse.cpp
+@@ -357,12 +357,16 @@ bool Mp3Info::Parse(ID3_Reader& reader, size_t mp3size)
+   }
+ 
+ //http://www.mp3-tech.org/programmer/frame_header.html
++  // C5055: 'bitrate' is the enum MP3_BitRates, and arithmetic mixing an
++  // enumeration with a floating-point type is deprecated since C++20. The
++  // conversion the compiler was doing implicitly is spelled out instead;
++  // the value is unchanged. 'frequency' is a plain uint32 and needs nothing.
+   if (_mp3_header_output->bitrate != MP3BITRATE_NONE && _mp3_header_output->frequency != MP3FREQUENCIES_FALSE)
+   {
+     if (_mp3_header_output->layer == MPEGLAYER_I)
+-      _mp3_header_output->framesize = fto_nearest_i((48.0f * _mp3_header_output->bitrate) / _mp3_header_output->frequency) + (_tmpheader->padding_bit ? 4 : 0);
++      _mp3_header_output->framesize = fto_nearest_i((48.0f * (float)_mp3_header_output->bitrate) / _mp3_header_output->frequency) + (_tmpheader->padding_bit ? 4 : 0);
+     else
+-      _mp3_header_output->framesize = fto_nearest_i((144.0f * _mp3_header_output->bitrate) / _mp3_header_output->frequency) + (_tmpheader->padding_bit ? 1 : 0);
++      _mp3_header_output->framesize = fto_nearest_i((144.0f * (float)_mp3_header_output->bitrate) / _mp3_header_output->frequency) + (_tmpheader->padding_bit ? 1 : 0);
+   }
+   else
+     _mp3_header_output->framesize = 0; //unable to determine
+@@ -408,7 +412,7 @@ bool Mp3Info::Parse(ID3_Reader& reader, size_t mp3size)
+   {
+     _mp3_header_output->frames = fto_nearest_i((float)mp3size / _mp3_header_output->framesize);
+     // bit rate becomes byte rate (per second) if divided by 8
+-    _mp3_header_output->time = fto_nearest_i( mp3size / (_mp3_header_output->bitrate / 8.0f) );
++    _mp3_header_output->time = fto_nearest_i( mp3size / ((float)_mp3_header_output->bitrate / 8.0f) );
+   }
+   else
+   {

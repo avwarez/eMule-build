@@ -170,14 +170,19 @@ endif()
 set_target_properties(cryptopp PROPERTIES
     OUTPUT_NAME "cryptlib"
     MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
-    INTERPROCEDURAL_OPTIMIZATION ON               # WholeProgramOptimization=true
-    # ImageHasSafeExceptionHandlers=true, Win32 only (cryptlib.vcxproj's own
-    # <Lib> settings) - STATIC_LIBRARY_OPTIONS is CMake's documented way to
-    # pass extra flags straight to the librarian (lib.exe here), same tool
-    # this property targets in the vcxproj. Harmless to request on x64/ARM64
-    # too, but scoped to Win32 for fidelity with the vcxproj, which only sets
-    # it under its Win32 <ItemDefinitionGroup>.
-    STATIC_LIBRARY_OPTIONS "$<$<STREQUAL:${_cryptopp_platform},Win32>:/SAFESEH>"
+    # WholeProgramOptimization=true. The vcxproj sets it under "All
+    # Configurations", Debug included; we deliberately depart from that and
+    # keep it to Release. In Debug the linker was discarding /INCREMENTAL to
+    # honour the /LTCG that cryptlib.lib's IL objects force on the emule.exe
+    # link (LNK4075), so Debug paid for whole-program optimization *and* lost
+    # incremental linking - the worst of both for a debug build.
+    INTERPROCEDURAL_OPTIMIZATION_RELEASE ON
+    # No /SAFESEH here: lib.exe does not accept it and answered with LNK4044
+    # ("unrecognized option; ignored") on both Win32 configurations. What the
+    # emule.exe link actually needs is that the hand-written asm objects be
+    # marked safeseh-compatible, and that comes from /safeseh on the assembler
+    # itself (see the custom-build options further up). The exe link keeps its
+    # own /SAFESEH in emule_build/CMakeLists.txt, where it is a real option.
 )
 
 target_include_directories(cryptopp PUBLIC "${CRYPTOPP_SRC_DIR}")
@@ -238,9 +243,14 @@ endif()
 # chacha_avx.cpp: EnableEnhancedInstructionSet=AdvancedVectorExtensions2 for
 # this one file only (excluded on the pre-2013 toolsets the vcxproj still
 # guards for; not applicable to any toolset we target).
-set_source_files_properties("${CRYPTOPP_SRC_DIR}/chacha_avx.cpp" PROPERTIES
-    COMPILE_OPTIONS "$<$<CXX_COMPILER_ID:MSVC>:/arch:AVX2>"
-)
+# /arch: is an x86 switch; on ARM64 cl answered D9002 ("ignoring unknown
+# option") once per configuration. The file still compiles there, just
+# through its generic path.
+if(_cryptopp_platform STREQUAL "Win32" OR _cryptopp_platform STREQUAL "x64")
+    set_source_files_properties("${CRYPTOPP_SRC_DIR}/chacha_avx.cpp" PROPERTIES
+        COMPILE_OPTIONS "$<$<CXX_COMPILER_ID:MSVC>:/arch:AVX2>"
+    )
+endif()
 
 target_precompile_headers(cryptopp PRIVATE "${CRYPTOPP_SRC_DIR}/pch.h")
 # dll.cpp/iterhash.cpp: <PrecompiledHeader /> (NotUsing) in the vcxproj.
