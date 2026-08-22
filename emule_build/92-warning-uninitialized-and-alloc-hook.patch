@@ -12,33 +12,36 @@ index 853c775..dece069 100644
  	bool bTimerValid = QueryPerformanceFrequency(&nFrequency);
  	if (bTimerValid)
 diff --git a/srchybrid/Emule.cpp b/srchybrid/Emule.cpp
-index 9bda13f..7ee1b1b 100644
+index 9bda13f..b16b9ad 100644
 --- a/srchybrid/Emule.cpp
 +++ b/srchybrid/Emule.cpp
-@@ -100,7 +100,11 @@ bool g_bLowColorDesktop = false;
+@@ -620,8 +620,10 @@ BOOL CemuleApp::InitInstance()
+ 
+ 	::CloseHandle(m_hMutexOneInstance);
  #ifdef _DEBUG
- static CMemoryState oldMemState, newMemState, diffMemState;
+-	if (g_pfnPrevCrtAllocHook)
++	if (g_pfnPrevCrtAllocHook) {
++		#pragma warning(suppress: 5039)	// _CrtSetAllocHook is extern "C"; the CRT's previous hook is not ours to qualify
+ 		_CrtSetAllocHook(g_pfnPrevCrtAllocHook);
++	}
  
--_CRT_ALLOC_HOOK g_pfnPrevCrtAllocHook = NULL;
-+// C5039: _CrtSetAllocHook is extern "C" and takes a plain, potentially throwing
-+// function pointer. Keeping our copy noexcept-qualified tells the compiler the hook
-+// cannot throw; the implicit conversion to _CRT_ALLOC_HOOK at the call sites is fine.
-+typedef int(__cdecl *PFN_CRT_ALLOC_HOOK_NOEXCEPT)(int, void*, size_t, int, long, const unsigned char*, int) noexcept;
-+PFN_CRT_ALLOC_HOOK_NOEXCEPT g_pfnPrevCrtAllocHook = NULL;
- CMap<const unsigned char*, const unsigned char*, UINT, UINT> g_allocations;
- int eMuleAllocHook(int mode, void *pUserData, size_t nSize, int nBlockUse, long lRequest, const unsigned char *pszFileName, int nLine) noexcept;
- 
-@@ -415,7 +419,7 @@ BOOL CemuleApp::InitInstance()
- 	oldMemState.Checkpoint();
- 	// Installing that memory debug code works fine in Debug builds when running within VS Debugger,
- 	// but some other test applications don't like that all....
--	//g_pfnPrevCrtAllocHook = _CrtSetAllocHook(&eMuleAllocHook);
-+	//g_pfnPrevCrtAllocHook = (PFN_CRT_ALLOC_HOOK_NOEXCEPT)_CrtSetAllocHook(&eMuleAllocHook);
- #endif
- 	//afxMemDF = allocMemDF | delayFreeMemDF;
- 
+ 	newMemState.Checkpoint();
+ 	if (diffMemState.Difference(oldMemState, newMemState)) {
+@@ -672,10 +674,12 @@ int eMuleAllocHook(int mode, void *pUserData, size_t nSize, int nBlockUse, long
+ 	if (!g_allocations.Lookup(pszFileName, count))
+ 		count = 0;
+ 	if (mode == _HOOK_ALLOC) {
++		#pragma warning(suppress: 5039)	// _CrtSetAllocHook is extern "C"; the CRT's previous hook is not ours to qualify
+ 		_CrtSetAllocHook(g_pfnPrevCrtAllocHook);
+ 		g_allocations[pszFileName] = count + 1;
+ 		_CrtSetAllocHook(&eMuleAllocHook);
+ 	} else if (mode == _HOOK_FREE) {
++		#pragma warning(suppress: 5039)	// _CrtSetAllocHook is extern "C"; the CRT's previous hook is not ours to qualify
+ 		_CrtSetAllocHook(g_pfnPrevCrtAllocHook);
+ 		g_allocations[pszFileName] = count - 1;
+ 		_CrtSetAllocHook(&eMuleAllocHook);
 diff --git a/srchybrid/WebServer.cpp b/srchybrid/WebServer.cpp
-index 039d322..8131dfa 100644
+index f737842..c380ea5 100644
 --- a/srchybrid/WebServer.cpp
 +++ b/srchybrid/WebServer.cpp
 @@ -458,7 +458,7 @@ void CWebServer::_ProcessURL(const ThreadData &Data)
