@@ -1,22 +1,50 @@
 diff --git a/srchybrid/OtherFunctions.cpp b/srchybrid/OtherFunctions.cpp
-index 5189e35..081826f 100644
+index 5189e35..cd54b16 100644
 --- a/srchybrid/OtherFunctions.cpp
 +++ b/srchybrid/OtherFunctions.cpp
-@@ -3196,7 +3196,7 @@ int __cdecl CompareCStringPtrLocaleString(const void *p1, const void *p2)
+@@ -15,6 +15,7 @@
+ //along with this program; if not, write to the Free Software
+ //Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ #include "stdafx.h"
++#include <algorithm>
+ #include <atlimage.h>
+ #include <fcntl.h>
+ #include <io.h>
+@@ -3196,9 +3197,21 @@ int __cdecl CompareCStringPtrLocaleString(const void *p1, const void *p2)
  	return CompareLocaleString(*(CString*)p1, *(CString*)p2);
  }
  
 -void Sort(CStringArray &astr, int(__cdecl *pfnCompare)(const void*, const void*) noexcept)
++// Since C++17 noexcept is part of a function type, so the noexcept-qualified
++// parameter these two used to carry no longer matched their declarations in
++// OtherFunctions.h, which never had it. Dropping qsort settles that at the root:
++// std::sort takes a typed callable, so no function pointer crosses an extern "C"
++// boundary (this is also what warning C5039 was about), the element size comes
++// from the element type instead of the hand-written sizeof(CString*) - the
++// elements are CString objects, and that only ever worked because
++// sizeof(CString) == sizeof(void*) - and the elements are moved through their own
++// operators rather than copied bytewise, which is not something qsort may do to a
++// reference-counted type.
 +void Sort(CStringArray &astr, int(__cdecl *pfnCompare)(const void*, const void*))
  {
- 	qsort(astr.GetData(), astr.GetCount(), sizeof(CString*), pfnCompare);
+-	qsort(astr.GetData(), astr.GetCount(), sizeof(CString*), pfnCompare);
++	CString *const pFirst = astr.GetData();
++	std::sort(pFirst, pFirst + astr.GetCount()
++		, [pfnCompare](const CString &rstr1, const CString &rstr2) { return pfnCompare(&rstr1, &rstr2) < 0; });
  }
-@@ -3211,7 +3211,7 @@ int __cdecl CompareCStringPtrPtrLocaleString(const void *p1, const void *p2)
+ 
+ int __cdecl CompareCStringPtrPtrLocaleStringNoCase(const void *p1, const void *p2)
+@@ -3211,9 +3224,11 @@ int __cdecl CompareCStringPtrPtrLocaleString(const void *p1, const void *p2)
  	return CompareLocaleString(**(CString**)p1, **(CString**)p2);
  }
  
 -void Sort(CSimpleArray<const CString*> &apstr, int(__cdecl *pfnCompare)(const void*, const void*) noexcept)
 +void Sort(CSimpleArray<const CString*> &apstr, int(__cdecl *pfnCompare)(const void*, const void*))
  {
- 	qsort(apstr.GetData(), apstr.GetSize(), sizeof(CString*), pfnCompare);
+-	qsort(apstr.GetData(), apstr.GetSize(), sizeof(CString*), pfnCompare);
++	const CString **const ppFirst = apstr.GetData();
++	std::sort(ppFirst, ppFirst + apstr.GetSize()
++		, [pfnCompare](const CString *pstr1, const CString *pstr2) { return pfnCompare(&pstr1, &pstr2) < 0; });
  }
+ 
+ // SLUGFILLER: heapsortCompletesrc

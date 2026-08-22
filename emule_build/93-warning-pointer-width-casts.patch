@@ -1,3 +1,31 @@
+diff --git a/srchybrid/Emule.cpp b/srchybrid/Emule.cpp
+index b16b9ad..e5deb51 100644
+--- a/srchybrid/Emule.cpp
++++ b/srchybrid/Emule.cpp
+@@ -986,7 +986,7 @@ int CemuleApp::GetFileTypeSystemImageIdx(LPCTSTR pszFilePath, int iLength /* = -
+ 			m_hBigSystemImageList = hResult;
+ 
+ 			// Store icon index in local cache
+-			m_aBigExtToSysImgIdx[pszCacheExt] = (LPVOID)sfi.iIcon;
++			m_aBigExtToSysImgIdx[pszCacheExt] = IntToPtr(sfi.iIcon);
+ 			return sfi.iIcon;
+ 		}
+ 	} else if (!m_aExtToSysImgIdx.Lookup(pszCacheExt, vData)) {
+@@ -1000,12 +1000,12 @@ int CemuleApp::GetFileTypeSystemImageIdx(LPCTSTR pszFilePath, int iLength /* = -
+ 		m_hSystemImageList = hResult;
+ 
+ 		// Store icon index in local cache
+-		m_aExtToSysImgIdx[pszCacheExt] = (LPVOID)sfi.iIcon;
++		m_aExtToSysImgIdx[pszCacheExt] = IntToPtr(sfi.iIcon);
+ 		return sfi.iIcon;
+ 	}
+ 
+ 	// Return already cached value
+-	return reinterpret_cast<int>(vData);
++	return PtrToInt(vData);
+ }
+ 
+ bool CemuleApp::IsConnected(bool bIgnoreEd2k, bool bIgnoreKad)
 diff --git a/srchybrid/OScopeCtrl.cpp b/srchybrid/OScopeCtrl.cpp
 index a744157..9b3e6ce 100644
 --- a/srchybrid/OScopeCtrl.cpp
@@ -12,7 +40,7 @@ index a744157..9b3e6ce 100644
  		InvalidateCtrl();
  	InitWindowStyles(this);
 diff --git a/srchybrid/Preview.cpp b/srchybrid/Preview.cpp
-index a200027..06286fe 100644
+index 953ca77..5da5635 100644
 --- a/srchybrid/Preview.cpp
 +++ b/srchybrid/Preview.cpp
 @@ -285,8 +285,10 @@ void ExecutePartFile(CPartFile *file, LPCTSTR pszCommand, LPCTSTR pszCommandArgs
@@ -37,6 +65,25 @@ index a200027..06286fe 100644
  		if (*strSysErrMsg)
  			strMsg.AppendFormat(_T("\r\n\r\n%s"), strSysErrMsg);
  
+diff --git a/srchybrid/SearchList.cpp b/srchybrid/SearchList.cpp
+index ac86a9a..4aceea4 100644
+--- a/srchybrid/SearchList.cpp
++++ b/srchybrid/SearchList.cpp
+@@ -761,11 +761,11 @@ void CSearchList::KademliaSearchKeyword(uint32 nSearchID, const Kademlia::CUInt1
+ 				++tagcount;
+ 			}
+ 		} else if (uPropType == TAGTYPE_UINT32) {
+-			if ((uint32)pvPropValue != 0) {
+-				CTag tagProp(pszPropName, (uint32)pvPropValue);
++			if ((uint32)(ULONG_PTR)pvPropValue != 0) {
++				CTag tagProp(pszPropName, (uint32)(ULONG_PTR)pvPropValue);
+ 				tagProp.WriteTagToFile(temp, eStrEncode);
+ 				++tagcount;
+-				verifierEntry.AddTag(new Kademlia::CKadTagUInt(pszPropName, (uint32)pvPropValue));
++				verifierEntry.AddTag(new Kademlia::CKadTagUInt(pszPropName, (uint32)(ULONG_PTR)pvPropValue));
+ 			}
+ 		} else
+ 			ASSERT(0);
 diff --git a/srchybrid/SharedDirsTreeCtrl.cpp b/srchybrid/SharedDirsTreeCtrl.cpp
 index 7e57bc6..5637d9e 100644
 --- a/srchybrid/SharedDirsTreeCtrl.cpp
@@ -51,7 +98,7 @@ index 7e57bc6..5637d9e 100644
  
  		m_SharedFilesMenu.EnableMenuItem(MP_OPENFOLDER, !pSelectedDir->m_strFullPath.IsEmpty() || pSelectedDir->m_eItemType == SDI_INCOMING || pSelectedDir->m_eItemType == SDI_TEMP || pSelectedDir->m_eItemType == SDI_CATINCOMING ? MF_ENABLED : MF_GRAYED);
 diff --git a/srchybrid/SharedFilesCtrl.cpp b/srchybrid/SharedFilesCtrl.cpp
-index 75f82da..46d0589 100644
+index b4cfdd8..e29160b 100644
 --- a/srchybrid/SharedFilesCtrl.cpp
 +++ b/srchybrid/SharedFilesCtrl.cpp
 @@ -737,7 +737,7 @@ void CSharedFilesCtrl::OnContextMenu(CWnd*, CPoint point)
@@ -76,3 +123,25 @@ index 2e767ae..3c450d5 100644
  		, 0));
  	if (!CWnd::CreateEx(0
  				, strClassName
+diff --git a/srchybrid/TitledMenu.cpp b/srchybrid/TitledMenu.cpp
+index 506bdbc..e8ba715 100644
+--- a/srchybrid/TitledMenu.cpp
++++ b/srchybrid/TitledMenu.cpp
+@@ -322,7 +322,7 @@ void CTitledMenu::SetMenuBitmap(UINT nFlags, UINT nIDNewItem, LPCTSTR /*lpszNewI
+ 		int nPos;
+ 		void *pvIndex;
+ 		if (m_mapIconNameToIconIdx.Lookup(strIconLower, pvIndex)) {
+-			nPos = (int)pvIndex;
++			nPos = PtrToInt(pvIndex);
+ 			m_mapMenuIdToIconIdx[nIDNewItem] = nPos;
+ 		} else {
+ 			HICON hIcon = theApp.LoadIcon(strIconLower);
+@@ -330,7 +330,7 @@ void CTitledMenu::SetMenuBitmap(UINT nFlags, UINT nIDNewItem, LPCTSTR /*lpszNewI
+ 				return;
+ 			nPos = m_ImageList.Add(hIcon);
+ 			if (nPos >= 0) {
+-				m_mapIconNameToIconIdx[strIconLower] = (void*)nPos;
++				m_mapIconNameToIconIdx[strIconLower] = IntToPtr(nPos);
+ 				m_mapMenuIdToIconIdx[nIDNewItem] = nPos;
+ 			}
+ 			VERIFY(::DestroyIcon(hIcon));

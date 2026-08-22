@@ -184,11 +184,12 @@ target_compile_options(emule PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/external:anglebrackets>
     $<$<CXX_COMPILER_ID:MSVC>:/external:W0>
     $<$<CXX_COMPILER_ID:MSVC>:/external:I${CMAKE_SOURCE_DIR}/cryptopp>
-    # C4191 ('unsafe conversion from void (CWnd::*)(...) to AFX_PMSGW') is
-    # emitted inside our .cpp files because that is where MFC's ON_WM_* macros
-    # expand, so /external cannot reach it: 66 unique hits, one per message map
-    # entry, all of them the macro doing what it is designed to do.
-    $<$<CXX_COMPILER_ID:MSVC>:/wd4191>
+    # C4755 comes from atlmfc/atlalloc.h but is emitted by the optimizer during
+    # code generation, where the warning is no longer attributed to the include
+    # that produced it - so /external:W0 above does not reach it (confirmed by a
+    # build). It reports that an inlined comparison in CStringT cannot take one
+    # of its branches, which is not actionable in a header we do not own.
+    $<$<CXX_COMPILER_ID:MSVC>:/wd4755>
     $<$<CXX_COMPILER_ID:MSVC>:/Zc:throwingNew>
     $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<STREQUAL:${EMULE_PLATFORM_DIR},ARM64>>:/Zc:enumTypes>
     $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Debug>>:/RTC1>
