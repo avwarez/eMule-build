@@ -1,0 +1,78 @@
+diff --git a/srchybrid/OScopeCtrl.cpp b/srchybrid/OScopeCtrl.cpp
+index a744157..9b3e6ce 100644
+--- a/srchybrid/OScopeCtrl.cpp
++++ b/srchybrid/OScopeCtrl.cpp
+@@ -181,7 +181,7 @@ BOOL COScopeCtrl::CreateWnd(DWORD dwStyle, const CRect &rect, CWnd *pParentWnd,
+ 							WS_EX_STATICEDGE	// lightweight border
+ 							, className, NULL, dwStyle
+ 							, rect.left, rect.top, rect.Width() + 1, rect.Height() + 1
+-							, pParentWnd->GetSafeHwnd(), (HMENU)nID);
++							, pParentWnd->GetSafeHwnd(), (HMENU)(UINT_PTR)nID);
+ 	if (result != 0)
+ 		InvalidateCtrl();
+ 	InitWindowStyles(this);
+diff --git a/srchybrid/Preview.cpp b/srchybrid/Preview.cpp
+index a200027..06286fe 100644
+--- a/srchybrid/Preview.cpp
++++ b/srchybrid/Preview.cpp
+@@ -285,8 +285,10 @@ void ExecutePartFile(CPartFile *file, LPCTSTR pszCommand, LPCTSTR pszCommandArgs
+ 	TRACE(_T("  Command =%s\n"), (LPCTSTR)strCommand);
+ 	TRACE(_T("  Args    =%s\n"), (LPCTSTR)strArgs);
+ 	TRACE(_T("  Dir     =%s\n"), (LPCTSTR)strCommandDir);
+-	DWORD dwError = (DWORD)::ShellExecute(NULL, pszVerb, strCommand, strArgs.IsEmpty() ? NULL : (LPCTSTR)strArgs, strCommandDir.IsEmpty() ? NULL : (LPCTSTR)strCommandDir, SW_SHOWNORMAL);
+-	if (dwError <= 32) {
++	// C4311/C4302: ShellExecute returns an HINSTANCE-typed status code; on Win64 it
++	// must be taken at pointer width before being compared against the <=32 error range.
++	INT_PTR nExecResult = (INT_PTR)::ShellExecute(NULL, pszVerb, strCommand, strArgs.IsEmpty() ? NULL : (LPCTSTR)strArgs, strCommandDir.IsEmpty() ? NULL : (LPCTSTR)strCommandDir, SW_SHOWNORMAL);
++	if (nExecResult <= 32) {
+ 		//
+ 		// Unfortunately, Windows may already have shown an error dialog which tells
+ 		// the user about the failed 'ShellExecute' call. *BUT* that error dialog is not
+@@ -306,7 +308,7 @@ void ExecutePartFile(CPartFile *file, LPCTSTR pszCommand, LPCTSTR pszCommandArgs
+ 		CString strMsg;
+ 		strMsg.Format(_T("Failed to execute: %s %s"), (LPCTSTR)strCommand, (LPCTSTR)strArgs);
+ 
+-		LPCTSTR strSysErrMsg = GetShellExecuteErrMsg(dwError);
++		LPCTSTR strSysErrMsg = GetShellExecuteErrMsg((DWORD)nExecResult);
+ 		if (*strSysErrMsg)
+ 			strMsg.AppendFormat(_T("\r\n\r\n%s"), strSysErrMsg);
+ 
+diff --git a/srchybrid/SharedDirsTreeCtrl.cpp b/srchybrid/SharedDirsTreeCtrl.cpp
+index 7e57bc6..5637d9e 100644
+--- a/srchybrid/SharedDirsTreeCtrl.cpp
++++ b/srchybrid/SharedDirsTreeCtrl.cpp
+@@ -505,7 +505,7 @@ void CSharedDirsTreeCtrl::OnContextMenu(CWnd*, CPoint point)
+ 		// - even if it can be done in other ways if the user really wants to do it
+ 		bool bWideRangeSelection = (pSelectedDir->m_nCatFilter == -1 && pSelectedDir->m_eItemType != SDI_NO);
+ 
+-		m_SharedFilesMenu.EnableMenuItem((UINT)m_PrioMenu.m_hMenu, iSelectedItems > 0 ? MF_ENABLED : MF_GRAYED);
++		m_SharedFilesMenu.EnableMenuItem(HandleToULong(m_PrioMenu.m_hMenu), iSelectedItems > 0 ? MF_ENABLED : MF_GRAYED);
+ 		m_PrioMenu.CheckMenuRadioItem(MP_PRIOVERYLOW, MP_PRIOAUTO, uPrioMenuItem, 0);
+ 
+ 		m_SharedFilesMenu.EnableMenuItem(MP_OPENFOLDER, !pSelectedDir->m_strFullPath.IsEmpty() || pSelectedDir->m_eItemType == SDI_INCOMING || pSelectedDir->m_eItemType == SDI_TEMP || pSelectedDir->m_eItemType == SDI_CATINCOMING ? MF_ENABLED : MF_GRAYED);
+diff --git a/srchybrid/SharedFilesCtrl.cpp b/srchybrid/SharedFilesCtrl.cpp
+index 75f82da..46d0589 100644
+--- a/srchybrid/SharedFilesCtrl.cpp
++++ b/srchybrid/SharedFilesCtrl.cpp
+@@ -737,7 +737,7 @@ void CSharedFilesCtrl::OnContextMenu(CWnd*, CPoint point)
+ 		bFirstItem = false;
+ 	}
+ 
+-	m_SharedFilesMenu.EnableMenuItem((UINT)m_PrioMenu.m_hMenu, (!bContainsShareableFiles && iSelectedItems > 0) ? MF_ENABLED : MF_GRAYED);
++	m_SharedFilesMenu.EnableMenuItem(HandleToULong(m_PrioMenu.m_hMenu), (!bContainsShareableFiles && iSelectedItems > 0) ? MF_ENABLED : MF_GRAYED);
+ 	m_PrioMenu.CheckMenuRadioItem(MP_PRIOVERYLOW, MP_PRIOAUTO, uPrioMenuItem, 0);
+ 
+ 	bool bSingleCompleteFileSelected = (iSelectedItems == 1 && (iCompleteFileSelected == 1 || bContainsOnlyShareableFile));
+diff --git a/srchybrid/SmileySelector.cpp b/srchybrid/SmileySelector.cpp
+index 2e767ae..3c450d5 100644
+--- a/srchybrid/SmileySelector.cpp
++++ b/srchybrid/SmileySelector.cpp
+@@ -96,7 +96,7 @@ BOOL CSmileySelector::CreateWnd(CWnd *pWndParent, LPCRECT pRect, CEdit *pwndEdit
+ 	COLORREF crBackground = (::IsAppThemed() && ::IsThemeActive()) ? COLOR_WINDOW : COLOR_BTNFACE;
+ 	static const CString &strClassName(AfxRegisterWndClass(
+ 		CS_CLASSDC | CS_SAVEBITS | CS_HREDRAW | CS_VREDRAW
+-		, AfxGetApp()->LoadStandardCursor(IDC_ARROW), (HBRUSH)(crBackground + 1)
++		, AfxGetApp()->LoadStandardCursor(IDC_ARROW), (HBRUSH)(UINT_PTR)(crBackground + 1)
+ 		, 0));
+ 	if (!CWnd::CreateEx(0
+ 				, strClassName
