@@ -225,19 +225,6 @@ set_source_files_properties("${EMULE_SRC_DIR}/Scanner.cpp" PROPERTIES
     COMPILE_OPTIONS "$<$<CXX_COMPILER_ID:MSVC>:/wd5033;/wd5262>"
 )
 
-# ESPERIMENTO C4191 (braccio C): /wd4191 per singolo sorgente. Le message map
-# MFC producono una C4191 per mappa (22 in tutto) e finora nessuna soppressione
-# le ha chiuse: ne' /wd4191 sulla riga di comando del progetto, ne' la
-# #pragma warning(disable:4191) di Stdafx.h:93, ne' la stessa pragma ripetuta
-# dopo gli include MFC. Questa run confronta tre meccanismi su tre file:
-#   A ChatSelector.cpp        push/disable/pop attorno alla message map (patch 94)
-#   B ClientDetailDialog.cpp  warning(suppress:4191) sulla riga (patch 94)
-#   C ChatWnd.cpp             /wd4191 per sorgente (qui)
-# Gli altri 19 file restano di controllo. Da rimuovere una volta noto l'esito.
-set_source_files_properties("${EMULE_SRC_DIR}/ChatWnd.cpp" PROPERTIES
-    COMPILE_OPTIONS "$<$<CXX_COMPILER_ID:MSVC>:/wd4191>"
-)
-
 # ---------------------------------------------------------------------------
 # Linking
 # ---------------------------------------------------------------------------

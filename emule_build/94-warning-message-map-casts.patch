@@ -1,0 +1,447 @@
+diff --git a/srchybrid/ChatSelector.cpp b/srchybrid/ChatSelector.cpp
+index 1fc309a..a22ca7e 100644
+--- a/srchybrid/ChatSelector.cpp
++++ b/srchybrid/ChatSelector.cpp
+@@ -63,6 +63,8 @@ CChatItem::~CChatItem()
+ 
+ IMPLEMENT_DYNAMIC(CChatSelector, CClosableTabCtrl)
+ 
++#pragma warning(push)
++#pragma warning(disable:4191) // MFC message maps cast every handler to AFX_PMSG; only a pragma inside the .cpp reaches this
+ BEGIN_MESSAGE_MAP(CChatSelector, CClosableTabCtrl)
+ 	ON_WM_SIZE()
+ 	ON_WM_DESTROY()
+@@ -71,6 +73,7 @@ BEGIN_MESSAGE_MAP(CChatSelector, CClosableTabCtrl)
+ 	ON_NOTIFY_REFLECT(TCN_SELCHANGE, OnTcnSelChangeChatSel)
+ 	ON_WM_CONTEXTMENU()
+ END_MESSAGE_MAP()
++#pragma warning(pop)
+ 
+ CChatSelector::CChatSelector()
+ 	: m_pParent()
+diff --git a/srchybrid/ChatWnd.cpp b/srchybrid/ChatWnd.cpp
+index ff9e808..b577440 100644
+--- a/srchybrid/ChatWnd.cpp
++++ b/srchybrid/ChatWnd.cpp
+@@ -44,6 +44,8 @@ static char THIS_FILE[] = __FILE__;
+ 
+ IMPLEMENT_DYNAMIC(CChatWnd, CDialog)
+ 
++#pragma warning(push)
++#pragma warning(disable:4191) // MFC message maps cast every handler to AFX_PMSG; only a pragma inside the .cpp reaches this
+ BEGIN_MESSAGE_MAP(CChatWnd, CResizableDialog)
+ 	ON_WM_KEYDOWN()
+ 	ON_WM_SHOWWINDOW()
+@@ -58,6 +60,7 @@ BEGIN_MESSAGE_MAP(CChatWnd, CResizableDialog)
+ 	ON_BN_CLICKED(IDC_CSEND, OnBnClickedSend)
+ 	ON_BN_CLICKED(IDC_CCLOSE, OnBnClickedClose)
+ END_MESSAGE_MAP()
++#pragma warning(pop)
+ 
+ CChatWnd::CChatWnd(CWnd *pParent /*=NULL*/)
+ 	: CResizableDialog(CChatWnd::IDD, pParent)
+diff --git a/srchybrid/ClientDetailDialog.cpp b/srchybrid/ClientDetailDialog.cpp
+index 96886ae..2ca88e5 100644
+--- a/srchybrid/ClientDetailDialog.cpp
++++ b/srchybrid/ClientDetailDialog.cpp
+@@ -40,9 +40,12 @@ static char THIS_FILE[] = __FILE__;
+ 
+ IMPLEMENT_DYNAMIC(CClientDetailPage, CResizablePage)
+ 
++#pragma warning(push)
++#pragma warning(disable:4191) // MFC message maps cast every handler to AFX_PMSG; only a pragma inside the .cpp reaches this
+ BEGIN_MESSAGE_MAP(CClientDetailPage, CResizablePage)
+ 	ON_MESSAGE(UM_DATA_CHANGED, OnDataChanged)
+ END_MESSAGE_MAP()
++#pragma warning(pop)
+ 
+ CClientDetailPage::CClientDetailPage()
+ 	: CResizablePage(CClientDetailPage::IDD)
+diff --git a/srchybrid/ClientListCtrl.cpp b/srchybrid/ClientListCtrl.cpp
+index 6620292..df9d932 100644
+--- a/srchybrid/ClientListCtrl.cpp
++++ b/srchybrid/ClientListCtrl.cpp
+@@ -39,6 +39,8 @@ static char THIS_FILE[] = __FILE__;
+ 
+ IMPLEMENT_DYNAMIC(CClientListCtrl, CMuleListCtrl)
+ 
++#pragma warning(push)
++#pragma warning(disable:4191) // MFC message maps cast every handler to AFX_PMSG; only a pragma inside the .cpp reaches this
+ BEGIN_MESSAGE_MAP(CClientListCtrl, CMuleListCtrl)
+ 	ON_NOTIFY_REFLECT(LVN_COLUMNCLICK, OnLvnColumnClick)
+ 	ON_NOTIFY_REFLECT(LVN_GETDISPINFO, OnLvnGetDispInfo)
+@@ -46,6 +48,7 @@ BEGIN_MESSAGE_MAP(CClientListCtrl, CMuleListCtrl)
+ 	ON_WM_CONTEXTMENU()
+ 	ON_WM_SYSCOLORCHANGE()
+ END_MESSAGE_MAP()
++#pragma warning(pop)
+ 
+ CClientListCtrl::CClientListCtrl()
+ 	: CListCtrlItemWalk(this)
+diff --git a/srchybrid/CollectionCreateDialog.cpp b/srchybrid/CollectionCreateDialog.cpp
+index 919bc7f..fa393b9 100644
+--- a/srchybrid/CollectionCreateDialog.cpp
++++ b/srchybrid/CollectionCreateDialog.cpp
+@@ -39,6 +39,8 @@ static char THIS_FILE[] = __FILE__;
+ 
+ IMPLEMENT_DYNAMIC(CCollectionCreateDialog, CDialog)
+ 
++#pragma warning(push)
++#pragma warning(disable:4191) // MFC message maps cast every handler to AFX_PMSG; only a pragma inside the .cpp reaches this
+ BEGIN_MESSAGE_MAP(CCollectionCreateDialog, CResizableDialog)
+ 	ON_BN_CLICKED(IDC_CCOLL_CANCEL, OnCancel)
+ 	ON_BN_CLICKED(IDC_CCOLL_SAVE, OnBnClickedOk)
+@@ -50,6 +52,7 @@ BEGIN_MESSAGE_MAP(CCollectionCreateDialog, CResizableDialog)
+ 	ON_NOTIFY(NM_DBLCLK, IDC_COLLECTIONAVAILLIST, OnNmDblClkCollectionAvailList)
+ 	ON_NOTIFY(NM_DBLCLK, IDC_COLLECTIONLISTCTRL, OnNmDblClkCollectionList)
+ END_MESSAGE_MAP()
++#pragma warning(pop)
+ 
+ CCollectionCreateDialog::CCollectionCreateDialog(CWnd *pParent /*=NULL*/)
+ 	: CResizableDialog(CCollectionCreateDialog::IDD, pParent)
+diff --git a/srchybrid/CollectionViewDialog.cpp b/srchybrid/CollectionViewDialog.cpp
+index 1d26bd1..0fa2d09 100644
+--- a/srchybrid/CollectionViewDialog.cpp
++++ b/srchybrid/CollectionViewDialog.cpp
+@@ -35,11 +35,14 @@ static char THIS_FILE[] = __FILE__;
+ 
+ IMPLEMENT_DYNAMIC(CCollectionViewDialog, CDialog)
+ 
++#pragma warning(push)
++#pragma warning(disable:4191) // MFC message maps cast every handler to AFX_PMSG; only a pragma inside the .cpp reaches this
+ BEGIN_MESSAGE_MAP(CCollectionViewDialog, CResizableDialog)
+ 	ON_BN_CLICKED(IDC_VCOLL_CLOSE, OnBnClickedOk)
+ 	ON_BN_CLICKED(IDC_VIEWCOLLECTIONDL, OnBnClickedViewCollection)
+ 	ON_NOTIFY(NM_DBLCLK, IDC_COLLECTIONVEWLIST, OnNmDblClkCollectionList)
+ END_MESSAGE_MAP()
++#pragma warning(pop)
+ 
+ CCollectionViewDialog::CCollectionViewDialog(CWnd *pParent /*=NULL*/)
+ 	: CResizableDialog(CCollectionViewDialog::IDD, pParent)
+diff --git a/srchybrid/CommentDialog.cpp b/srchybrid/CommentDialog.cpp
+index 5e5f3ef..812e16f 100644
+--- a/srchybrid/CommentDialog.cpp
++++ b/srchybrid/CommentDialog.cpp
+@@ -39,6 +39,8 @@ static char THIS_FILE[] = __FILE__;
+ 
+ IMPLEMENT_DYNAMIC(CCommentDialog, CResizablePage)
+ 
++#pragma warning(push)
++#pragma warning(disable:4191) // MFC message maps cast every handler to AFX_PMSG; only a pragma inside the .cpp reaches this
+ BEGIN_MESSAGE_MAP(CCommentDialog, CResizablePage)
+ 	ON_BN_CLICKED(IDC_RESET, OnBnClickedReset)
+ 	ON_MESSAGE(UM_DATA_CHANGED, OnDataChanged)
+@@ -49,6 +51,7 @@ BEGIN_MESSAGE_MAP(CCommentDialog, CResizablePage)
+ 	ON_WM_TIMER()
+ 	ON_WM_DESTROY()
+ END_MESSAGE_MAP()
++#pragma warning(pop)
+ 
+ CCommentDialog::CCommentDialog()
+ 	: CResizablePage(CCommentDialog::IDD)
+diff --git a/srchybrid/CommentDialogLst.cpp b/srchybrid/CommentDialogLst.cpp
+index 3db3d38..22fc5b6 100644
+--- a/srchybrid/CommentDialogLst.cpp
++++ b/srchybrid/CommentDialogLst.cpp
+@@ -37,6 +37,8 @@ static char THIS_FILE[] = __FILE__;
+ 
+ IMPLEMENT_DYNAMIC(CCommentDialogLst, CResizablePage)
+ 
++#pragma warning(push)
++#pragma warning(disable:4191) // MFC message maps cast every handler to AFX_PMSG; only a pragma inside the .cpp reaches this
+ BEGIN_MESSAGE_MAP(CCommentDialogLst, CResizablePage)
+ 	ON_BN_CLICKED(IDOK, OnBnClickedApply)
+ 	ON_BN_CLICKED(IDC_SEARCHKAD, OnBnClickedSearchKad)
+@@ -45,6 +47,7 @@ BEGIN_MESSAGE_MAP(CCommentDialogLst, CResizablePage)
+ 	ON_WM_TIMER()
+ 	ON_WM_DESTROY()
+ END_MESSAGE_MAP()
++#pragma warning(pop)
+ 
+ CCommentDialogLst::CCommentDialogLst()
+ 	: CResizablePage(CCommentDialogLst::IDD)
+diff --git a/srchybrid/CommentListCtrl.cpp b/srchybrid/CommentListCtrl.cpp
+index ba9fe65..bbb3ab7 100644
+--- a/srchybrid/CommentListCtrl.cpp
++++ b/srchybrid/CommentListCtrl.cpp
+@@ -31,11 +31,14 @@ static char THIS_FILE[]=__FILE__;
+ 
+ IMPLEMENT_DYNAMIC(CCommentListCtrl, CMuleListCtrl)
+ 
++#pragma warning(push)
++#pragma warning(disable:4191) // MFC message maps cast every handler to AFX_PMSG; only a pragma inside the .cpp reaches this
+ BEGIN_MESSAGE_MAP(CCommentListCtrl, CMuleListCtrl)
+ 	ON_NOTIFY_REFLECT(LVN_COLUMNCLICK, OnLvnColumnClick)
+ 	ON_NOTIFY_REFLECT(LVN_DELETEITEM, OnLvnDeleteItem)
+ 	ON_WM_CONTEXTMENU()
+ END_MESSAGE_MAP()
++#pragma warning(pop)
+ 
+ void CCommentListCtrl::Init()
+ {
+diff --git a/srchybrid/DownloadClientsCtrl.cpp b/srchybrid/DownloadClientsCtrl.cpp
+index a174171..7f88660 100644
+--- a/srchybrid/DownloadClientsCtrl.cpp
++++ b/srchybrid/DownloadClientsCtrl.cpp
+@@ -38,6 +38,8 @@ static char THIS_FILE[] = __FILE__;
+ 
+ IMPLEMENT_DYNAMIC(CDownloadClientsCtrl, CMuleListCtrl)
+ 
++#pragma warning(push)
++#pragma warning(disable:4191) // MFC message maps cast every handler to AFX_PMSG; only a pragma inside the .cpp reaches this
+ BEGIN_MESSAGE_MAP(CDownloadClientsCtrl, CMuleListCtrl)
+ 	ON_NOTIFY_REFLECT(LVN_COLUMNCLICK, OnLvnColumnClick)
+ 	ON_NOTIFY_REFLECT(LVN_GETDISPINFO, OnLvnGetDispInfo)
+@@ -45,6 +47,7 @@ BEGIN_MESSAGE_MAP(CDownloadClientsCtrl, CMuleListCtrl)
+ 	ON_WM_CONTEXTMENU()
+ 	ON_WM_SYSCOLORCHANGE()
+ END_MESSAGE_MAP()
++#pragma warning(pop)
+ 
+ CDownloadClientsCtrl::CDownloadClientsCtrl()
+ 	: CListCtrlItemWalk(this)
+diff --git a/srchybrid/DownloadListCtrl.cpp b/srchybrid/DownloadListCtrl.cpp
+index 8084367..9ddc504 100644
+--- a/srchybrid/DownloadListCtrl.cpp
++++ b/srchybrid/DownloadListCtrl.cpp
+@@ -57,6 +57,8 @@ IMPLEMENT_DYNAMIC(CtrlItem_Struct, CObject)
+ 
+ IMPLEMENT_DYNAMIC(CDownloadListCtrl, CMuleListCtrl)
+ 
++#pragma warning(push)
++#pragma warning(disable:4191) // MFC message maps cast every handler to AFX_PMSG; only a pragma inside the .cpp reaches this
+ BEGIN_MESSAGE_MAP(CDownloadListCtrl, CMuleListCtrl)
+ 	ON_NOTIFY_REFLECT(LVN_COLUMNCLICK, OnLvnColumnClick)
+ 	ON_NOTIFY_REFLECT(LVN_DELETEITEM, OnListModified)
+@@ -69,6 +71,7 @@ BEGIN_MESSAGE_MAP(CDownloadListCtrl, CMuleListCtrl)
+ 	ON_WM_CONTEXTMENU()
+ 	ON_WM_SYSCOLORCHANGE()
+ END_MESSAGE_MAP()
++#pragma warning(pop)
+ 
+ CDownloadListCtrl::CDownloadListCtrl()
+ 	: CDownloadListListCtrlItemWalk(this)
+diff --git a/srchybrid/EmuleDlg.cpp b/srchybrid/EmuleDlg.cpp
+index ac22135..a447594 100644
+--- a/srchybrid/EmuleDlg.cpp
++++ b/srchybrid/EmuleDlg.cpp
+@@ -123,6 +123,8 @@ static const UINT UWM_TASK_BUTTON_CREATED = RegisterWindowMessage(_T("TaskbarBut
+ 
+ IMPLEMENT_DYNAMIC(CMsgBoxException, CException)
+ 
++#pragma warning(push)
++#pragma warning(disable:4191) // MFC message maps cast every handler to AFX_PMSG; only a pragma inside the .cpp reaches this
+ BEGIN_MESSAGE_MAP(CemuleDlg, CTrayDialog)
+ 	///////////////////////////////////////////////////////////////////////////
+ 	// Windows messages
+@@ -203,6 +205,7 @@ BEGIN_MESSAGE_MAP(CemuleDlg, CTrayDialog)
+ #endif
+ 
+ END_MESSAGE_MAP()
++#pragma warning(pop)
+ 
+ CemuleDlg::CemuleDlg(CWnd *pParent /*=NULL*/)
+ 	: CTrayDialog(CemuleDlg::IDD, pParent)
+diff --git a/srchybrid/FriendListCtrl.cpp b/srchybrid/FriendListCtrl.cpp
+index eea00c1..5578de0 100644
+--- a/srchybrid/FriendListCtrl.cpp
++++ b/srchybrid/FriendListCtrl.cpp
+@@ -37,12 +37,15 @@ static char THIS_FILE[] = __FILE__;
+ 
+ IMPLEMENT_DYNAMIC(CFriendListCtrl, CMuleListCtrl)
+ 
++#pragma warning(push)
++#pragma warning(disable:4191) // MFC message maps cast every handler to AFX_PMSG; only a pragma inside the .cpp reaches this
+ BEGIN_MESSAGE_MAP(CFriendListCtrl, CMuleListCtrl)
+ 	ON_NOTIFY_REFLECT(LVN_COLUMNCLICK, OnLvnColumnClick)
+ 	ON_NOTIFY_REFLECT(NM_DBLCLK, OnNmDblClk)
+ 	ON_WM_CONTEXTMENU()
+ 	ON_WM_SYSCOLORCHANGE()
+ END_MESSAGE_MAP()
++#pragma warning(pop)
+ 
+ CFriendListCtrl::CFriendListCtrl()
+ {
+diff --git a/srchybrid/KadLookupGraph.cpp b/srchybrid/KadLookupGraph.cpp
+index 1f54938..6650f5e 100644
+--- a/srchybrid/KadLookupGraph.cpp
++++ b/srchybrid/KadLookupGraph.cpp
+@@ -42,6 +42,8 @@ static char THIS_FILE[] = __FILE__;
+ 
+ using namespace Kademlia;
+ 
++#pragma warning(push)
++#pragma warning(disable:4191) // MFC message maps cast every handler to AFX_PMSG; only a pragma inside the .cpp reaches this
+ BEGIN_MESSAGE_MAP(CKadLookupGraph, CWnd)
+ 	ON_WM_PAINT()
+ 	ON_WM_MOUSEMOVE()
+@@ -49,6 +51,7 @@ BEGIN_MESSAGE_MAP(CKadLookupGraph, CWnd)
+ 	ON_COMMAND(MP_AUTOKADLOOKUPGRAPH, OnSwitchAutoLookup)
+ 	ON_WM_SIZE()
+ END_MESSAGE_MAP()
++#pragma warning(pop)
+ 
+ CKadLookupGraph::CKadLookupGraph()
+ 	: m_pLookupHistory()
+diff --git a/srchybrid/KadSearchListCtrl.cpp b/srchybrid/KadSearchListCtrl.cpp
+index be15813..1dfb001 100644
+--- a/srchybrid/KadSearchListCtrl.cpp
++++ b/srchybrid/KadSearchListCtrl.cpp
+@@ -34,10 +34,13 @@ static char THIS_FILE[] = __FILE__;
+ 
+ IMPLEMENT_DYNAMIC(CKadSearchListCtrl, CMuleListCtrl)
+ 
++#pragma warning(push)
++#pragma warning(disable:4191) // MFC message maps cast every handler to AFX_PMSG; only a pragma inside the .cpp reaches this
+ BEGIN_MESSAGE_MAP(CKadSearchListCtrl, CMuleListCtrl)
+ 	ON_NOTIFY_REFLECT(LVN_COLUMNCLICK, OnLvnColumnClick)
+ 	ON_WM_SYSCOLORCHANGE()
+ END_MESSAGE_MAP()
++#pragma warning(pop)
+ 
+ CKadSearchListCtrl::CKadSearchListCtrl()
+ {
+diff --git a/srchybrid/KademliaWnd.cpp b/srchybrid/KademliaWnd.cpp
+index 3d80522..5f4ff8b 100644
+--- a/srchybrid/KademliaWnd.cpp
++++ b/srchybrid/KademliaWnd.cpp
+@@ -55,6 +55,8 @@ static char THIS_FILE[] = __FILE__;
+ 
+ IMPLEMENT_DYNAMIC(CKademliaWnd, CDialog)
+ 
++#pragma warning(push)
++#pragma warning(disable:4191) // MFC message maps cast every handler to AFX_PMSG; only a pragma inside the .cpp reaches this
+ BEGIN_MESSAGE_MAP(CKademliaWnd, CResizableDialog)
+ 	ON_BN_CLICKED(IDC_BOOTSTRAPBUTTON, OnBnClickedBootstrapbutton)
+ 	ON_BN_CLICKED(IDC_FIREWALLCHECKBUTTON, OnBnClickedFirewallcheckbutton)
+@@ -74,6 +76,7 @@ BEGIN_MESSAGE_MAP(CKademliaWnd, CResizableDialog)
+ 	ON_NOTIFY(NM_DBLCLK, IDC_KADSEARCHLIST, OnNMDblclkSearchlist)
+ 	ON_NOTIFY(LVN_ITEMCHANGED, IDC_KADSEARCHLIST, OnListModifiedSearchlist)
+ END_MESSAGE_MAP()
++#pragma warning(pop)
+ 
+ CKademliaWnd::CKademliaWnd(CWnd *pParent /*=NULL*/)
+ 	: CResizableDialog(CKademliaWnd::IDD, pParent)
+diff --git a/srchybrid/MetaDataDlg.cpp b/srchybrid/MetaDataDlg.cpp
+index f4ab80c..0b37353 100644
+--- a/srchybrid/MetaDataDlg.cpp
++++ b/srchybrid/MetaDataDlg.cpp
+@@ -55,6 +55,8 @@ static LCX_COLUMN_INIT s_aColumns[] =
+ 
+ IMPLEMENT_DYNAMIC(CMetaDataDlg, CResizablePage)
+ 
++#pragma warning(push)
++#pragma warning(disable:4191) // MFC message maps cast every handler to AFX_PMSG; only a pragma inside the .cpp reaches this
+ BEGIN_MESSAGE_MAP(CMetaDataDlg, CResizablePage)
+ 	ON_COMMAND(MP_COPYSELECTED, OnCopyTags)
+ 	ON_COMMAND(MP_SELECTALL, OnSelectAllTags)
+@@ -62,6 +64,7 @@ BEGIN_MESSAGE_MAP(CMetaDataDlg, CResizablePage)
+ 	ON_NOTIFY(LVN_KEYDOWN, IDC_TAGS, OnLvnKeydownTags)
+ 	ON_WM_DESTROY()
+ END_MESSAGE_MAP()
++#pragma warning(pop)
+ 
+ CMetaDataDlg::CMetaDataDlg()
+ 	: CResizablePage(CMetaDataDlg::IDD)
+diff --git a/srchybrid/PPgConnection.cpp b/srchybrid/PPgConnection.cpp
+index 9fcf937..be852ea 100644
+--- a/srchybrid/PPgConnection.cpp
++++ b/srchybrid/PPgConnection.cpp
+@@ -42,6 +42,8 @@ static char THIS_FILE[] = __FILE__;
+ 
+ IMPLEMENT_DYNAMIC(CPPgConnection, CPropertyPage)
+ 
++#pragma warning(push)
++#pragma warning(disable:4191) // MFC message maps cast every handler to AFX_PMSG; only a pragma inside the .cpp reaches this
+ BEGIN_MESSAGE_MAP(CPPgConnection, CPropertyPage)
+ 	ON_BN_CLICKED(IDC_STARTTEST, OnStartPortTest)
+ 	ON_EN_CHANGE(IDC_DOWNLOAD_CAP, OnSettingsChange)
+@@ -66,6 +68,7 @@ BEGIN_MESSAGE_MAP(CPPgConnection, CPropertyPage)
+ 	ON_BN_CLICKED(IDC_OPENPORTS, OnBnClickedOpenPorts)
+ 	ON_BN_CLICKED(IDC_PREF_UPNPONSTART, OnSettingsChange)
+ END_MESSAGE_MAP()
++#pragma warning(pop)
+ 
+ CPPgConnection::CPPgConnection()
+ 	: CPropertyPage(CPPgConnection::IDD)
+diff --git a/srchybrid/PShtWiz1.cpp b/srchybrid/PShtWiz1.cpp
+index 15c6ca3..b30ed31 100644
+--- a/srchybrid/PShtWiz1.cpp
++++ b/srchybrid/PShtWiz1.cpp
+@@ -283,6 +283,8 @@ protected:
+ 
+ IMPLEMENT_DYNAMIC(CPPgWiz1Ports, CDlgPageWizard)
+ 
++#pragma warning(push)
++#pragma warning(disable:4191) // MFC message maps cast every handler to AFX_PMSG; only a pragma inside the .cpp reaches this
+ BEGIN_MESSAGE_MAP(CPPgWiz1Ports, CDlgPageWizard)
+ 	ON_BN_CLICKED(IDC_STARTTEST, OnStartConTest)
+ 	ON_BN_CLICKED(IDC_UDPDISABLE, OnEnChangeUDPDisable)
+@@ -291,6 +293,7 @@ BEGIN_MESSAGE_MAP(CPPgWiz1Ports, CDlgPageWizard)
+ 	ON_EN_CHANGE(IDC_UDP, OnEnChangeUDP)
+ 	ON_WM_TIMER()
+ END_MESSAGE_MAP()
++#pragma warning(pop)
+ 
+ CPPgWiz1Ports::CPPgWiz1Ports()
+ 	: CDlgPageWizard(CPPgWiz1Ports::IDD)
+diff --git a/srchybrid/SearchResultsWnd.cpp b/srchybrid/SearchResultsWnd.cpp
+index e3b20d8..2c9ce8c 100644
+--- a/srchybrid/SearchResultsWnd.cpp
++++ b/srchybrid/SearchResultsWnd.cpp
+@@ -82,6 +82,8 @@ enum ESearchResultImage
+ 
+ IMPLEMENT_DYNCREATE(CSearchResultsWnd, CResizableFormView)
+ 
++#pragma warning(push)
++#pragma warning(disable:4191) // MFC message maps cast every handler to AFX_PMSG; only a pragma inside the .cpp reaches this
+ BEGIN_MESSAGE_MAP(CSearchResultsWnd, CResizableFormView)
+ 	ON_WM_TIMER()
+ 	ON_BN_CLICKED(IDC_SDOWNLOAD, OnBnClickedDownloadSelected)
+@@ -102,6 +104,7 @@ BEGIN_MESSAGE_MAP(CSearchResultsWnd, CResizableFormView)
+ 	ON_MESSAGE(UM_DELAYED_EVALUATE, OnChangeFilter)
+ 	ON_NOTIFY(TBN_DROPDOWN, IDC_SEARCHLST_ICO, OnSearchListMenuBtnDropDown)
+ END_MESSAGE_MAP()
++#pragma warning(pop)
+ 
+ CSearchResultsWnd::CSearchResultsWnd(CWnd* /*pParent*/)
+ 	: CResizableFormView(CSearchResultsWnd::IDD)
+diff --git a/srchybrid/SharedFilesCtrl.cpp b/srchybrid/SharedFilesCtrl.cpp
+index e29160b..6eb426d 100644
+--- a/srchybrid/SharedFilesCtrl.cpp
++++ b/srchybrid/SharedFilesCtrl.cpp
+@@ -99,10 +99,13 @@ LPCTSTR CSharedFileDetailsSheet::m_pPshStartPage;
+ 
+ IMPLEMENT_DYNAMIC(CSharedFileDetailsSheet, CListViewWalkerPropertySheet)
+ 
++#pragma warning(push)
++#pragma warning(disable:4191) // MFC message maps cast every handler to AFX_PMSG; only a pragma inside the .cpp reaches this
+ BEGIN_MESSAGE_MAP(CSharedFileDetailsSheet, CListViewWalkerPropertySheet)
+ 	ON_WM_DESTROY()
+ 	ON_MESSAGE(UM_DATA_CHANGED, OnDataChanged)
+ END_MESSAGE_MAP()
++#pragma warning(pop)
+ 
+ void CSharedFileDetailsSheet::Localize()
+ {
+diff --git a/srchybrid/StatisticsDlg.cpp b/srchybrid/StatisticsDlg.cpp
+index 0861110..0baeffd 100644
+--- a/srchybrid/StatisticsDlg.cpp
++++ b/srchybrid/StatisticsDlg.cpp
+@@ -50,6 +50,8 @@ extern _CRT_ALLOC_HOOK g_pfnPrevCrtAllocHook;
+ 
+ IMPLEMENT_DYNAMIC(CStatisticsDlg, CDialog)
+ 
++#pragma warning(push)
++#pragma warning(disable:4191) // MFC message maps cast every handler to AFX_PMSG; only a pragma inside the .cpp reaches this
+ BEGIN_MESSAGE_MAP(CStatisticsDlg, CResizableDialog)
+ 	ON_WM_SHOWWINDOW()
+ 	ON_WM_SIZE()
+@@ -62,6 +64,7 @@ BEGIN_MESSAGE_MAP(CStatisticsDlg, CResizableDialog)
+ 	ON_MESSAGE(UM_OSCOPEPOSITION, OnOscopePositionMsg)
+ 	ON_WM_HELPINFO()
+ END_MESSAGE_MAP()
++#pragma warning(pop)
+ 
+ CStatisticsDlg::CStatisticsDlg(CWnd *pParent /*=NULL*/)
+ 	: CResizableDialog(CStatisticsDlg::IDD, pParent)
