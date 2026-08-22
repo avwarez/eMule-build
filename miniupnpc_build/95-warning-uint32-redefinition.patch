@@ -1,0 +1,23 @@
+diff --git a/miniupnpc/src/addr_is_reserved.c b/miniupnpc/src/addr_is_reserved.c
+index 736dc38..f635a24 100644
+--- a/miniupnpc/src/addr_is_reserved.c
++++ b/miniupnpc/src/addr_is_reserved.c
+@@ -11,11 +11,15 @@
+ #define WIN32_LEAN_AND_MEAN
+ #include <winsock2.h>
+ #include <ws2tcpip.h>
+-#if !defined(_MSC_VER)
++/* C4142: every MSVC we build with ships <stdint.h> (VS2010 and later), so the
++ * typedef below is a redefinition - and not even of the same type, MSVC's
++ * uint32_t being unsigned int rather than unsigned long. Keep the typedef only
++ * for the pre-VS2010 compilers the original guard was written for. */
++#if !defined(_MSC_VER) || (_MSC_VER >= 1600)
+ #include <stdint.h>
+-#else /* !defined(_MSC_VER) */
++#else /* !defined(_MSC_VER) || (_MSC_VER >= 1600) */
+ typedef unsigned long uint32_t;
+-#endif /* !defined(_MSC_VER) */
++#endif /* !defined(_MSC_VER) || (_MSC_VER >= 1600) */
+ #if !defined(_WIN32_WINNT_VISTA)
+ #define _WIN32_WINNT_VISTA 0x0600
+ #endif

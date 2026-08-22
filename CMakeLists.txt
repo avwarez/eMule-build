@@ -92,14 +92,17 @@ endfunction()
 # land after the directory that consumes it has already been processed.
 # An empty (or patch-less) *_build directory is simply a no-op here, so these
 # calls stay valid whether or not that submodule currently needs anything.
-# Only the C++ submodules whose headers eMule actually includes are listed:
+# The first four are the C++ submodules whose headers eMule actually includes:
 # eMule is the only target that compiles at C++23 (see emule_build/
 # CMakeLists.txt), but cryptopp/id3lib/resizablelib headers get pulled into
 # its translation units and are therefore parsed under that same standard.
+# miniupnp is plain C and is otherwise built vanilla (see further down); it is
+# listed here only so its one warning fix has somewhere to live.
 emule_apply_patches(emule emule_build)
 emule_apply_patches(cryptopp cryptopp_build)
 emule_apply_patches(id3lib id3lib_build)
 emule_apply_patches(resizablelib resizablelib_build)
+emule_apply_patches(miniupnp miniupnpc_build)
 
 # ---------------------------------------------------------------------------
 # mbedtls - vanilla git submodule (mbedtls/, with nested tf-psa-crypto/ and
@@ -175,8 +178,9 @@ add_subdirectory(zlib)
 add_subdirectory(id3lib_build)
 
 # ---------------------------------------------------------------------------
-# miniupnpc - vanilla git submodule (miniupnp/, miniupnp/miniupnp pinned to
-# tag miniupnpc_2_3_3). That's the upstream monorepo (also contains
+# miniupnpc - near-vanilla git submodule (miniupnp/, miniupnp/miniupnp pinned
+# to tag miniupnpc_2_3_3), carrying one warning patch from miniupnpc_build/.
+# That's the upstream monorepo (also contains
 # miniupnpd, minissdpd, ...) - only its miniupnpc/ subdirectory is built,
 # which has its own CMakeLists.txt (add_subdirectory() alone is enough).
 # Static lib only, no samples/tests/install, matching every other dependency
