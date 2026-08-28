@@ -231,6 +231,12 @@ jobs:
             stage="staging/eMule-${{ github.ref_name }}"
             rm -rf "$stage" && mkdir -p "$stage/lang"
             cp -a dist/. "$stage"/                                    # vendored payload
+            # config/eMule.tmpl is the one dist file that also exists in git:
+            # it pairs with this build's web-interface code, so it is taken
+            # from the emule submodule (the source of truth) rather than from
+            # the vendored upstream snapshot. It is deliberately absent from
+            # dist/ for that reason.
+            cp "emule/srchybrid/webinterface/eMule.tmpl" "$stage/config/eMule.tmpl"
             cp "$dir/emule.exe" "$stage"/                             # this arch's exe
             cp "$dir"/lang/*.dll "$stage/lang"/                       # this arch's 43 DLLs
             ( cd staging && zip -r -q "${GITHUB_WORKSPACE}/release-assets/eMule-${platform}.zip" "eMule-${{ github.ref_name }}" )
