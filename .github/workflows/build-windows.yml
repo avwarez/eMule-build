@@ -129,15 +129,18 @@ jobs:
           retention-days: 1
 
   release:
-    name: Publish release
+    name: Package (and publish on push)
     needs: build
-    # Only real pushes to one of the release branches above become a
-    # permanent public release - manual workflow_dispatch runs (ad-hoc/test
-    # builds) stay as the 1-day artifacts above and don't clutter the
-    # Releases page. Everything below is branch-agnostic (the tag is derived
-    # from github.ref_name and the release targets github.sha), so each
-    # branch publishes its own independently named releases.
-    if: github.event_name == 'push'
+    # Runs on every event so the per-platform zips are always assembled and
+    # attached as workflow artifacts (downloadable for verification, short
+    # retention). Only real pushes to a release branch go the extra step and
+    # cut a permanent public GitHub Release - manual workflow_dispatch runs
+    # (ad-hoc/test builds, e.g. on v0.72a-cpp23-fix) assemble the identical
+    # zips but stop at the artifact and never touch the Releases page. That
+    # split is enforced per-step below (the "Create GitHub Release" step is
+    # push-only), not at the job level. Everything is branch-agnostic (the
+    # tag is derived from github.ref_name and the release targets github.sha),
+    # so each branch publishes its own independently named releases.
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -245,6 +248,20 @@ jobs:
           echo "--- contents of one asset ---"
           unzip -l release-assets/*.zip | head -20
 
+      - name: Upload release zips as workflow artifacts
+        # Always (push and workflow_dispatch): makes the assembled per-platform
+        # zips downloadable straight from the run, so packaging can be verified
+        # on any branch - including v0.72a-cpp23-fix, which never reaches the
+        # push-only "Create GitHub Release" step below. Short retention: these
+        # are verification copies, and pushes also attach the same zips to a
+        # permanent Release.
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-zips-${{ github.ref_name }}
+          path: release-assets/*.zip
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Compute release tag
         id: meta
         # Tag/title = branch name + UTC generation timestamp, e.g.
@@ -255,6 +272,9 @@ jobs:
         run: echo "tag=${{ github.ref_name }}-$(date -u +%Y%m%d-%H%M%S)" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
+        # Push-only: workflow_dispatch runs stop at the downloadable zip
+        # artifact above and never create a public Release.
+        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
