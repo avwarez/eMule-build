@@ -98,6 +98,13 @@ jobs:
       - name: Build
         run: cmake --build build --config ${{ matrix.configuration }} --target emule
 
+      - name: Build language DLLs
+        # The satellite language DLLs (emule/srchybrid/lang/*.rc -> <locale>.dll)
+        # are their own EXCLUDE_FROM_ALL target, so they need building
+        # explicitly. This step only verifies they compile/link across every
+        # config; the DLLs are not uploaded or attached to a release (yet).
+        run: cmake --build build --config ${{ matrix.configuration }} --target languages
+
       - name: Upload emule.exe
         uses: actions/upload-artifact@v4
         with:

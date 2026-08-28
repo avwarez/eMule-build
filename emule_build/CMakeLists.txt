@@ -294,3 +294,64 @@ endif()
 # of scope for a Debug/Release CI build of the mainline application. Add it
 # back as a real custom configuration type if that special build is needed.
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Language DLLs
+#
+# eMule ships its UI translations as resource-only satellite DLLs, one per
+# locale, loaded at runtime by I18n.cpp (::LoadLibrary on "<lang>\<locale>.dll"
+# next to emule.exe). Each lives in emule/srchybrid/lang/ as its own tiny
+# Visual Studio project (<locale>.vcxproj) whose entire content is a single
+# ResourceCompile of <locale>.rc - no C++ at all: ConfigurationType is
+# DynamicLibrary with NoEntryPoint=true (i.e. /NOENTRY), so the resulting DLL
+# has only a resource section and no entry point/CRT.
+#
+# Rather than track the 43 vcxproj files (they differ only by locale name and
+# GUID), every lang/*.rc is turned into one such DLL here by globbing the
+# directory - a locale added upstream is picked up automatically. The DLL is
+# named exactly <locale>.dll (TargetName=$(MSBuildProjectName) in the original
+# projects, which is the locale) so the I18n.cpp loader finds it, and is placed
+# in a lang/ subdirectory next to emule.exe to match that loader's layout.
+#
+# These are built by the dedicated `languages` aggregate target, not by the
+# default (all) build: EXCLUDE_FROM_ALL keeps `--target emule` as lean as it
+# was, while `cmake --build ... --target languages` produces every DLL.
+#
+# afxres.h (the only include not reachable relative to the .rc itself -
+# ..\Resource.h, ..\Version.h and lang.rc2 all resolve against the rc file's
+# own lang/ directory) lives in the toolset's ATLMFC\include, reconstructed
+# from the compiler path exactly like the afximpl.h case for emule above. The
+# original vcxproj files carry no UseOfMfc, so the DLLs never link MFC - only
+# the RC preprocessor needs that header, for its IDS_/ID_ resource constants.
+# ---------------------------------------------------------------------------
+set(EMULE_LANG_DIR "${EMULE_SRC_DIR}/lang")
+file(GLOB _lang_rcs "${EMULE_LANG_DIR}/*.rc")
+
+add_custom_target(languages COMMENT "Building all eMule language resource DLLs")
+
+foreach(_lang_rc IN LISTS _lang_rcs)
+    get_filename_component(_locale "${_lang_rc}" NAME_WE)   # e.g. it_IT
+    set(_lang_target "lang_${_locale}")
+
+    add_library(${_lang_target} SHARED EXCLUDE_FROM_ALL "${_lang_rc}")
+    set_target_properties(${_lang_target} PROPERTIES
+        LINKER_LANGUAGE CXX               # no C++ sources - CXX only picks the linker driver
+        OUTPUT_NAME "${_locale}"          # <locale>.dll, as the I18n.cpp loader expects
+        PREFIX ""                         # never a "lib" prefix
+        RUNTIME_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:emule>/lang"
+    )
+    # /NOENTRY = NoEntryPoint=true in the vcxproj: a resource-only DLL with no
+    # startup code, so no CRT/entry point is required or referenced.
+    # /MANIFEST:NO: these DLLs carry no manifest (the original projects embed
+    # none), and CMake would otherwise inject its default one.
+    target_link_options(${_lang_target} PRIVATE /NOENTRY /MANIFEST:NO)
+
+    if(MSVC AND MSVC_TOOLSET_ROOT)
+        target_include_directories(${_lang_target} PRIVATE "${MSVC_TOOLSET_ROOT}/ATLMFC/include")
+    endif()
+
+    add_dependencies(languages ${_lang_target})
+endforeach()
+
+list(LENGTH _lang_rcs _n_langs)
+message(STATUS "eMule: ${_n_langs} language DLLs wired into the 'languages' target")
