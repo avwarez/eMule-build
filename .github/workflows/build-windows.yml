@@ -206,6 +206,16 @@ jobs:
         with:
           path: artifacts
 
+      - name: Compute release tag
+        id: meta
+        # Release reference = branch name + UTC generation timestamp, e.g.
+        # "v0.72a-20260716-144500" or "v0.72a-cpp23-20260821-144500". Computed
+        # once, before packaging, so all per-platform zip filenames and the
+        # GitHub Release tag/title carry the exact same stamp; every run gets
+        # its own permanent, chronologically sortable identifier instead of one
+        # being overwritten by the next.
+        run: echo "tag=${{ github.ref_name }}-$(date -u +%Y%m%d-%H%M%S)" >> "$GITHUB_OUTPUT"
+
       - name: Assemble the per-platform release folder and zip it
         # download-artifact restores each of the 6 upload-artifact names
         # (emule-<platform>-<configuration>) as its own subfolder, each now
@@ -219,9 +229,9 @@ jobs:
         # eMule binary distribution: a single top-level folder holding
         # emule.exe, a lang/ subfolder of language DLLs, and the
         # platform-independent payload (webserver/, config/, licenses,
-        # changelog, readme, templates) vendored once under dist/ in this
-        # repo. emule.exe and the lang DLLs are per-architecture (taken from
-        # this platform's build); everything under dist/ is identical across
+        # changelog, readme, templates) vendored once under emule_build/dist/
+        # in this repo. emule.exe and the lang DLLs are per-architecture (taken
+        # from this platform's build); everything under dist/ is identical across
         # platforms. Zipping the whole folder (zip -r), not a bare .exe -
         # direct .exe download links are routinely blocked by
         # browsers/mail/chat tools, and the extracted folder is ready to run.
@@ -233,16 +243,16 @@ jobs:
             platform=${name#emule-}; platform=${platform%-Release}    # x64 / Win32 / ARM64
             stage="staging/eMule-${{ github.ref_name }}"
             rm -rf "$stage" && mkdir -p "$stage/lang"
-            cp -a dist/. "$stage"/                                    # vendored payload
+            cp -a emule_build/dist/. "$stage"/                        # vendored payload
             # config/eMule.tmpl is the one dist file that also exists in git:
             # it pairs with this build's web-interface code, so it is taken
             # from the emule submodule (the source of truth) rather than from
             # the vendored upstream snapshot. It is deliberately absent from
-            # dist/ for that reason.
+            # emule_build/dist/ for that reason.
             cp "emule/srchybrid/webinterface/eMule.tmpl" "$stage/config/eMule.tmpl"
             cp "$dir/emule.exe" "$stage"/                             # this arch's exe
             cp "$dir"/lang/*.dll "$stage/lang"/                       # this arch's 43 DLLs
-            ( cd staging && zip -r -q "${GITHUB_WORKSPACE}/release-assets/eMule-${platform}.zip" "eMule-${{ github.ref_name }}" )
+            ( cd staging && zip -r -q "${GITHUB_WORKSPACE}/release-assets/eMule-${{ steps.meta.outputs.tag }}-${platform}.zip" "eMule-${{ github.ref_name }}" )
           done
           ls -l release-assets
           echo "--- contents of one asset ---"
@@ -261,15 +271,6 @@ jobs:
           path: release-assets/*.zip
           if-no-files-found: error
           retention-days: 7
-
-      - name: Compute release tag
-        id: meta
-        # Tag/title = branch name + UTC generation timestamp, e.g.
-        # "v0.72a-20260716-144500" or "v0.72a-cpp23-20260821-144500", so
-        # every run gets its own permanent,
-        # chronologically sortable release instead of one being overwritten
-        # by the next.
-        run: echo "tag=${{ github.ref_name }}-$(date -u +%Y%m%d-%H%M%S)" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
         # Push-only: workflow_dispatch runs stop at the downloadable zip
