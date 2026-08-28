@@ -101,15 +101,23 @@ jobs:
       - name: Build language DLLs
         # The satellite language DLLs (emule/srchybrid/lang/*.rc -> <locale>.dll)
         # are their own EXCLUDE_FROM_ALL target, so they need building
-        # explicitly. This step only verifies they compile/link across every
-        # config; the DLLs are not uploaded or attached to a release (yet).
+        # explicitly. They land in build/emule_build/<config>/lang/ (next to
+        # emule.exe) and are uploaded together with it below, so the release
+        # job can assemble the shipping folder (emule.exe + lang/*.dll + the
+        # vendored dist/ payload).
         run: cmake --build build --config ${{ matrix.configuration }} --target languages
 
-      - name: Upload emule.exe
+      - name: Upload build output (emule.exe + language DLLs)
         uses: actions/upload-artifact@v4
         with:
           name: emule-${{ matrix.platform }}-${{ matrix.configuration }}
-          path: build/emule_build/${{ matrix.configuration }}/emule.exe
+          # Both paths sit under build/emule_build/<config>/, so that directory
+          # is the artifact's common root: the artifact contains emule.exe at
+          # its top and a lang/ subfolder of <locale>.dll - the exact shape the
+          # release job drops into the staging folder.
+          path: |
+            build/emule_build/${{ matrix.configuration }}/emule.exe
+            build/emule_build/${{ matrix.configuration }}/lang
           if-no-files-found: error
           # These are just short-lived build-verification artifacts (require
           # a GitHub login to download, and would otherwise pile up for 90
@@ -195,26 +203,41 @@ jobs:
         with:
           path: artifacts
 
-      - name: Zip each Release build into a uniquely-named release asset
+      - name: Assemble the per-platform release folder and zip it
         # download-artifact restores each of the 6 upload-artifact names
-        # (emule-<platform>-<configuration>) as its own subfolder, each
-        # containing an emule.exe. Only the *-Release subfolders are zipped
-        # here - Debug builds are build-verification output (unoptimized,
-        # /RTC1 runtime checks enabled) with no reason to reach end users, so
-        # they stay as the 1-day artifacts from the build job instead of
-        # being attached to the public release. Zipping each one individually
-        # (one archive per matrix combination, rather than one big archive)
-        # instead of attaching the raw .exe - direct .exe download links are
-        # routinely blocked or flagged by browsers/mail/chat tools, while a
-        # .zip isn't. Naming the archive after the subfolder also keeps every
-        # release asset unique, since release assets share one flat namespace.
+        # (emule-<platform>-<configuration>) as its own subfolder, each now
+        # containing emule.exe + a lang/ subfolder of <locale>.dll. Only the
+        # *-Release subfolders are shipped - Debug builds are
+        # build-verification output (unoptimized, /RTC1 runtime checks
+        # enabled) with no reason to reach end users, so they stay as the
+        # 1-day artifacts from the build job.
+        #
+        # Each platform's zip mirrors the layout of the upstream (irwir)
+        # eMule binary distribution: a single top-level folder holding
+        # emule.exe, a lang/ subfolder of language DLLs, and the
+        # platform-independent payload (webserver/, config/, licenses,
+        # changelog, readme, templates) vendored once under dist/ in this
+        # repo. emule.exe and the lang DLLs are per-architecture (taken from
+        # this platform's build); everything under dist/ is identical across
+        # platforms. Zipping the whole folder (zip -r), not a bare .exe -
+        # direct .exe download links are routinely blocked by
+        # browsers/mail/chat tools, and the extracted folder is ready to run.
         run: |
-          mkdir -p release-assets
-          for dir in artifacts/*-Release/; do
-            name=$(basename "$dir")
-            (cd "$dir" && zip -j "${GITHUB_WORKSPACE}/release-assets/${name}.zip" emule.exe)
+          mkdir -p release-assets staging
+          for dir in artifacts/emule-*-Release/; do
+            [ -d "$dir" ] || continue
+            name=$(basename "$dir")                                   # emule-x64-Release
+            platform=${name#emule-}; platform=${platform%-Release}    # x64 / Win32 / ARM64
+            stage="staging/eMule-${{ github.ref_name }}"
+            rm -rf "$stage" && mkdir -p "$stage/lang"
+            cp -a dist/. "$stage"/                                    # vendored payload
+            cp "$dir/emule.exe" "$stage"/                             # this arch's exe
+            cp "$dir"/lang/*.dll "$stage/lang"/                       # this arch's 43 DLLs
+            ( cd staging && zip -r -q "${GITHUB_WORKSPACE}/release-assets/eMule-${platform}.zip" "eMule-${{ github.ref_name }}" )
           done
           ls -l release-assets
+          echo "--- contents of one asset ---"
+          unzip -l release-assets/*.zip | head -20
 
       - name: Compute release tag
         id: meta

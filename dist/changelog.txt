@@ -1,0 +1,1403 @@
+          CHANGELOG FOR EMULE
+        https://emule-project.net
+        ========================
+
+
+eMule 0.72a (community version)
+-----------------------
+- Aug. 04, 2026       -
+-----------------------
+.: Added: safety checks in magnet link parsing and in WM_COPYDATA processing (thanks to IAnMove (THEINAOG))
+.: Fixed: memory leak in ProcessED2KLink (thanks to IAnMove (THEINAOG))
+
+-----------------------
+- Jul. 16, 2026       -
+-----------------------
+.: Fixed: wrong order of items in downloads list when sorted by speed (reported by edelkas)
+
+-----------------------
+- Jul. 11, 2026       -
+-----------------------
+.: Fixed: regression in searches with selected file type (reported by profp62)
+
+-----------------------
+- Jul. 08, 2026       -
+-----------------------
+.: Fixed: glitch in search results control after minimized start (thanks to conte.zero and enone)
+.: Changed: MbedTLS library 4.2.0
+
+-----------------------
+- Jun. 24, 2026       -
+-----------------------
+.: Fixed: crash when reading .ini file (reported by antonymous)
+
+-----------------------
+- Jun. 20, 2026       -
+-----------------------
+.: Fixed: initialization time crash, part 2 (reported by Sueyllam)
+
+-----------------------
+- May. 27, 2026       -
+-----------------------
+.: Added: clipboard viewer chain
+
+-----------------------
+- May. 17, 2026       -
+-----------------------
+.: Changed: use CDialog for MiniMule
+
+-----------------------
+- May. 13, 2026       -
+-----------------------
+.: Changed: allow MediaInfo.dll 26.05
+
+-----------------------
+- May. 06, 2026       -
+-----------------------
+.: Fixed: list header localisation in Scheduler and other list (reported by Zangune)
+.: Changed: Italian language resources (thanks to Zangune)
+
+-----------------------
+- May. 02, 2026       -
+-----------------------
+.: Changed: ignore DateTimeFormat4Log in preferences.ini; always use "%d.%m.%Y %T"
+
+-----------------------
+- Apr. 29, 2026       -
+-----------------------
+.: Fixed: unsafe file timestamp handling
+
+-----------------------
+- Apr. 28, 2026       -
+-----------------------
+.: Fixed: duplication of part files in downloads list (reported by Arrak)
+.: Fixed: crash on quick delete of a new download
+
+-----------------------
+- Apr. 22, 2026       -
+-----------------------
+.: Fixed: refresh client icons when applying skin (regression)
+.: Changed: use preferences.ini for main window placement instead of preferences.dat
+
+-----------------------
+- Apr. 20, 2026       -
+-----------------------
+.: Added: cache contents of .ini in an array
+.: Added: if .ini changes, keep previous file as a backup copy
+
+-----------------------
+- Apr. 07, 2026       -
+-----------------------
+.: Fixed: clipping of file detail tabs for certain Oriental languages (reported by be1205a)
+
+-----------------------
+- Apr. 04, 2026       -
+-----------------------
+.: Changed: MbedTLS library 4.1.0
+.: Fixed: empty headers in comments list (regression)
+
+-----------------------
+- Feb. 28, 2026       -
+-----------------------
+.: Changed: web interface, gzip compression
+.: Changed: web interface, trying to prevent crash (reported by dlk)
+.: Fixed: web interface, errors in template file
+.: Fixed: main toolbar customization (regression, reported by antonymous)
+
+-----------------------
+- Feb. 17, 2026       -
+-----------------------
+.: Changed: zlib library 1.3.2
+.: Changed: default timestamp format in logs is "%d.%m.%Y %T"
+
+-----------------------
+- Jan. 29, 2026       -
+-----------------------
+.: Fixed: initialization time crash because of duplicate files (reported by Sueyllam)
+
+-----------------------
+- Jan. 28, 2026       -
+-----------------------
+.: Fixed: large files (>4 GB) reading in mediainfo
+
+-----------------------
+- Jan. 20, 2026       -
+-----------------------
+.: Changed: writing of special bootstrap nodes.dat
+
+-----------------------
+- Jan. 07, 2026       -
+-----------------------
+.: Changed: renamed class "CTitleMenu" to "CTitledMenu"
+
+-----------------------
+- Jan. 02, 2026       -
+-----------------------
+.: Changed: removed VisualStylesXP module
+
+-----------------------
+- Jan. 01, 2026       -
+-----------------------
+.: Changed: copyright year in source files
+
+-----------------------
+- Dec. 23, 2025       -
+-----------------------
+.: Fixed: drawing of minimize to tray button (regression)
+.: Changed: making and drawing of greyed bitmaps and icons without CxImage/libpng
+.: Changed: cleaned up lists of included header files
+
+-----------------------
+- Dec. 19, 2025       -
+-----------------------
+.: Changed: video frame grabbing for preview without CxImage/libpng
+
+-----------------------
+- Dec. 17, 2025       -
+-----------------------
+.: Added: discard packets with user's file list after closing the tab in Search page
+
+-----------------------
+- Dec. 11, 2025       -
+-----------------------
+.: Changed: CAPTCHA generation without CxImage/libpng
+
+-----------------------
+- Dec. 08, 2025       -
+-----------------------
+.: Fixed: display of received messages in chat (regression)
+
+-----------------------
+- Dec. 06, 2025       -
+-----------------------
+.: Changed: removed CxImage/libpng libraries
+.: Changed: increment version to 0.72a (eMule 0.71a required CxImage and libpng)
+
+
+eMule 0.71a (community version, internal)
+-----------------------
+- Dec. 02, 2025       -
+-----------------------
+.: Added: .slnx file for VS 2026
+
+-----------------------
+- Sep. 20, 2025       -
+-----------------------
+.: Changed: mbedTLS library 4.0
+
+-----------------------
+- Apr. 17, 2025       -
+-----------------------
+.: Fixed: save IP filter if it was unsorted
+
+-----------------------
+- Apr. 16, 2025       -
+-----------------------
+.: Changed: simplified IP filter loading
+
+-----------------------
+- Apr. 12, 2025       -
+-----------------------
+.: Fixed: disable gzip compression for HTTPS in Web Interface
+
+-----------------------
+- Mar. 12, 2025       -
+-----------------------
+.: Fixed: regression in 32-bit TLS Web Interface (reported by Loloncio)
+
+-----------------------
+- Mar. 10, 2025       -
+-----------------------
+.: Fixed: regression in Entry.cpp (reported by Enig123)
+
+-----------------------
+- Jan. 03, 2025       -
+-----------------------
+.: Changed: updated TreeOptionsCtrl
+
+-----------------------
+- Dec. 22, 2024       -
+-----------------------
+.: Fixed: printf format bug in listensocket (regression)
+
+-----------------------
+- Nov. 23, 2024       -
+-----------------------
+.: Changed: upload bandwidth throttler, refactoring and optimization
+
+-----------------------
+- Nov. 12, 2024       -
+-----------------------
+.: Fixed: flush .part.met files only if data was received (reported by ducho)
+
+-----------------------
+- Nov. 02, 2024       -
+-----------------------
+.: Added: ring buffer (data rate measurement)
+.: Fixed: in Connections graph Active uploads should never exceed Total uploads
+
+-----------------------
+- Oct. 23, 2024       -
+-----------------------
+.: Fixed: autosizing of columns in servers list (regression)
+
+-----------------------
+- Sep. 23, 2024       -
+-----------------------
+.: Changed: update RICHEDIT_CLASS to MSFTEDIT_CLASS
+
+-----------------------
+- Sep. 22, 2024       -
+-----------------------
+.: Fixed: "Duplicate shared files" message should have been in the log (reported by krisi)
+
+-----------------------
+- Sep. 15, 2024       -
+-----------------------
+.: Added: ARM64 platform (thanks to busylog for the "proof of concept" on Github)
+
+-----------------------
+- Aug. 29, 2024       -
+-----------------------
+.: Fixed: OP_SENDINGPART(_I64) processing (regression, reported by Enig123)
+
+-----------------------
+- Aug. 27, 2024       -
+-----------------------
+.: Fixed: OP_SETREQFILEID processing (regression, reported by Enig123)
+
+
+eMule 0.70b (community version)
+-----------------------
+- Aug. 10, 2024       -
+-----------------------
+.: Added: save and restore folder names in "View Shared Files" lists
+
+-----------------------
+- Aug. 06, 2024       -
+-----------------------
+.: Added: "Connect" button will try encryption once for each server with no ofuscation data
+
+-----------------------
+- Aug. 03, 2024       -
+-----------------------
+.: Fixed: ED2K file hash calculation if file length was a multiple of part size (regression, reported by xagev)
+
+-----------------------
+- Aug. 01, 2024       -
+-----------------------
+.: Fixed: regression in UDP server find
+
+-----------------------
+- Jul. 28, 2024       -
+-----------------------
+.: Added: set default obfuscation port numbers for the connected server if reply had no port data
+.: Changed: copyright year in source files
+
+-----------------------
+- Jul. 28, 2024       -
+-----------------------
+.: Changed: redesigned network shares handling and context menu in Options->Directories tree
+
+-----------------------
+- Jul. 20, 2024       -
+-----------------------
+.: Changed: update tab header only after filling search results list (reported by Enig123)
+
+-----------------------
+- Jul. 06, 2024       -
+-----------------------
+.: Fixed: incorrect names in Options->Directories tree (regression)
+
+-----------------------
+- Jul. 04, 2024       -
+-----------------------
+.: Changed: allow MediaInfo.dll 24.06
+
+-----------------------
+- May. 05, 2024       -
+-----------------------
+.: Changed: use updated implementation of UPNP_GetValidIGD()
+
+-----------------------
+- Mar. 13, 2024       -
+-----------------------
+.: Added: flush .part.met files on timer
+
+-----------------------
+- Mar. 04, 2024       -
+-----------------------
+.: Fixed: use unrar64.dll for 64-bit build and unrar.dll for 32-bit (reported by antonymous)
+
+-----------------------
+- Feb. 03, 2024       -
+-----------------------
+.: Fixed: standby prevention in Windows 11 (reported by zappatore77)
+
+-----------------------
+- Jan. 10, 2024       -
+-----------------------
+.: Changed: restore "100%" in the menu for upload limit
+
+-----------------------
+- Oct. 30, 2023       -
+-----------------------
+.: Fixed: regression in opening collection files (reported by theboss50)
+
+-----------------------
+- Oct. 29, 2023       -
+-----------------------
+.: Fixed: add C++ exception handling instead of removed SEH in listensocket
+
+-----------------------
+- Oct. 20, 2023       -
+-----------------------
+.: Added: email notifications can use TLS 1.3
+.: Fixed: mail addresses were not filled in SMTP dialog
+.: Fixed: wrong order of authentication types in SMTP dialog
+
+-----------------------
+- Oct. 18, 2023       -
+-----------------------
+.: Added: Web Interface can use TLS 1.3
+.: Changed: menu item text for preview chunks now is "Increase priority for preview parts"
+.: Fixed: search expression was altered while parsing it (reported by MatthewT)
+
+-----------------------
+- Oct. 08, 2023       -
+-----------------------
+.: Changed: always write known.met with MET_HEADER_I64TAGS
+
+
+eMule 0.70a (community version)
+-----------------------
+- Oct. 05, 2023       -
+-----------------------
+.: Changed: allow MediaInfo.dll 23.10
+
+-----------------------
+- Sep. 30, 2023       -
+-----------------------
+.: Fixed: Cancel button does not stop automatic retries in case of failed network
+.: Changed: remove "100%" from the menu for upload limit
+
+-----------------------
+- Sep. 25, 2023       -
+-----------------------
+.: Fixed: crash in statistics shortly after restart
+
+-----------------------
+- Sep. 24, 2023       -
+-----------------------
+.: Fixed: restore the check for MAX_UP_CLIENTS_ALLOWED in AcceptNewClient (reported by Heliotropo)
+
+-----------------------
+- Sep. 12, 2023       -
+-----------------------
+.: Changed: PeerCache has been removed
+
+-----------------------
+- Sep. 10, 2023       -
+-----------------------
+.: Fixed: regressison in Options->Connection page (reported by Heliotropo)
+
+-----------------------
+- Sep. 08, 2023       -
+-----------------------
+.: Fixed: Extended options failure because Arabic localisation string contained separator character
+.: Changed: replaced CompareUnsigned* functions with a template
+
+-----------------------
+- Sep. 07, 2023       -
+-----------------------
+.: Changed: USS now is "not recommended"; collapse its branch in the options if the setting was disabled
+.: Changed: set initial default data rate values and prevent USS activation
+.: Changed: uint64 for client's session upload/download amounts
+
+-----------------------
+- Aug. 31, 2023       -
+-----------------------
+.: Fixed: crash when closing asynchronous I/O threads (reported by Heliotropo and Enig123)
+
+-----------------------
+- Aug. 26, 2023       -
+-----------------------
+.: Fixed: crash in overlapped read/write code (reported by sjoerd)
+
+-----------------------
+- Aug. 25, 2023       -
+-----------------------
+.: Fixed: sort by column in list controls (regression, reported by ajgelado and Heliotropo)
+.: Fixed: Start minimized and Start with Windows options regression (reported by Cybermutant)
+
+-----------------------
+- Aug. 21, 2023       -
+-----------------------
+.: Fixed: sources tree randomly disappear from display in downloads list (regression, reported by Heliotropo)
+.: Changed: use empty names as column headers in list controls, then localise
+
+-----------------------
+- Aug. 07, 2023       -
+-----------------------
+.: Fixed: average data rates in statistics require uint64 (reported by ajgelado)
+
+-----------------------
+- Apr. 28, 2023       -
+-----------------------
+.: Changed: allow MediaInfo.dll 23.04
+.: Fixed: in Windows XP allow MediaInfo.dll only up to 21.03
+
+-----------------------
+- Jan. 28, 2023       -
+-----------------------
+.: Added: 64x64 application icon
+.: Fixed: non-functional tray icon after display driver change
+
+-----------------------
+- Jan. 05, 2023       -
+-----------------------
+.: Changed: copyright year in source files
+
+-----------------------
+- Aug. 12, 2022       -
+-----------------------
+.: Added: drop client UDP packets from port 0 (suggested by Enig123)
+
+-----------------------
+- Jun. 23, 2022       -
+-----------------------
+.: Fixed: calculation of data size to be allowed for uploading
+
+-----------------------
+- Feb. 20, 2022       -
+-----------------------
+.: Changed: copyright year in source files
+
+
+eMule 0.60d (community version)
+-----------------------
+- Nov. 12, 2021       -
+-----------------------
+.: Fixed: an obsolete method call unpacked compacted files when reading media data (reported by kotenok2000)
+
+-----------------------
+- Sep. 18, 2021       -
+-----------------------
+.: Changed: allow MediaInfo.dll 21.09
+
+-----------------------
+- Aug. 03, 2021       -
+-----------------------
+.: Changed: upgrade to mbedTLS 3.0 library
+
+-----------------------
+- Jul. 21, 2021       -
+-----------------------
+.: Changed: use Token Bucket algorithm for KAD packet tracking (suggested by Enig123)
+
+-----------------------
+- Jul. 09, 2021       -
+-----------------------
+.: Fixed: always restore the main window when showing exit confirmation dialog
+
+-----------------------
+- Jun. 06, 2021       -
+-----------------------
+.: Fixed: crash in PartFileConvert - regression (reported by stoatwblr)
+
+
+eMule 0.60c (community version)
+-----------------------
+- May. 03, 2021       -
+-----------------------
+.: Fixed: regressions in Windows service UPnP implementation
+.: Added: use BindAddr in miniupnpc library UPnP implementation
+
+-----------------------
+- Mar. 30, 2021       -
+-----------------------
+.: Changed: allow MediaInfo.dll 21.03
+
+-----------------------
+- Feb. 28, 2021       -
+-----------------------
+.: Fixed: blank tooltip instead of full file name was displayed in file list controls - Windows 7 and earlier (reported by LD531)
+
+-----------------------
+- Feb. 22, 2021       -
+-----------------------
+.: Fixed: do not send empty list of buffers (WSASend() error 10022)
+.: Changed: reset modification flag before reloading IP filter
+
+-----------------------
+- Feb. 20, 2021       -
+-----------------------
+.: Fixed: spelling
+.: Changed: use prefix "K" for 1024 (JEDEC) instead of "k" which is 1000 (SI). Switching to "Ki" might happen later.
+
+-----------------------
+- Feb. 18, 2021       -
+-----------------------
+.: Changed: results from "View Shared Files" request go into a single tab (as in previous versions)
+
+-----------------------
+- Feb. 08, 2021       -
+-----------------------
+.: Fixed: several issues in statistics
+
+-----------------------
+- Feb. 07, 2021       -
+-----------------------
+.: Added: display long file name below shared files list when Details panel is hidden (almost as it was long ago)
+
+-----------------------
+- Feb. 06, 2021       -
+-----------------------
+.: Added: show UNC shares in the tree control of Options->Directories
+
+-----------------------
+- Feb. 04, 2021       -
+-----------------------
+.: Added: kill timer in CDialogMinTrayBtn when minimize button is invisible
+.: Changed: handling of left button clicks in CTrayDialog (issues with the icon in system area)
+
+-----------------------
+- Jan. 29, 2021       -
+-----------------------
+.: Changed: DrawItem methods in *ListCtrl modules
+
+-----------------------
+- Jan. 23, 2021       -
+-----------------------
+.: Fixed: regression in CTimeTick
+.: Changed: use GetIpErrorString for log messages (USS; Vista and later only)
+
+-----------------------
+- Jan. 22, 2021       -
+-----------------------
+.: Added: "key" icon overlay in server list if obfuscation is supported
+.: Changed: disabled High DPI Awareness in Manifest Tool
+
+-----------------------
+- Jan. 19, 2021       -
+-----------------------
+.: Fixed: issues with pending blocks having been deleted in CPartFile
+.: Fixed: full file allocation in CPartFileWriteThread
+
+-----------------------
+- Jan. 17, 2021       -
+-----------------------
+.: Added: use I/O completion port for overlapped disk writes (download)
+.: Fixed: regression in CPartFileConvert GUI
+
+-----------------------
+- Jan. 11, 2021       -
+-----------------------
+.: Changed: rewrite of "dead sources" modules
+.: Changed: updated copyright year in source files
+
+-----------------------
+- Jan. 10, 2021       -
+-----------------------
+.: Changed: final version of UploadDiskIOthread with I/O completion port
+
+-----------------------
+- Jan. 06, 2021       -
+-----------------------
+.: Fixed: more small issues (thanks to Stulle)
+
+-----------------------
+- Jan. 03, 2021       -
+-----------------------
+.: Changed: GetOptimalTempDir should handle UNC paths
+
+-----------------------
+- Dec. 20, 2020       -
+-----------------------
+.: Fixed: start of Web Interface changed time/date display to "en-US"
+.: Fixed: text collection's name should be its file name without extention
+.: Fixed: rating display in Comments tab of Details dialog (reported by FoxMcCloud)
+
+-----------------------
+- Dec. 17, 2020       -
+-----------------------
+.: Changed: send only unique directories in response to "View Shared Files" request
+
+-----------------------
+- Dec. 16, 2020       -
+-----------------------
+.: Changed: use I/O completion port for overlapped disk reads (upload)
+
+
+eMule 0.60b (community version)
+-----------------------
+- Dec. 12, 2020       -
+-----------------------
+.: Fixed: wrong tag written in CKeyEntry (thanks to Stulle)
+
+-----------------------
+- Dec. 08, 2020       -
+-----------------------
+.: Fixed: crash in CQuantizer (regression)
+.: Changed: CQuantizer updated (newer code in CxImage archive)
+.: Changed: use CPartFile::CopyPartFile for video preview
+.: Changed: use array of 'filled' areas in part files instead of list
+
+-----------------------
+- Nov. 26, 2020       -
+-----------------------
+.: Fixed: memory leak in CSearchFile::StoreToFile (regression)
+.: Fixed: a number of tiny issues (thanks to Stulle)
+
+-----------------------
+- Nov. 13, 2020       -
+-----------------------
+.: Changed: all eMule directories consistently have a trailing backslash
+
+-----------------------
+- Nov. 09, 2020       -
+-----------------------
+.: Changed: overhaul of language DLL projects
+
+-----------------------
+- Oct. 31, 2020       -
+-----------------------
+.: Fixed: incorrectly disabled preview menu item for downloads (reported by zappatore77)
+
+-----------------------
+- Oct. 28, 2020       -
+-----------------------
+.: Fixed: conversion of file names to UTF8 (regression, reported by wddddd)
+.: Fixed: incorrect check for a media's empty tag name (reported by vfabgar)
+
+-----------------------
+- Oct. 17, 2020       -
+-----------------------
+.: Fixed: shared files auto priority was stuck at Auto[Hi] (regression, reported by idefix44)
+.: Changed: allow MediaInfo.dll 20.09
+
+-----------------------
+- Oct. 08, 2020       -
+-----------------------
+.: Fixed: sources could be asked for download with a delay (regression, reported by bovos)
+
+-----------------------
+- Oct. 01, 2020       -
+-----------------------
+.: Fixed: GetErrorMessage should always retrieve system error text (regression, reported by Riso64Bit)
+
+-----------------------
+- Sep. 24, 2020       -
+-----------------------
+.: Fixed: finding subdirectories in directory tree (regression, reported by Soul--Reaver)
+
+-----------------------
+- Sep. 19, 2020       -
+-----------------------
+.: Fixed: MiniMule could be invisible because of taskbar's negative coordinates
+
+-----------------------
+- Sep. 05, 2020       -
+-----------------------
+.: Fixed: incorrectly disabled context menu item "Connect To" in server list (reported by VasiliyRus)
+
+-----------------------
+- Sep. 03, 2020       -
+-----------------------
+.: Fixed: rewind .zip to the beginning before scanning filled areas for the central directory
+
+-----------------------
+- Aug. 30, 2020       -
+-----------------------
+.: Fixed: incorrect (zero) download count on category tabs due to a bug in queue iterator (reported by SS1900)
+
+-----------------------
+- Aug. 29, 2020       -
+-----------------------
+.: Fixed: crash if rehashing an empty part file (reported by SS1900)
+.: Fixed: empty .part file was added to shared files list after hashing
+
+-----------------------
+- Aug. 24, 2020       -
+-----------------------
+.: Fixed: one button was not deleted in CToolBarCtrlX::DeleteAllButtons (regression)
+
+-----------------------
+- Aug. 23, 2020       -
+-----------------------
+.: Fixed: order of categories in Search page was reversed (regression; reported by Noamk)
+
+-----------------------
+- Aug. 19, 2020       -
+-----------------------
+.: Fixed: regression in directory tree control
+.: Fixed: memory leak in GetMimeType
+
+-----------------------
+- Aug. 17, 2020       -
+-----------------------
+.: Changed: ANSI and Unicode time tag functions combined into one
+
+-----------------------
+- Aug. 16, 2020       -
+-----------------------
+.: Fixed: regression, display of client icons in client queue (reported by hooligan3000)
+.: Fixed: memory leak in CCustomAutoComplete::RemoveSelectedItem
+.: Added: force clearing of dialog items in search options ("syntax error" that should never happen)
+
+-----------------------
+- Aug. 12, 2020       -
+-----------------------
+.: Changed: exit from archive scan on early thread termination (multiple threads could exaust memory)
+.: Changed: allow MediaInfo.dll 20.08
+
+-----------------------
+- Aug. 11, 2020       -
+-----------------------
+.: Fixed: Content tab: blank video info when switching next/prev between archive and video files
+
+-----------------------
+- Aug. 10, 2020       -
+-----------------------
+.: Fixed: same WM_USER message codes defined for AsyncSocketEx and elsewhere
+
+-----------------------
+- Aug. 09, 2020       -
+-----------------------
+.: Fixed: richedit field in media contents could display text as selected (as was in NetworkInfoDialog)
+.: Changed: in shared files tree "All directories" should not be displayed in bold
+
+-----------------------
+- Aug. 08, 2020       -
+-----------------------
+.: Changed: FileInfoDialog.cpp, property names may have both '/' and '_', simple replacement was not working
+
+-----------------------
+- Aug. 05, 2020       -
+-----------------------
+.: Changed: replace CString.Mid() with pointers and use library functions to compare strings
+.: Changed: in packet encryption methods add server port to log lines for multiple servers on one IP
+
+
+eMule 0.60a (community version)
+-----------------------
+- Aug. 02, 2020       -
+-----------------------
+.: Changed: cleaned up code in statistics
+
+-----------------------
+- Jul. 31, 2020       -
+-----------------------
+.: Changed: uniform upload and download data rate checks (as in Options->Connection)
+
+-----------------------
+- Jul. 30, 2020       -
+-----------------------
+.: Changed: Shared Files - replace access by index in lists and map with iterators
+.: Changed: remove character array and GetLPCSTR from CIni
+
+-----------------------
+- Jul. 29, 2020       -
+-----------------------
+.: Changed: return CString from GetFileItemDisplayText and GetSourceItemDisplayText
+
+-----------------------
+- Jul. 27, 2020       -
+-----------------------
+.: Changed: IRC - processing of updated modes
+
+-----------------------
+- Jul. 25, 2020       -
+-----------------------
+.: Added: eMule can be closed from the taskbar when splash or about dialogs are on screen
+.: Fixed: main window gets no input when splash or about dialogs are on screen
+.: Fixed: exception in AICH hashing thread on very early program close
+
+-----------------------
+- Jul. 24, 2020       -
+-----------------------
+.: Fixed: scrolling list down could leave garbage below the bottom row (smooth scroll in comctl32)
+.: Changed: replace FillRect with FillSolidRect
+
+-----------------------
+- Jul. 22, 2020       -
+-----------------------
+.: Changed: minimum upload for unlimited download is set to 20 KB/s
+.: Changed: speed limits checking in Options->Connection
+
+-----------------------
+- Jul. 20, 2020       -
+-----------------------
+.: Fixed: Web Interface, sort in server list on server name (regression in eMule.tmpl)
+.: Changed: Web Interface, replace bubble sort with quick sort
+.: Changed: Web Interface, server sort for equal IPs additionally uses port numbers
+
+-----------------------
+- Jul. 15, 2020       -
+-----------------------
+.: Added: Import parts setting in Options->Extended (activates the option for the current session only!)
+
+-----------------------
+- Jul. 14, 2020       -
+-----------------------
+.: Fixed: editable listbox could select disabled items on getting focus
+.: Fixed: return value of map.Lookup() was ignored - multiple cases
+
+-----------------------
+- Jul. 11, 2020       -
+-----------------------
+.: Added: HttpDownloadDlg can use HTTPS (server.met, nodes.dat, IP filter, language dlls)
+.: Added: 7z extension and 7-zip files are known as archives
+.: Fixed: a few minor bugs and regressions
+.: Changed: updated links in .rc files
+
+-----------------------
+- Jun. 27, 2020       -
+-----------------------
+.: Fixed: copy & paste error in ShrinkToAvoidAlreadyRequested
+
+-----------------------
+- Jun. 24, 2020       -
+-----------------------
+.: Changed: spell checking has been applied to the code and comments
+.: Changed: faster Levenshtein distance calculation
+.: Changed: replace CStringA with CString in proxy settings
+
+-----------------------
+- Jun. 21, 2020       -
+-----------------------
+.: Changed: always keep gap list in CPartFile ordered
+.: Changed: use lower priority for background threads to improve responsiveness
+
+-----------------------
+- Jun. 12, 2020       -
+-----------------------
+.: Added: SMTP server settings in Options->Notifications
+.: Changed: IRC tries harder to keep input focus in the text entry field
+.: Changed: remove MfcStaticBinaryCompatible.cpp (should never need it again)
+
+-----------------------
+- Jun. 01, 2020       -
+-----------------------
+.: Changed: remove ellipsis from Connection Wizard's caption
+
+-----------------------
+- May. 26, 2020       -
+-----------------------
+.: Added: PLAIN SMTP authentication for email notifications
+
+-----------------------
+- May. 25, 2020       -
+-----------------------
+.: Added: email notifications can use SSL/TLS or STARTTLS security and LOGIN SMTP authentication
+.: Changed: replace ATL Server's regular expression matching with std::regex
+.: Removed: ATL Server code (too old and buggy)
+
+-----------------------
+- May. 23, 2020       -
+-----------------------
+.: Changed: replace CBase64Coding with standard ATL routines
+
+-----------------------
+- May. 11, 2020       -
+-----------------------
+.: Changed: allow mediainfo.dll versions up to 20.03.*
+
+-----------------------
+- May. 03, 2020       -
+-----------------------
+.: Fixed: multiple false error messages in the Log when bootstrapping KAD (regression)
+.: Fixed: wrong constant name in SharedFilesCtrl.cpp (but correct value)
+
+-----------------------
+- Apr. 22, 2020       -
+-----------------------
+.: Fixed: crash in exception handling while processing malformed hello packet (regression)
+
+-----------------------
+- Jan. 05, 2020       -
+-----------------------
+.: Fixed: several minor issues (static analysis)
+
+-----------------------
+- Dec. 24, 2019       -
+-----------------------
+.: Changed: remove compatibility code for searches stored in 0.49a
+.: Changed: remove obsolete MSLU/unicows code support
+
+-----------------------
+- Dec. 18, 2019       -
+-----------------------
+.: Changed: always use asynchronous I/O; remove "OverlappedSockets" setting
+
+-----------------------
+- Nov. 04, 2019       -
+-----------------------
+.: Changed: remove more of Windows 95 compatibility code
+.: Changed: make an OVERLAPPED structure a member of EMSocket class; rename variables
+
+-----------------------
+- Nov. 01, 2019       -
+-----------------------
+.: Fixed: crash when cancelling asynchronous I/O
+
+-----------------------
+- Oct. 24, 2019       -
+-----------------------
+.: Changed: all .rc files now use UTF-8
+
+-----------------------
+- Oct. 12, 2019       -
+-----------------------
+.: Changed: remove MuleToolBarCtrl::ForceRecalcLayout, no issues with comctrl32 now
+
+-----------------------
+- Sep. 15, 2019       -
+-----------------------
+.: Changed: allow mediainfo.dll versions up to 19.09.*
+
+
+eMule 0.51d (community version)
+-----------------------
+- May. 12, 2019       -
+-----------------------
+.: Fixed: tags duplication when reloading data from .part.met in PartFileConvert
+
+-----------------------
+- May. 11, 2019       -
+-----------------------
+.: Fixed: regression in AddGap
+.: Fixed: regression in stored searches loading
+.: Changed: tweak numbers for low speeds in upload bandwidth throttler
+.: Changed: remove old exception handling from socket code (thanks to Enig123 for the hint)
+
+-----------------------
+- Apr. 27, 2019       -
+-----------------------
+.: Fixed: Web Interface crash in search
+.: Changed: allow mediainfo.dll versions up to 19.04.*
+
+-----------------------
+- Apr. 24, 2019       -
+-----------------------
+.: Fixed: target data rate calculations for 25 KB/s slots
+
+-----------------------
+- Apr. 14, 2019       -
+-----------------------
+.: Added: import parts into downloads
+.: Changed: remove some old compatibility code for Windows 95/Windows NT (will be continued)
+
+-----------------------
+- Apr. 03, 2019       -
+-----------------------
+.: Fixed: network info dialog could display text as selected
+.: Changed: SendPacket always deletes packet (except UDP packets)
+
+-----------------------
+- Mar. 29, 2019       -
+-----------------------
+.: Changed: refactor networking code; rename Socket.* files to more descriptive ServerConnect.*
+
+-----------------------
+- Mar. 24, 2019       -
+-----------------------
+.: Changed: replace all GetAsyncKeyState with GetKeyState
+
+-----------------------
+- Mar. 22, 2019       -
+-----------------------
+.: Fixed: getting our public IP from server response
+.: Changed: try (only once!) to make an obfuscated server connection if port and flags data is absent
+
+-----------------------
+- Mar. 16, 2019       -
+-----------------------
+.: Fixed: global server search was broken and behaved like server method (regression)
+.: Changed: refactored EncryptedDatagramSocket
+
+-----------------------
+- Mar. 04, 2019       -
+-----------------------
+.: Changed: all language resources converted to Unicode
+
+
+eMule 0.51c (community version)
+-----------------------
+- Feb. 26, 2019       -
+-----------------------
+.: Fixed: KAD tag count was incorrect (regression; thanks to Enig123)
+
+-----------------------
+- Feb. 24, 2019       -
+-----------------------
+.: Fixed: send control data to disconnected network was giving 100% CPU load
+
+-----------------------
+- Feb. 20, 2019       -
+-----------------------
+.: Fixed: crash when loading emulecollections (regression)
+
+-----------------------
+- Feb. 12, 2019       -
+-----------------------
+.: Changed: replace XMessageBox with a simple ExitBox
+.: Changed: replace CKadTagValueString with LPCWSTR in SetGuiName
+
+-----------------------
+- Feb. 08, 2019       -
+-----------------------
+.: Fixed: UPnP crash in Windows XP
+
+-----------------------
+- Feb. 03, 2019       -
+-----------------------
+.: Changed: consistent style of code formatting (more or less)
+
+-----------------------
+- Feb. 01, 2019       -
+-----------------------
+.: Changed: remove unused LittleEndian.* KAD files
+
+-----------------------
+- Jan. 12, 2019       -
+-----------------------
+.: Fixed: Web Interface regressions in search
+
+-----------------------
+- Jan. 09, 2019       -
+-----------------------
+.: Added: Web Server logs SHA-1 certificate fingerprint on start
+
+-----------------------
+- Jan. 04, 2019       -
+-----------------------
+.: Fixed: e-mail notifications were broken due to buggy ATL code
+.: Fixed: regressions in Scheduler's options
+.: Added: scheduler's action edit dialog shows the name of the value
+
+-----------------------
+- Jan. 01, 2019       -
+-----------------------
+.: Fixed: data in tabs at the bottom of Shared Files' page was updated too frequently
+
+-----------------------
+- Dec. 19, 2018       -
+-----------------------
+.: Changed: use Unicode instead of ANSI in ComboBox2 item data
+.: Changed: allow mediainfo.dll versions up to 18.12.*
+.: Fixed: 64-bit Sender's address should not be used for 32-bit dwSearchID.
+
+-----------------------
+- Dec. 09, 2018       -
+-----------------------
+.: Fixed: minor issues in Web Server templates
+
+-----------------------
+- Nov. 03, 2018       -
+-----------------------
+.: Added: drop KAD publish requests having unreachable buddy IPs (thanks to Enig123)
+
+-----------------------
+- Sep. 16, 2018       -
+-----------------------
+.: Fixed: bad text in taskbar notification pop-up (reported by Riso64Bit)
+
+-----------------------
+- Sep. 14, 2018       -
+-----------------------
+.: Changed: move application state checks from CemuleDlg to CemuleApp class
+
+-----------------------
+- Sep. 08, 2018       -
+-----------------------
+.: Fixed: crash when deleting a part file while it was being hashed
+.: Added: cancel hashing when deleting a file, or when eMule was closing
+.: Added: wait for a file operation to complete when deleting a part file
+
+-----------------------
+- Sep. 03, 2018       -
+-----------------------
+.: Fixed: tab headers in Details dialogs were not updated on language change
+.: Added: middle click in Search results shows Details dialog
+
+
+eMule 0.51b (community version)
+-----------------------
+- Aug. 26, 2018       -
+-----------------------
+.: Fixed: minor visual issues in Transfers and status bar (build 3)
+.: Added: automatic check for new community versions should be working now (thanks to Some Support)
+
+-----------------------
+- Aug. 19, 2018       -
+-----------------------
+.: Fixed: minor visual issues in Search page (build 2)
+
+-----------------------
+- Aug. 12, 2018       -
+-----------------------
+.: Fixed: regression in TaskBarNotifier
+.: Changed: keep uploading when max size or time were reached, but free slots were available
+
+-----------------------
+- Aug. 08, 2018       -
+-----------------------
+.: Added: create certificate for Web Interface HTTPS connections
+
+-----------------------
+- Aug. 02, 2018       -
+-----------------------
+.: Fixed: regressions in ClientList and SearchWndParams
+.: Fixed: CAPTCHA generator was clipping rotated characters
+.: Added: conditionally enable Send and Close buttons in Messages
+
+-----------------------
+- Jul. 25, 2018       -
+-----------------------
+.: Added: Web Interface search for collections
+
+-----------------------
+- Jul. 24, 2018       -
+-----------------------
+.: Fixed: crash in Add sources dialog; and a minor visual issue
+
+-----------------------
+- Jul. 23, 2018       -
+-----------------------
+.: Fixed: time interval between cleanups in CIndexed (regression)
+.: Fixed: IRC channel tabs vertical resizing (topic window)
+.: Fixed: for long list of IRC nicks only the last part would be displayed
+
+
+eMule 0.51a (community version)
+-----------------------
+- Jul. 12, 2018       -
+-----------------------
+.: Changed: version check and online help will use HTTPS
+
+-----------------------
+- Jul. 09, 2018       -
+-----------------------
+.: Changed: Content-DB searches will use HTTPS
+
+-----------------------
+- Jun. 29, 2018       -
+-----------------------
+.: Fixed: Web Server link in network info dialog adjusted for HTTP/HTTPS
+
+-----------------------
+- Jun. 25, 2018       -
+-----------------------
+.: Fixed: regressions in DownloadListCtrl
+.: Fixed: hide sources on download rename or name cleanup (issue reported by Enig123)
+
+-----------------------
+- Jun. 16, 2018       -
+-----------------------
+.: Changed: code simplification in several modules
+
+-----------------------
+- Jun. 11, 2018       -
+-----------------------
+.: Fixed: IRC socket could falsely log errors while waiting for data (thanks to Enig123)
+.: Fixed: strange nested loop in graph module
+.: Fixed: slow peers often timed out at the begining of upload session (thanks to Some Support for the idea)
+.: Fixed: "Direct add with empty queue" peers could have hours of wait time
+
+-----------------------
+- Jun. 04, 2018       -
+-----------------------
+.: Fixed: order in start-up sequence
+.: Changed: use uint32 for upload and download speed limits
+.: Changed: using standard "Kbit" instead of "kBit"
+
+-----------------------
+- May. 30, 2018       -
+-----------------------
+.: Fixed: possible memory leak in collections
+.: Removed: MobileMule code
+
+-----------------------
+- May. 29, 2018       -
+-----------------------
+.: AsyncSocketEx code: fixed regressions, updated old OnLayerCallback methods
+
+-----------------------
+- May. 27, 2018       -
+-----------------------
+.: Added: mp4, mkv and ogg quick verification (thanks to Enig123)
+
+-----------------------
+- May. 23, 2018       -
+-----------------------
+.: Fixed: regression in Web Interface
+
+-----------------------
+- May. 12, 2018       -
+-----------------------
+.: Fixed: Shared Files page should always have a '+' symbol for "All Directories"
+.: Changed: allow mediainfo.dll versions up to 18.05.*
+
+-----------------------
+- May. 06, 2018       -
+-----------------------
+.: Fixed: string type inconsistency in KAD tags (in non-Unicode builds only)
+
+-----------------------
+- Apr. 30, 2018       -
+-----------------------
+.: Changed: Web Server templates and HTML generation for better HTML standards compliance
+
+-----------------------
+- Mar. 29, 2018       -
+-----------------------
+.: Fixed: possible NULL pointer dereference in ProcessPreviewRequest
+
+-----------------------
+- Mar. 27, 2018       -
+-----------------------
+.: Changed: flush timers for each file in downloads get an additional random delays (up to 2 seconds)
+.: Changed: allow mediainfo.dll versions up to 18.03.*
+
+-----------------------
+- Mar. 21, 2018       -
+-----------------------
+.: Fixed: file rename should update ED2K link in Details pages (reported by Riso64Bit)
+
+-----------------------
+- Mar. 11, 2018       -
+-----------------------
+.: Changed: set DS_ONQUEUE state for swapped source because DS_NONE could get purged (thanks to Enig123)
+
+-----------------------
+- Mar. 06, 2018       -
+-----------------------
+.: Added: magnet links can be pasted or drag&dropped to Transfers
+
+-----------------------
+- Mar. 04, 2018       -
+-----------------------
+.: Changed: KAD TCP firewall check tries to connect to low ID client instead of immediate return (recheck for false low ID)
+.: Changed: removed events logging where TODO comments suggested
+
+-----------------------
+- Feb. 20, 2018       -
+-----------------------
+.: Added: IRC tabs - each tab now has a separate input and autocomplete
+
+-----------------------
+- Feb. 16, 2018       -
+-----------------------
+.: Added: check for filtered or banned KAD buddy IP (thanks to Enig123)
+.: Changed: IRC tabs will not close on disconnect or quit
+
+-----------------------
+- Feb. 14, 2018       -
+-----------------------
+.: Added: magnet links, basic parsing (file name, length, hash, AICH hash and sources)
+
+-----------------------
+- Feb. 11, 2018       -
+-----------------------
+.: Added: validate log file name when saving logs manually (also fixed regression in validation)
+.: Changed: IRC command /ison printout is prepended with "ison: "
+
+-----------------------
+- Feb. 10, 2018       -
+-----------------------
+.: Added: IRC can use italics
+.: Added: check for DS_REQHASHSET state in CUpDownClient::Disconnected (thanks to Enig123)
+
+-----------------------
+- Feb. 06, 2018       -
+-----------------------
+.: Fixed: IRC nick in a channel was not updated on change if a private conversation existed
+.: Fixed: IRC smileys could be drawn with incorrect background colour
+.: Added: IRC user mode prefix will be displayed in a channel log
+.: Added: IRC setting to toggle UTF-8 usage
+.: Added: IRC setting to ignore "Ping? Pong!" messages in Status
+
+-----------------------
+- Feb. 05, 2018       -
+-----------------------
+.: Changed: IRC channel default topic height was decreased to 1 line
+.: Changed: IRC Channels list is closable
+
+-----------------------
+- Feb. 04, 2018       -
+-----------------------
+.: Fixed: conversion from UTF-8 to UTF-16LE must use string length
+.: Added: IRC uses UTF-8 encoding
+
+-----------------------
+- Feb. 02, 2018       -
+-----------------------
+.: Fixed: IRC should open a private message window after double clicking on your own nick
+.: Fixed: IRC used case-sensitive comparison in some cases
+.: Fixed: IRC nick in Prefernces was truncated to 19 characters instead of 20
+.: Changed: IRC nick may be cleared in Prefernces while not connected
+.: Added: IRC channel window would not close after kick
+
+-----------------------
+- Jan. 27, 2018       -
+-----------------------
+.: Added: Web Server can use SSL/TLS with a certificate and a private key files (.crt/.key)
+.: Changed: Web Server templates - password should not be saved in browsers
+.: Fixed: Web Server templates had a few odd tags
+
+-----------------------
+- Jan. 23, 2018       -
+-----------------------
+.: Fixed: Web Interface search results from multiple tabs (partial fix, shows results from all tabs as one list).
+
+-----------------------
+- Dec. 23, 2017       -
+-----------------------
+.: Added: CreateCrashDump=2 in preferences.ini, [eMule] section will write dump without asking user
+
+-----------------------
+- Dec. 19, 2017       -
+-----------------------
+.: Added: KAD massive flooders will be removed from the routing zone
+.: Changed: Use InterlockedCompareExchange() to prevent re-entry
+.: Changed: UploadBandwidthThrottler::RemoveFromStandardList cleans up all entries for a socket as was written in comment
+.: Changed: LastCommonRouteFinder does not need uploadLocker
+
+-----------------------
+- Dec. 05, 2017       -
+-----------------------
+.: Fixed: allow loading of mediainfo.dll versions v17.*
+.: Fixed: bug in id3lib_strings.h length()
+.: Changed: AbstractFile::UpdateFileRatingCommentAvail(bool bForceUpdate = false) made consistent with its overriding methods
+
+-----------------------
+- Nov. 25, 2017       -
+-----------------------
+.: Changed: upgraded AsyncSocket code using the latest Filezilla server
+.: Changed: use uniform check for timeouts ">=" instead of random ">" or ">=" (an example: ::GetTickCount()>=t+TIMEOUT)
+
+-----------------------
+- Nov. 18, 2017       -
+-----------------------
+.: Fixed: memory leak in exception handler of CAICHRecoveryHashSet::SaveHashSet()
+.: Fixed: several minor regressions
+.: Added: duplicate AICH hashes in known2_64.met are zeroed and will be purged on next program start
+.: Changed: replaced broken stat() functions with custom statUTC(), returning UTC file timestamps
+
+-----------------------
+- Oct. 10, 2017       -
+-----------------------
+.: Changed: allow small ping variation in the incoming KAD packets tracking (thanks to Enig123 for the idea)
+.: Changed: use message-only window in AsyncSocketEx
+
+-----------------------
+- Sep. 24, 2017       -
+-----------------------
+.: Fixed: prevent re-entry into CEMSocket::CleanUpOverlappedSendOperation()
+.: Fixed: condition in UploadBandwidthThrottler::RunInternal()
+.: Fixed: crash in SharedDirCtrl on sharing directory with exactly 1 file
+.: Fixed: regression in AsyncSocketEx.cpp (it is an array of structures, not byte array!).
+.: Fixed: bug in CResizableLayout::ClipChildren
+.: A number of always true/false conditions removed from checks
+.: Code editing related to type casts and type consistency
