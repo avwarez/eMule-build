@@ -1,50 +1,67 @@
 diff --git a/srchybrid/OtherFunctions.cpp b/srchybrid/OtherFunctions.cpp
-index 5189e35..cd54b16 100644
+index 5189e35..5cf579a 100644
 --- a/srchybrid/OtherFunctions.cpp
 +++ b/srchybrid/OtherFunctions.cpp
-@@ -15,6 +15,7 @@
- //along with this program; if not, write to the Free Software
- //Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
- #include "stdafx.h"
-+#include <algorithm>
- #include <atlimage.h>
- #include <fcntl.h>
- #include <io.h>
-@@ -3196,9 +3197,21 @@ int __cdecl CompareCStringPtrLocaleString(const void *p1, const void *p2)
+@@ -3186,27 +3186,34 @@ int CompareLocaleString(LPCTSTR psz1, LPCTSTR psz2)
+ 	return iResult ? iResult - CSTR_EQUAL : 0;
+ }
+ 
+-int __cdecl CompareCStringPtrLocaleStringNoCase(const void *p1, const void *p2)
++// Since C++17 noexcept is part of a function type: the comparator parameter of
++// the two Sort() below is noexcept-qualified, so it matches its declaration in
++// OtherFunctions.h, and accepts these four functions as default arguments, only
++// if they are noexcept as well (this is also what warning C5039 asks for when
++// the pointer is handed to qsort).
++int __cdecl CompareCStringPtrLocaleStringNoCase(const void *p1, const void *p2) noexcept
+ {
+ 	return CompareLocaleStringNoCase(*(CString*)p1, *(CString*)p2);
+ }
+ 
+-int __cdecl CompareCStringPtrLocaleString(const void *p1, const void *p2)
++int __cdecl CompareCStringPtrLocaleString(const void *p1, const void *p2) noexcept
+ {
  	return CompareLocaleString(*(CString*)p1, *(CString*)p2);
  }
  
--void Sort(CStringArray &astr, int(__cdecl *pfnCompare)(const void*, const void*) noexcept)
-+// Since C++17 noexcept is part of a function type, so the noexcept-qualified
-+// parameter these two used to carry no longer matched their declarations in
-+// OtherFunctions.h, which never had it. Dropping qsort settles that at the root:
-+// std::sort takes a typed callable, so no function pointer crosses an extern "C"
-+// boundary (this is also what warning C5039 was about), the element size comes
-+// from the element type instead of the hand-written sizeof(CString*) - the
-+// elements are CString objects, and that only ever worked because
-+// sizeof(CString) == sizeof(void*) - and the elements are moved through their own
-+// operators rather than copied bytewise, which is not something qsort may do to a
-+// reference-counted type.
-+void Sort(CStringArray &astr, int(__cdecl *pfnCompare)(const void*, const void*))
+ void Sort(CStringArray &astr, int(__cdecl *pfnCompare)(const void*, const void*) noexcept)
  {
 -	qsort(astr.GetData(), astr.GetCount(), sizeof(CString*), pfnCompare);
-+	CString *const pFirst = astr.GetData();
-+	std::sort(pFirst, pFirst + astr.GetCount()
-+		, [pfnCompare](const CString &rstr1, const CString &rstr2) { return pfnCompare(&rstr1, &rstr2) < 0; });
++	// The elements are CString objects, not pointers to them, so the element size
++	// has to say so. It went unnoticed because sizeof(CString) == sizeof(CString*).
++	qsort(astr.GetData(), astr.GetCount(), sizeof(CString), pfnCompare);
  }
  
- int __cdecl CompareCStringPtrPtrLocaleStringNoCase(const void *p1, const void *p2)
-@@ -3211,9 +3224,11 @@ int __cdecl CompareCStringPtrPtrLocaleString(const void *p1, const void *p2)
+-int __cdecl CompareCStringPtrPtrLocaleStringNoCase(const void *p1, const void *p2)
++int __cdecl CompareCStringPtrPtrLocaleStringNoCase(const void *p1, const void *p2) noexcept
+ {
+ 	return CompareLocaleStringNoCase(**(CString**)p1, **(CString**)p2);
+ }
+ 
+-int __cdecl CompareCStringPtrPtrLocaleString(const void *p1, const void *p2)
++int __cdecl CompareCStringPtrPtrLocaleString(const void *p1, const void *p2) noexcept
+ {
  	return CompareLocaleString(**(CString**)p1, **(CString**)p2);
  }
- 
--void Sort(CSimpleArray<const CString*> &apstr, int(__cdecl *pfnCompare)(const void*, const void*) noexcept)
-+void Sort(CSimpleArray<const CString*> &apstr, int(__cdecl *pfnCompare)(const void*, const void*))
- {
--	qsort(apstr.GetData(), apstr.GetSize(), sizeof(CString*), pfnCompare);
-+	const CString **const ppFirst = apstr.GetData();
-+	std::sort(ppFirst, ppFirst + apstr.GetSize()
-+		, [pfnCompare](const CString *pstr1, const CString *pstr2) { return pfnCompare(&pstr1, &pstr2) < 0; });
- }
- 
- // SLUGFILLER: heapsortCompletesrc
+diff --git a/srchybrid/OtherFunctions.h b/srchybrid/OtherFunctions.h
+index 6af905e..fb4ec71 100644
+--- a/srchybrid/OtherFunctions.h
++++ b/srchybrid/OtherFunctions.h
+@@ -180,12 +180,12 @@ bool ExpandEnvironmentStrings(CString &rstrStrings);
+ int CompareLocaleString(LPCTSTR psz1, LPCTSTR psz2);
+ int CompareLocaleStringNoCaseA(LPCSTR psz1, LPCSTR psz2);
+ int CompareLocaleStringNoCaseW(LPCWSTR psz1, LPCWSTR psz2);
+-int __cdecl CompareCStringPtrLocaleString(const void *p1, const void *p2);
+-int __cdecl CompareCStringPtrLocaleStringNoCase(const void *p1, const void *p2);
+-void Sort(CStringArray &astr, int(__cdecl *pfnCompare)(const void*, const void*) = CompareCStringPtrLocaleStringNoCase);
+-int __cdecl CompareCStringPtrPtrLocaleString(const void *p1, const void *p2);
+-int __cdecl CompareCStringPtrPtrLocaleStringNoCase(const void *p1, const void *p2);
+-void		Sort(CSimpleArray<const CString*> &apstr, int(__cdecl *pfnCompare)(const void*, const void*) = CompareCStringPtrPtrLocaleStringNoCase);
++int __cdecl CompareCStringPtrLocaleString(const void *p1, const void *p2) noexcept;
++int __cdecl CompareCStringPtrLocaleStringNoCase(const void *p1, const void *p2) noexcept;
++void Sort(CStringArray &astr, int(__cdecl *pfnCompare)(const void*, const void*) noexcept = CompareCStringPtrLocaleStringNoCase);
++int __cdecl CompareCStringPtrPtrLocaleString(const void *p1, const void *p2) noexcept;
++int __cdecl CompareCStringPtrPtrLocaleStringNoCase(const void *p1, const void *p2) noexcept;
++void		Sort(CSimpleArray<const CString*> &apstr, int(__cdecl *pfnCompare)(const void*, const void*) noexcept = CompareCStringPtrPtrLocaleStringNoCase);
+ void		HeapSort(CArray<uint16> &count, UINT first, UINT last);
+ void		StripTrailingColon(CString &rstr);
+ bool		IsUnicodeFile(LPCTSTR pszFilePath);
