@@ -6,12 +6,13 @@ on:
     branches:
       - v0.72a
       - v0.72a-cpp23
+      - v0.72a-cpp23-fix
 
 # Two pushes to the same branch in quick succession would otherwise run two
 # full matrices in parallel and each publish their own release for it -
 # cancel the older run instead so only the latest commit's build ever reaches
-# the release job. Keyed on github.ref, so the two release branches never
-# cancel each other.
+# the release job. Keyed on github.ref, so the release branches never cancel
+# each other.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -136,10 +137,10 @@ jobs:
     # attached as workflow artifacts (downloadable for verification, short
     # retention). Only real pushes to a release branch go the extra step and
     # cut a permanent public GitHub Release - manual workflow_dispatch runs
-    # (ad-hoc/test builds, e.g. on v0.72a-cpp23-fix) assemble the identical
-    # zips but stop at the artifact and never touch the Releases page. That
-    # split is enforced per-step below (the "Create GitHub Release" step is
-    # push-only), not at the job level. Everything is branch-agnostic (the
+    # (ad-hoc/test builds on any branch) assemble the identical zips but stop
+    # at the artifact and never touch the Releases page. That split is
+    # enforced per-step below (the "Create GitHub Release" step is push-only),
+    # not at the job level. Everything is branch-agnostic (the
     # tag is derived from github.ref_name and the release targets github.sha),
     # so each branch publishes its own independently named releases.
     runs-on: ubuntu-latest
@@ -262,10 +263,10 @@ jobs:
       - name: Upload release zips as workflow artifacts
         # Always (push and workflow_dispatch): makes the assembled per-platform
         # zips downloadable straight from the run, so packaging can be verified
-        # on any branch - including v0.72a-cpp23-fix, which never reaches the
-        # push-only "Create GitHub Release" step below. Short retention: these
-        # are verification copies, and pushes also attach the same zips to a
-        # permanent Release.
+        # on any branch - including branches outside the push trigger, which
+        # never reach the push-only "Create GitHub Release" step below. Short
+        # retention: these are verification copies, and pushes also attach the
+        # same zips to a permanent Release.
         uses: actions/upload-artifact@v4
         with:
           name: release-zips-${{ github.ref_name }}
