@@ -1,0 +1,53 @@
+diff --git a/srchybrid/PartFile.h b/srchybrid/PartFile.h
+index f907c20..2f992e9 100644
+--- a/srchybrid/PartFile.h
++++ b/srchybrid/PartFile.h
+@@ -15,6 +15,7 @@
+ //along with this program; if not, write to the Free Software
+ //Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ #pragma once
++#include <atomic>
+ #include "KnownFile.h"
+ #include "DeadSourceList.h"
+ #include "CorruptionBlackBox.h"
+@@ -384,7 +385,7 @@ private:
+ 	time_t	m_nDlActiveTime;
+ 	time_t	m_tLastModified;	// last file modification time (NT's version of UTC), to be used for stats only!
+ 	time_t	m_tCreated;			// file creation time (NT's version of UTC), to be used for stats only!
+-	volatile WPARAM m_uFileOpProgress;
++	std::atomic<WPARAM> m_uFileOpProgress;
+ 	DWORD	lastSwapForSourceExchangeTick; // ZZ:DownloadManaager
+ 	DWORD	m_lastRefreshedDLDisplay;
+ 	DWORD	m_nLastBufferFlushTime;
+@@ -402,7 +403,7 @@ private:
+ 	uint32	m_datarate;
+ 	float	m_percentcompleted;
+ 	EPartFileStatus	status;
+-	volatile EPartFileOp m_eFileOp;
++	std::atomic<EPartFileOp> m_eFileOp;
+ 	byte	m_refresh; //delay counter for display
+ 	uint8	m_iDownPriority;
+ 	bool	m_paused;
+diff --git a/srchybrid/kademlia/kademlia/Indexed.h b/srchybrid/kademlia/kademlia/Indexed.h
+index f5cb612..976db6f 100644
+--- a/srchybrid/kademlia/kademlia/Indexed.h
++++ b/srchybrid/kademlia/kademlia/Indexed.h
+@@ -27,6 +27,7 @@ their client on the eMule forum.
+ */
+ 
+ #pragma once
++#include <atomic>
+ #include "kademlia/routing/Maps.h"
+ 
+ struct SSearchTerm
+@@ -101,8 +102,8 @@ namespace Kademlia
+ 		CSrcHashMap m_mapNotes;
+ 		CLoadMap	m_mapLoad;
+ 		CMutex		m_mutSync;
+-		volatile bool	m_bAbortLoading; // signals the loading thread to abort
+-		volatile bool	m_bDataLoaded;
++		std::atomic<bool>	m_bAbortLoading; // signals the loading thread to abort
++		std::atomic<bool>	m_bDataLoaded;
+ 		static CString	m_sSourceFileName;
+ 		static CString	m_sKeyFileName;
+ 		static CString	m_sLoadFileName;
