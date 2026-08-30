@@ -67,9 +67,9 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          count back to zero.
 #   95-98  the code compiles and is warning-clean but is not correct on
 #          every target we build (see each patch's own subject).
-#   99     temporary diagnostics. Not a fix and not meant to stay: 99 stops
-#          Stdafx.h from masking two warnings so a CI run can show where
-#          they fire. Delete it once that has been read.
+#   99     reserved for temporary diagnostics - a patch that makes a build
+#          report something rather than fix it. Nothing lives here now;
+#          whatever lands here is meant to be deleted once it has been read.
 # ---------------------------------------------------------------------------
 find_package(Git REQUIRED)
 
