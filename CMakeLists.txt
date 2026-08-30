@@ -57,6 +57,19 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 # core.autocrlf=false so the tree matches the patches byte for byte. Patches within one directory are applied in sorted
 # filename order; give them a numeric prefix if two of them ever have to
 # touch the same hunk in a defined sequence.
+#
+# The numeric prefixes in emule_build/ also group the patches by why they
+# exist, which is the first thing you want to know when one of them stops
+# applying after a submodule bump:
+#   00-89  the code does not compile as-is (a dependency's API changed, or
+#          the C++ standard we build at removed the construct).
+#   90-94  the code compiles but /Wall flags it; these bring the warning
+#          count back to zero.
+#   95-98  the code compiles and is warning-clean but is not correct on
+#          every target we build (see each patch's own subject).
+#   99     temporary diagnostics. Not a fix and not meant to stay: 99 stops
+#          Stdafx.h from masking two warnings so a CI run can show where
+#          they fire. Delete it once that has been read.
 # ---------------------------------------------------------------------------
 find_package(Git REQUIRED)
 
