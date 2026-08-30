@@ -2,11 +2,26 @@ name: Build eMule (Windows)
 
 on:
   workflow_dispatch:
+    inputs:
+      publish:
+        description: "Cut a public GitHub Release from this run"
+        type: boolean
+        default: false
   push:
     branches:
       - v0.72a
       - v0.72a-cpp23
       - v0.72a-cpp23-fix
+
+# Branches whose pushes publish a public Release on their own. v0.72a-cpp23-fix
+# is deliberately NOT here: it builds on every push and leaves the per-platform
+# zips as run artifacts, so a build can be downloaded and tested before anything
+# reaches the Releases page. To publish one, run the workflow manually on the
+# branch with publish=true. Consumed by the "Create GitHub Release" step below;
+# a branch added to the push trigger without being added here builds but never
+# publishes, which is the safe direction to get it wrong in.
+env:
+  AUTO_PUBLISH_BRANCHES: '["v0.72a", "v0.72a-cpp23"]'
 
 # Two pushes to the same branch in quick succession would otherwise run two
 # full matrices in parallel and each publish their own release for it -
@@ -135,14 +150,15 @@ jobs:
     needs: build
     # Runs on every event so the per-platform zips are always assembled and
     # attached as workflow artifacts (downloadable for verification, short
-    # retention). Only real pushes to a release branch go the extra step and
-    # cut a permanent public GitHub Release - manual workflow_dispatch runs
-    # (ad-hoc/test builds on any branch) assemble the identical zips but stop
-    # at the artifact and never touch the Releases page. That split is
-    # enforced per-step below (the "Create GitHub Release" step is push-only),
-    # not at the job level. Everything is branch-agnostic (the
-    # tag is derived from github.ref_name and the release targets github.sha),
-    # so each branch publishes its own independently named releases.
+    # retention). Cutting a permanent public GitHub Release is the extra step,
+    # and it happens in exactly two cases: a push to a branch listed in
+    # AUTO_PUBLISH_BRANCHES above, or a manual run started with publish=true.
+    # Everything else - pushes to a branch that only builds, and ordinary
+    # ad-hoc dispatches - stops at the artifact and never touches the Releases
+    # page. That split is enforced per-step below, not at the job level.
+    # Everything is branch-agnostic (the tag is derived from github.ref_name
+    # and the release targets github.sha), so each branch publishes its own
+    # independently named releases.
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -261,23 +277,27 @@ jobs:
           unzip -l release-assets/*.zip | head -20
 
       - name: Upload release zips as workflow artifacts
-        # Always (push and workflow_dispatch): makes the assembled per-platform
-        # zips downloadable straight from the run, so packaging can be verified
-        # on any branch - including branches outside the push trigger, which
-        # never reach the push-only "Create GitHub Release" step below. Short
-        # retention: these are verification copies, and pushes also attach the
-        # same zips to a permanent Release.
+        # Always, on every event: makes the assembled per-platform zips
+        # downloadable straight from the run, so a build can be verified - and,
+        # for a branch that does not publish automatically, actually tested -
+        # before anything is made public. Short retention: these are
+        # verification copies, and a run that does publish attaches the same
+        # zips to a permanent Release.
         uses: actions/upload-artifact@v4
         with:
           name: release-zips-${{ github.ref_name }}
           path: release-assets/*.zip
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 14
 
       - name: Create GitHub Release
-        # Push-only: workflow_dispatch runs stop at the downloadable zip
-        # artifact above and never create a public Release.
-        if: github.event_name == 'push'
+        # The only step that makes anything public. Two ways in: a push to a
+        # branch that publishes automatically, or a manual run explicitly asking
+        # for it. Every other run stops at the downloadable zip artifact above.
+        if: |
+          (github.event_name == 'push'
+           && contains(fromJSON(env.AUTO_PUBLISH_BRANCHES), github.ref_name))
+          || (github.event_name == 'workflow_dispatch' && inputs.publish)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
