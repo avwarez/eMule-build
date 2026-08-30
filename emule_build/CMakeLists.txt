@@ -315,7 +315,20 @@ endif()
 #
 # These are built by the dedicated `languages` aggregate target, not by the
 # default (all) build: EXCLUDE_FROM_ALL keeps `--target emule` as lean as it
-# was, while `cmake --build ... --target languages` produces every DLL.
+# was, while `cmake --build ... --target languages` produces the DLLs.
+#
+# Not every locale in lang/ is shipped. eMule resolves a string that is absent
+# (or empty) in the language DLL by falling back to the English resource in
+# emule.exe - GetResString(), I18n.cpp - so an out-of-date translation degrades
+# into a half-English UI rather than into an error. EMULE_LANGUAGES therefore
+# lists the locales whose .rc was audited against emule.rc and found aligned
+# with the current string table; the rest are still globbed and reported, but
+# no DLL is produced for them, so eMule shows those users a fully English UI
+# instead of a partly stale one. The excluded set is ba_BA, es_AS, fr_BR,
+# lv_LV, mt_MT, ug_CN, va_ES and va_ES_RACV: each carries the strings added
+# since its last translation pass as commented-out English placeholders, and
+# lv_LV is only ~39% translated. Setting -DEMULE_LANGUAGES=ALL restores the
+# old behaviour and builds every lang/*.rc found.
 #
 # afxres.h (the only include not reachable relative to the .rc itself -
 # ..\Resource.h, ..\Version.h and lang.rc2 all resolve against the rc file's
@@ -325,11 +338,47 @@ endif()
 # the RC preprocessor needs that header, for its IDS_/ID_ resource constants.
 # ---------------------------------------------------------------------------
 set(EMULE_LANG_DIR "${EMULE_SRC_DIR}/lang")
+
+set(EMULE_LANGUAGES
+    ar_AE bg_BG ca_ES cz_CZ da_DK de_DE el_GR es_ES_T et_EE fa_IR fi_FI fr_FR
+    gl_ES he_IL hu_HU it_IT jp_JP ko_KR lt_LT nb_NO nl_NL nn_NO pl_PL pt_BR
+    pt_PT ro_RO ru_RU sl_SI sq_AL sv_SE tr_TR ua_UA vi_VN zh_CN zh_TW
+    CACHE STRING "Locales to build language DLLs for, or ALL for every lang/*.rc")
+
 file(GLOB _lang_rcs "${EMULE_LANG_DIR}/*.rc")
 
-add_custom_target(languages COMMENT "Building all eMule language resource DLLs")
-
+set(_lang_available "")
 foreach(_lang_rc IN LISTS _lang_rcs)
+    get_filename_component(_locale "${_lang_rc}" NAME_WE)
+    list(APPEND _lang_available "${_locale}")
+endforeach()
+
+# A locale named here but missing from the submodule means the list has drifted
+# from lang/ (renamed or dropped upstream) - fail loudly rather than silently
+# shipping one DLL fewer than intended.
+if(NOT EMULE_LANGUAGES STREQUAL "ALL")
+    foreach(_locale IN LISTS EMULE_LANGUAGES)
+        if(NOT _locale IN_LIST _lang_available)
+            message(FATAL_ERROR
+                "eMule: EMULE_LANGUAGES lists '${_locale}' but ${EMULE_LANG_DIR}/${_locale}.rc does not exist")
+        endif()
+    endforeach()
+endif()
+
+set(_lang_selected "")
+set(_lang_skipped "")
+foreach(_lang_rc IN LISTS _lang_rcs)
+    get_filename_component(_locale "${_lang_rc}" NAME_WE)
+    if(EMULE_LANGUAGES STREQUAL "ALL" OR _locale IN_LIST EMULE_LANGUAGES)
+        list(APPEND _lang_selected "${_lang_rc}")
+    else()
+        list(APPEND _lang_skipped "${_locale}")
+    endif()
+endforeach()
+
+add_custom_target(languages COMMENT "Building the selected eMule language resource DLLs")
+
+foreach(_lang_rc IN LISTS _lang_selected)
     get_filename_component(_locale "${_lang_rc}" NAME_WE)   # e.g. it_IT
     set(_lang_target "lang_${_locale}")
 
@@ -353,5 +402,10 @@ foreach(_lang_rc IN LISTS _lang_rcs)
     add_dependencies(languages ${_lang_target})
 endforeach()
 
-list(LENGTH _lang_rcs _n_langs)
+list(LENGTH _lang_selected _n_langs)
+list(LENGTH _lang_skipped _n_skipped)
 message(STATUS "eMule: ${_n_langs} language DLLs wired into the 'languages' target")
+if(_n_skipped GREATER 0)
+    string(REPLACE ";" " " _lang_skipped_str "${_lang_skipped}")
+    message(STATUS "eMule: ${_n_skipped} locales not shipped (English fallback): ${_lang_skipped_str}")
+endif()

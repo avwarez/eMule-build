@@ -104,7 +104,8 @@ jobs:
         # explicitly. They land in build/emule_build/<config>/lang/ (next to
         # emule.exe) and are uploaded together with it below, so the release
         # job can assemble the shipping folder (emule.exe + lang/*.dll + the
-        # vendored dist/ payload).
+        # vendored dist/ payload). Only the locales in EMULE_LANGUAGES are
+        # built - see the Language DLLs block in emule_build/CMakeLists.txt.
         run: cmake --build build --config ${{ matrix.configuration }} --target languages
 
       - name: Upload build output (emule.exe + language DLLs)
@@ -251,7 +252,7 @@ jobs:
             # emule_build/dist/ for that reason.
             cp "emule/srchybrid/webinterface/eMule.tmpl" "$stage/config/eMule.tmpl"
             cp "$dir/emule.exe" "$stage"/                             # this arch's exe
-            cp "$dir"/lang/*.dll "$stage/lang"/                       # this arch's 43 DLLs
+            cp "$dir"/lang/*.dll "$stage/lang"/                       # this arch's language DLLs
             ( cd staging && zip -r -q "${GITHUB_WORKSPACE}/release-assets/eMule-${{ steps.meta.outputs.tag }}-${platform}.zip" "eMule-${{ github.ref_name }}" )
           done
           ls -l release-assets
