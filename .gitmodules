@@ -4,7 +4,7 @@
 [submodule "id3lib"]
 	path = id3lib
 	url = https://github.com/avwarez/id3lib.git
-	branch = v3.9.1
+	branch = v3.9.2
 [submodule "mbedtls"]
 	path = mbedtls
 	url = https://github.com/Mbed-TLS/mbedtls.git
