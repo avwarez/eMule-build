@@ -10,18 +10,18 @@ on:
   push:
     branches:
       - v0.72a
-      - v0.72a-cpp23
-      - v0.72a-cpp23-fix
 
-# Branches whose pushes publish a public Release on their own. v0.72a-cpp23-fix
-# is deliberately NOT here: it builds on every push and leaves the per-platform
-# zips as run artifacts, so a build can be downloaded and tested before anything
-# reaches the Releases page. To publish one, run the workflow manually on the
-# branch with publish=true. Consumed by the "Create GitHub Release" step below;
-# a branch added to the push trigger without being added here builds but never
-# publishes, which is the safe direction to get it wrong in.
+# Branches whose pushes publish a public pre-release on their own. There is one
+# line of development: v0.72a-cpp23 and v0.72a-cpp23-fix were folded into
+# v0.72a on 2026-09-01 and deleted (their last heads are kept as the
+# archive/* tags). Consumed by the "Create GitHub Release" step below; a branch
+# added to the push trigger without being added here builds and leaves the
+# per-platform zips as run artifacts, but never reaches the Releases page -
+# which is the safe direction to get it wrong in, and the right shape for a
+# topic branch. To publish from one anyway, run the workflow manually on it
+# with publish=true.
 env:
-  AUTO_PUBLISH_BRANCHES: '["v0.72a", "v0.72a-cpp23"]'
+  AUTO_PUBLISH_BRANCHES: '["v0.72a"]'
 
 # Two pushes to the same branch in quick succession would otherwise run two
 # full matrices in parallel and each publish their own release for it -
@@ -227,7 +227,7 @@ jobs:
       - name: Compute release tag
         id: meta
         # Release reference = branch name + UTC generation timestamp, e.g.
-        # "v0.72a-20260716-144500" or "v0.72a-cpp23-20260821-144500". Computed
+        # "v0.72a-20260716-144500". Computed
         # once, before packaging, so all per-platform zip filenames and the
         # GitHub Release tag/title carry the exact same stamp; every run gets
         # its own permanent, chronologically sortable identifier instead of one
