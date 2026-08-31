@@ -1,0 +1,108 @@
+# Static analysis (CodeQL), deliberately kept separate from build-windows.yml.
+#
+# Two reasons for a workflow of its own rather than another job in the build
+# matrix. First, this takes substantially longer than a plain compile - CodeQL
+# builds a relational database of the whole translation unit set and then runs
+# the query suite over it - and the build workflow's job is to produce
+# downloadable binaries quickly. Second, this must never be able to fail the
+# build: a query regression or a CodeQL version bump upstream would otherwise
+# block a release for reasons that have nothing to do with the code.
+#
+# The analysis only ever reports; it does not gate anything.
+name: CodeQL
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - v0.72a-cpp23-fix
+  # No `schedule:` yet. A weekly cron is the usual practice and catches drift
+  # in the vendored dependencies' own code, but it is worth adding only once
+  # we know from a real run how long this takes and how much it reports.
+
+# Same reasoning as build-windows.yml: a second push while a run is in flight
+# should replace it, not race it. Analyses are pure reporting, so cancelling
+# the older one loses nothing.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (C++)
+    runs-on: windows-latest
+    # CodeQL on a codebase this size is not fast, and the default 360-minute
+    # ceiling is too generous to be a useful signal that something hung.
+    timeout-minutes: 120
+
+    permissions:
+      # Required to upload the SARIF results to the repository's code-scanning
+      # store (the Security tab). This is what gives findings deduplication and
+      # a triage state that survives across runs - the whole reason for using
+      # code scanning rather than reading warnings out of a build log.
+      security-events: write
+      contents: read
+      actions: read
+
+    steps:
+      - name: Pin deterministic line endings before checkout
+        # Identical to build-windows.yml, and needed for the same reason: the
+        # runner image sets core.autocrlf=true globally, the emule_build
+        # patches are generated against LF bytes, and git apply refuses the
+        # mismatched context. Without this the CMake configure step below
+        # fails before CodeQL ever sees a compiler invocation.
+        run: git config --global core.autocrlf false
+
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Python
+        # See build-windows.yml: pins one interpreter first on PATH so that
+        # pip below and CMake's own find_package(Python3) resolve to the same
+        # one when mbedtls runs its code generators.
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install mbedtls code-gen Python dependencies
+        run: pip install -r mbedtls/tf-psa-crypto/scripts/driver.requirements.txt
+
+      - name: Initialize CodeQL
+        # Must come before any compilation: CodeQL for C++ works by tracing
+        # the real compiler invocations, so anything built before this point
+        # is invisible to the analysis. It is placed before the CMake configure
+        # step too, since configure compiles its own probe programs and runs
+        # mbedtls's generators - harmless to trace, and this way nothing in
+        # the build is missed.
+        uses: github/codeql-action/init@v3
+        with:
+          languages: c-cpp
+          # build-mode: manual - the build below is a specific CMake
+          # invocation (one platform, one configuration, one target);
+          # autobuild would try to infer it and has no way to know that the
+          # patch series is applied at configure time.
+          build-mode: manual
+          config-file: ./.github/codeql/codeql-config.yml
+
+      - name: Configure (CMake)
+        # No -G and no -T, for the reasons documented at length in
+        # build-windows.yml. Only x64 is analysed: the source under
+        # examination is the same on all three platforms, and the findings
+        # that differ by pointer width are exactly the ones /Wall and patch 93
+        # already cover.
+        run: cmake -S . -B build -A x64
+
+      - name: Build (traced by CodeQL)
+        # Release, not Debug: Debug adds /RTC1 and the _DEBUG-only code paths
+        # (see types.h - EMFileSize is a class only under _DEBUG), and the
+        # shipping configuration is the one worth analysing. The languages
+        # target is skipped - satellite DLLs are resource-only and contain no
+        # C++ to analyse.
+        run: cmake --build build --config Release --target emule
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:c-cpp"

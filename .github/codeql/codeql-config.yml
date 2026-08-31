@@ -1,0 +1,29 @@
+# CodeQL analysis scope for this repository.
+#
+# The build under analysis is the ordinary emule target, which necessarily
+# compiles every vendored dependency too (cryptopp, mbedtls, id3lib, zlib,
+# miniupnpc, resizablelib). CodeQL indexes whatever it observes the compiler
+# touch, so without the filter below the results would be dominated by code
+# we do not maintain and cannot patch here. Restricting to emule/srchybrid
+# keeps the findings actionable: that is the code this repository's patch
+# series is allowed to change.
+name: "eMule C++"
+
+paths:
+  - emule/srchybrid
+
+paths-ignore:
+  # Parser.cpp and Scanner.cpp are bison/flex output, committed as generated
+  # (emule_build/CMakeLists.txt has a regen_parser target, excluded from the
+  # default build, and emule.vcxproj marks the same CustomBuild step
+  # ExcludedFromBuild). Findings in them cannot be fixed at the source - only
+  # in the .y/.l grammars, or not at all - and they are already carrying
+  # /wd5033;/wd5262 for the same reason under /Wall.
+  - emule/srchybrid/Parser.cpp
+  - emule/srchybrid/Scanner.cpp
+
+# No `queries:` key on purpose: that leaves the default code-scanning suite in
+# force. security-extended and security-and-quality both raise the count a lot
+# on a codebase of this age, and the first run here is a measurement, not a
+# gate - once we know what the default suite reports and how much of it is
+# real, widening the suite is one line.
