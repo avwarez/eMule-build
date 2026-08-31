@@ -201,6 +201,49 @@ target_compile_options(emule PRIVATE
 # explicitly. CMake's default CMAKE_CXX_FLAGS_RELEASE already includes /O2 /DNDEBUG,
 # which we take as the intended behavior rather than overriding it.
 
+# ---------------------------------------------------------------------------
+# MSVC code analysis (/analyze), off by default and never part of a normal
+# build. Enable with -DEMULE_CODE_ANALYSIS=ON; the msvc-analyze workflow is
+# the only thing that does.
+#
+# This is a different instrument from /Wall, not a louder one. /Wall is a
+# per-expression syntactic check: it sees one statement at a time and cannot
+# know whether a pointer was tested before it was dereferenced. /analyze walks
+# the control-flow graph of each function and reasons about the values that
+# can reach a given point, which is what lets it report the C6xxx family -
+# null dereference on a path the author did not consider, reading past the end
+# of a stack buffer, a handle leaked on an early return. That is the class of
+# defect this codebase would actually be damaged by, and it is exactly the
+# class /Wall cannot reach, which is why zero warnings under /Wall says
+# nothing about it either way.
+#
+# Applied to the emule target alone: the vendored dependencies are not ours to
+# fix and their findings would swamp the ones that matter.
+option(EMULE_CODE_ANALYSIS "Compile the emule target under MSVC /analyze and write one SARIF log per translation unit" OFF)
+
+if(EMULE_CODE_ANALYSIS)
+    target_compile_options(emule PRIVATE
+        $<$<CXX_COMPILER_ID:MSVC>:/analyze>
+        # Same external-header definitions as /external:W0 above (angle
+        # brackets plus the explicitly named cryptopp directory), so MFC, the
+        # CRT, the Windows SDK and Crypto++ are compiled but not analysed.
+        # Without this the report is mostly atlmfc and would be useless.
+        $<$<CXX_COMPILER_ID:MSVC>:/analyze:external->
+        # One log file per translation unit, written next to the .obj, rather
+        # than a single shared file every TU would race to overwrite.
+        $<$<CXX_COMPILER_ID:MSVC>:/analyze:log:format:sarif>
+        $<$<CXX_COMPILER_ID:MSVC>:/analyze:autolog>
+        $<$<CXX_COMPILER_ID:MSVC>:/analyze:autolog:ext>
+        $<$<CXX_COMPILER_ID:MSVC>:.sarif>
+        # /analyze costs roughly three times a plain compile per file, and the
+        # 244 emule translation units are compiled serially by MSBuild within
+        # one project. /MP is what keeps the analysis run inside a sane wall
+        # clock; it is scoped to this option and does not affect the ordinary
+        # build, which stays byte-for-byte as the vcxproj describes it.
+        $<$<CXX_COMPILER_ID:MSVC>:/MP>
+    )
+endif()
+
 # Precompiled header: Stdafx.cpp creates it, all files use it except
 # Parser.cpp/Scanner.cpp which declare <PrecompiledHeader /> (NotUsing) in
 # the vcxproj.
