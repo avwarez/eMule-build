@@ -9,11 +9,21 @@ have to be combined here rather than handed over as a directory.
 
 Three things happen on the way through, none of them cosmetic:
 
-  * Paths are rewritten. The compiler records absolute paths of the runner's
-    checkout (D:\\a\\eMule-build\\eMule-build\\emule\\srchybrid\\...); code
-    scanning matches alerts to blobs by repository-relative path and silently
-    drops what it cannot resolve, so an unrewritten upload produces a green
-    run with no alerts attached to any file.
+  * Paths are resolved and rewritten. MSVC does not put a uri on a result at
+    all: every artifactLocation carries an "index" into the run's own
+    artifacts table, and only that table holds the path - as an absolute
+    location in the runner's checkout (file:///D:/a/eMule-build/...), with the
+    drive and directories cased inconsistently between entries. Code scanning
+    matches alerts to blobs by repository-relative path and silently drops what
+    it cannot resolve, so a merge that does not follow the indirection uploads
+    a green run with no alerts attached to any file.
+
+  * Path casing is restored from the filesystem. MSVC lowercases the
+    translation unit it is analysing but keeps the original casing for every
+    header it reached, so the same finding in a shared header arrives as both
+    updownclient.h and UpDownClient.h. Code scanning matches blobs by exact
+    path, so the lowercased half would attach to nothing - and the two spellings
+    defeat the duplicate collapsing below, reporting one defect twice.
 
   * Results outside emule/srchybrid are discarded. /analyze:external- already
     keeps the analysis off MFC, the CRT and Crypto++, but a finding can still
@@ -27,6 +37,7 @@ Three things happen on the way through, none of them cosmetic:
 
 import argparse
 import json
+import os
 import pathlib
 import sys
 import urllib.parse
@@ -37,6 +48,34 @@ import urllib.parse
 MAX_RESULTS = 5000
 
 PERIMETER = "emule/srchybrid/"
+
+# Excluded for the same reason as in .github/codeql/codeql-config.yml: these two
+# are bison/flex output, committed as generated. A finding in them cannot be
+# fixed at the source, only in the .y/.l grammars or not at all. Scanner.cpp
+# additionally carries #line directives naming the directory it was generated in
+# two decades ago (d:/Data/Src/eMule_CVS/...), so its findings do not resolve to
+# the checkout in the first place - excluded here explicitly rather than left to
+# drop out by accident.
+EXCLUDED = (
+    "emule/srchybrid/parser.cpp",
+    "emule/srchybrid/scanner.cpp",
+)
+
+
+def build_case_index(source_tree):
+    """Map lowercased repository-relative path -> the path as it is on disk.
+
+    MSVC's casing cannot be trusted (see the module docstring) and the code
+    scanning API is case-sensitive, so the only authority is the checkout.
+    """
+    index = {}
+    base = os.path.join(source_tree, *PERIMETER.strip("/").split("/"))
+    for dirpath, _dirnames, filenames in os.walk(base):
+        for filename in filenames:
+            rel = os.path.relpath(os.path.join(dirpath, filename), source_tree)
+            rel = rel.replace(os.sep, "/")
+            index[rel.lower()] = rel
+    return index
 
 
 def normalize(path):
@@ -74,12 +113,20 @@ def to_repo_relative(uri, root, root_len):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--build-dir", required=True)
-    ap.add_argument("--repo-root", required=True)
+    ap.add_argument("--repo-root", required=True,
+                    help="absolute path the compiler recorded, used only to "
+                         "strip the prefix off the SARIF locations")
+    ap.add_argument("--source-tree", default=".",
+                    help="the checkout on disk, walked to recover path casing; "
+                         "the same directory as --repo-root when merging on "
+                         "the machine that built")
     ap.add_argument("--output", required=True)
     args = ap.parse_args()
 
     repo_root = normalize(args.repo_root).lower()
     repo_root_len = len(repo_root)
+    case_index = build_case_index(args.source_tree)
+    print("files indexed for casing: %d" % len(case_index))
 
     logs = sorted(pathlib.Path(args.build_dir).rglob("*.sarif"))
     print("per-TU SARIF logs found: %d" % len(logs))
@@ -95,7 +142,7 @@ def main():
         for stray in strays[:10]:
             print("  %s" % stray, file=sys.stderr)
 
-    rules = {}          # ruleId -> rule object, first one wins
+    rule_ids = set()
     results = []
     seen = set()        # (ruleId, path, line, column, message) - see docstring
     unreadable = 0
@@ -103,6 +150,7 @@ def main():
     unresolved = 0
     no_location = 0
     duplicates = 0
+    excluded = 0
     # A dropped result is indistinguishable from a clean one in the totals, so
     # keep a few verbatim samples of each reason. The URI shape MSVC actually
     # writes is the thing most likely to be wrong here, and it cannot be read
@@ -122,22 +170,38 @@ def main():
             continue
 
         for run in doc.get("runs", []):
-            driver = run.get("tool", {}).get("driver", {})
-            run_rules = driver.get("rules", []) or []
-            for rule in run_rules:
-                rules.setdefault(rule.get("id"), rule)
+            # The artifacts table is what every location in this run points
+            # into. It is per-run, so it must be read before the results and
+            # cannot be shared between logs.
+            artifact_uris = [
+                (artifact.get("location") or {}).get("uri")
+                for artifact in run.get("artifacts", []) or []
+            ]
+
+            def rewrite(artifact_location):
+                """Resolve one artifactLocation to a repo-relative path and
+                rewrite it in place. Returns the path, or None."""
+                uri = artifact_location.get("uri")
+                if uri is None:
+                    index = artifact_location.get("index")
+                    if isinstance(index, int) and 0 <= index < len(artifact_uris):
+                        uri = artifact_uris[index]
+                rel = to_repo_relative(uri, repo_root, repo_root_len)
+                if rel is None:
+                    return None
+                rel = case_index.get(rel.lower(), rel)
+                artifact_location["uri"] = rel
+                # The merged run has no artifacts table, so any surviving index
+                # would dangle.
+                artifact_location.pop("index", None)
+                artifact_location.pop("uriBaseId", None)
+                return rel
 
             for result in run.get("results", []):
-                # ruleIndex points into this run's rule array; the merged array
-                # has a different order, so resolve it to an id now and let the
-                # remap below reinstate a correct index.
                 rule_id = result.get("ruleId")
-                if rule_id is None:
-                    idx = result.get("ruleIndex")
-                    if isinstance(idx, int) and 0 <= idx < len(run_rules):
-                        rule_id = run_rules[idx].get("id")
-                        result["ruleId"] = rule_id
                 result.pop("ruleIndex", None)
+                # Also an index into the artifacts table being dropped.
+                result.pop("analysisTarget", None)
 
                 locations = result.get("locations") or []
                 if not locations:
@@ -148,29 +212,31 @@ def main():
                 primary = None
                 keep = False
                 resolved_any = False
+                is_generated = False
                 for loc in locations:
                     art = loc.get("physicalLocation", {}).get("artifactLocation", {})
-                    rel = to_repo_relative(art.get("uri"), repo_root, repo_root_len)
+                    rel = rewrite(art)
                     if rel is None:
                         sample("unresolved", json.dumps(loc)[:300])
                         continue
                     resolved_any = True
-                    art["uri"] = rel
-                    art.pop("uriBaseId", None)
+                    if rel.lower() in EXCLUDED:
+                        is_generated = True
+                        break
                     if rel.startswith(PERIMETER):
                         keep = True
                         if primary is None:
                             region = loc.get("physicalLocation", {}).get("region", {})
                             primary = (rel, region.get("startLine"), region.get("startColumn"))
 
-                # relatedLocations carry the same absolute paths and are shown
-                # in the alert's detail view, so they need rewriting too.
+                if is_generated:
+                    excluded += 1
+                    continue
+
+                # relatedLocations are shown in the alert's detail view and
+                # point into the same table, so they need resolving too.
                 for loc in result.get("relatedLocations") or []:
-                    art = loc.get("physicalLocation", {}).get("artifactLocation", {})
-                    rel = to_repo_relative(art.get("uri"), repo_root, repo_root_len)
-                    if rel is not None:
-                        art["uri"] = rel
-                        art.pop("uriBaseId", None)
+                    rewrite(loc.get("physicalLocation", {}).get("artifactLocation", {}))
 
                 if not keep:
                     if resolved_any:
@@ -186,10 +252,18 @@ def main():
                     duplicates += 1
                     continue
                 seen.add(key)
+                rule_ids.add(rule_id)
                 results.append(result)
 
-    merged_rules = [rules[k] for k in sorted(rules)]
-    index_of = {rule.get("id"): i for i, rule in enumerate(merged_rules)}
+    # MSVC emits no rule metadata at all - no tool.driver.rules, just a ruleId
+    # per result - so the table is synthesized here. Only the documentation
+    # link is added: inventing a description from the first message text would
+    # put one result's wording on every other result sharing the rule.
+    merged_rules = [{
+        "id": rule_id,
+        "helpUri": "https://learn.microsoft.com/cpp/code-quality/%s" % rule_id.lower(),
+    } for rule_id in sorted(rule_ids) if rule_id]
+    index_of = {rule["id"]: i for i, rule in enumerate(merged_rules)}
     for result in results:
         idx = index_of.get(result.get("ruleId"))
         if idx is not None:
@@ -220,6 +294,7 @@ def main():
         json.dump(sarif, fh, indent=1)
 
     print("unreadable logs:        %d" % unreadable)
+    print("dropped, generated source: %d" % excluded)
     print("dropped, no location:   %d" % no_location)
     print("dropped, path not under the checkout: %d" % unresolved)
     print("dropped, outside %s: %d" % (PERIMETER, outside))

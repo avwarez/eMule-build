@@ -86,6 +86,7 @@ jobs:
           python .github/scripts/merge-analyze-sarif.py `
             --build-dir build `
             --repo-root "${{ github.workspace }}" `
+            --source-tree "${{ github.workspace }}" `
             --output msvc-analyze.sarif
 
       - name: Collect the raw per-TU logs
