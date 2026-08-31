@@ -232,7 +232,9 @@ if(EMULE_CODE_ANALYSIS)
         # One log file per translation unit, written next to the .obj, rather
         # than a single shared file every TU would race to overwrite.
         $<$<CXX_COMPILER_ID:MSVC>:/analyze:log:format:sarif>
-        $<$<CXX_COMPILER_ID:MSVC>:/analyze:autolog>
+        # /analyze:autolog:ext implies autolog and is incompatible with
+        # spelling /analyze:autolog as well - cl rejects the pair outright
+        # (D8016), confirmed by run 33434580197.
         $<$<CXX_COMPILER_ID:MSVC>:/analyze:autolog:ext>
         $<$<CXX_COMPILER_ID:MSVC>:.sarif>
         # /analyze costs roughly three times a plain compile per file, and the
