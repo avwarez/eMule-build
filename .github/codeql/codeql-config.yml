@@ -22,16 +22,21 @@ paths-ignore:
   - emule/srchybrid/Parser.cpp
   - emule/srchybrid/Scanner.cpp
 
-# The default code-scanning suite was run first (run 33411798169) and reported
-# 37 alerts, of which only 19 were in emule/srchybrid and only one was a real
-# defect - a format string declaring %u with no argument passed. That is a thin
-# yield for 196k lines, so the suite is widened here to find out whether the
-# default set was simply too narrow for a codebase of this age, or whether
-# CodeQL's C++ queries have little to say about it either way. Costs one run to
-# answer; revert this key to go back to the default suite.
+# No `queries:` key, deliberately - the analysis runs the default
+# code-scanning suite.
 #
-# security-extended, not security-and-quality: the latter adds maintainability
-# and style queries, which on twenty-year-old MFC would bury the security
-# findings we are actually looking for.
-queries:
-  - uses: security-extended
+# The wider suites were measured rather than assumed. The default suite (run
+# 33411798169) reported 37 alerts, 19 of them in emule/srchybrid, and found one
+# real defect: a format string declaring %u with no argument passed. Widening to
+# security-extended (run 33416849097) took that to 368 alerts, 272 in
+# emule/srchybrid, and found no new defect at all - the increase was one risk
+# class that needs no code change (188 sites whose format string comes from a
+# translated language DLL resource, checkable in the resources instead) plus
+# four clusters of false positives: the MAKELONG(col, !ascending) sort-flag
+# idiom read as a bitwise not, a POSIX file-mode query applied to the Windows
+# CRT's _tfsopen, a _tcscpy into a buffer that is exactly the right size, and
+# scanf return values that are checked but through CDataExchange::Fail(), which
+# throws where CodeQL expects a return.
+#
+# 272 alerts for zero new defects is not a rate worth triaging, so the extended
+# suite stays off.
