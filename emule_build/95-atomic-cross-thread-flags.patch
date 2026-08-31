@@ -28,6 +28,48 @@ index f907c20..2f992e9 100644
  	byte	m_refresh; //delay counter for display
  	uint8	m_iDownPriority;
  	bool	m_paused;
+diff --git a/srchybrid/SharedFilesCtrl.h b/srchybrid/SharedFilesCtrl.h
+index 9296e85..1a0e163 100644
+--- a/srchybrid/SharedFilesCtrl.h
++++ b/srchybrid/SharedFilesCtrl.h
+@@ -15,6 +15,7 @@
+ //along with this program; if not, write to the Free Software
+ //Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ #pragma once
++#include <atomic>
+ #include "MuleListCtrl.h"
+ #include "TitledMenu.h"
+ #include "ListCtrlItemWalk.h"
+@@ -73,7 +74,7 @@ protected:
+ 	bool			m_aSortBySecondValue[4];
+ 	CImageList		m_ImageList;
+ 	CDirectoryItem	*m_pDirectoryFilter;
+-	volatile INT_PTR	nAICHHashing;
++	std::atomic<INT_PTR>	nAICHHashing;
+ 	CToolTipCtrlX	*m_pToolTip;
+ 	CTypedPtrList<CPtrList, CShareableFile*>	liTempShareableFilesInDir;
+ 	CShareableFile	*m_pHighlightedItem;
+diff --git a/srchybrid/UPnPImpl.h b/srchybrid/UPnPImpl.h
+index 16cec42..bf802f4 100644
+--- a/srchybrid/UPnPImpl.h
++++ b/srchybrid/UPnPImpl.h
+@@ -15,6 +15,7 @@
+ //along with this program; if not, write to the Free Software
+ //Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ #pragma once
++#include <atomic>
+ #include <exception>
+ 
+ enum TRISTATE
+@@ -66,7 +67,7 @@ public:
+ // Implementation
+ protected:
+ 	void SendResultMessage();
+-	volatile TRISTATE m_bUPnPPortsForwarded;
++	std::atomic<TRISTATE> m_bUPnPPortsForwarded;
+ 	uint16 m_nOldTCPPort;
+ 	uint16 m_nOldTCPWebPort;
+ 	uint16 m_nOldUDPPort;
 diff --git a/srchybrid/kademlia/kademlia/Indexed.h b/srchybrid/kademlia/kademlia/Indexed.h
 index f5cb612..976db6f 100644
 --- a/srchybrid/kademlia/kademlia/Indexed.h

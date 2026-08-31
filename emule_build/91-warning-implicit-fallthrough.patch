@@ -50,7 +50,7 @@ index 2849fad..8084367 100644
  							default:
  								if (partfile->GetCategory())
  									theApp.downloadqueue->StartNextFileIfPrefs(partfile->GetCategory());
-+									[[fallthrough]];
++								[[fallthrough]];
  							case PS_PAUSED:
  								partfile->DeletePartFile();
  							}
