@@ -65,8 +65,15 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          the C++ standard we build at removed the construct).
 #   90-94  the code compiles but /Wall flags it; these bring the warning
 #          count back to zero.
-#   95-98  the code compiles and is warning-clean but is not correct on
+#   95-96  the code compiles and is warning-clean but is not correct on
 #          every target we build (see each patch's own subject).
+#   97     the code is wrong on every target, on input a peer or a web
+#          client controls. These are the commits on the fork's
+#          v0.72a-secfix branch, offered upstream as irwir/eMule#7; a file
+#          here goes away when the same change reaches a released v0.72x.
+#   98     corrections to the shipped language resources, from the fork's
+#          v0.72a-lang branch - source data for the `languages` target
+#          rather than code, so they change no binary.
 #   99     reserved for temporary diagnostics - a patch that makes a build
 #          report something rather than fix it. Nothing lives here now;
 #          whatever lands here is meant to be deleted once it has been read.

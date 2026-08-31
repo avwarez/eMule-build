@@ -1,0 +1,38 @@
+diff --git a/srchybrid/UDPSocket.cpp b/srchybrid/UDPSocket.cpp
+index d1d770b..9aec9b9 100644
+--- a/srchybrid/UDPSocket.cpp
++++ b/srchybrid/UDPSocket.cpp
+@@ -155,6 +155,8 @@ void CUDPSocket::OnReceive(int nErrorCode)
+ 	int iSockAddrLen = sizeof sockAddr;
+ 	int length = ReceiveFrom(buffer, sizeof buffer, (LPSOCKADDR)&sockAddr, &iSockAddrLen);
+ 	if (length != SOCKET_ERROR) {
++		if (length == 0)
++			return;
+ 		int nPayLoadLen = length;
+ 		CServer *pServer = theApp.serverlist->GetServerByIPUDP(sockAddr.sin_addr.s_addr, ntohs(sockAddr.sin_port), true);
+ 		if (pServer != NULL && thePrefs.IsCryptLayerEnabled()
+@@ -211,8 +213,10 @@ void CUDPSocket::OnReceive(int nErrorCode)
+ 	}
+ }
+ 
+-bool CUDPSocket::ProcessPacket(const BYTE *packet, UINT size, UINT opcode, uint32 nIP, uint16 nUDPPort)
++bool CUDPSocket::ProcessPacket(const BYTE *packet, int size, UINT opcode, uint32 nIP, uint16 nUDPPort)
+ {
++	if (size < 0)
++		return false;
+ 	try {
+ 		theStats.AddDownDataOverheadServer(size);
+ 		CServer *pServer = theApp.serverlist->GetServerByIPUDP(nIP, nUDPPort, true);
+diff --git a/srchybrid/UDPSocket.h b/srchybrid/UDPSocket.h
+index 63f0599..992db48 100644
+--- a/srchybrid/UDPSocket.h
++++ b/srchybrid/UDPSocket.h
+@@ -69,7 +69,7 @@ protected:
+ 
+ private:
+ 	void SendBuffer(uint32 nIP, uint16 nPort, BYTE *pPacket, UINT uSize);
+-	bool ProcessPacket(const BYTE *packet, UINT size, UINT opcode, uint32 nIP, uint16 nUDPPort);
++	bool ProcessPacket(const BYTE *packet, int size, UINT opcode, uint32 nIP, uint16 nUDPPort);
+ 	void ProcessPacketError(UINT size, UINT opcode, uint32 nIP, uint16 nUDPPort, LPCTSTR pszError);
+ 	bool IsBusy() const						{ return m_bWouldBlock; }
+ 	int SendTo(BYTE *lpBuf, int nBufLen, uint32 dwIP, uint16 nPort);
