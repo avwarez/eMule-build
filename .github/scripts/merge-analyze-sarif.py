@@ -100,7 +100,18 @@ def main():
     seen = set()        # (ruleId, path, line, column, message) - see docstring
     unreadable = 0
     outside = 0
+    unresolved = 0
+    no_location = 0
     duplicates = 0
+    # A dropped result is indistinguishable from a clean one in the totals, so
+    # keep a few verbatim samples of each reason. The URI shape MSVC actually
+    # writes is the thing most likely to be wrong here, and it cannot be read
+    # off the counts.
+    samples = {"unresolved": [], "outside": [], "no_location": []}
+
+    def sample(kind, value):
+        if len(samples[kind]) < 5 and value not in samples[kind]:
+            samples[kind].append(value)
 
     for log in logs:
         try:
@@ -130,16 +141,20 @@ def main():
 
                 locations = result.get("locations") or []
                 if not locations:
-                    outside += 1
+                    no_location += 1
+                    sample("no_location", json.dumps(result)[:300])
                     continue
 
                 primary = None
                 keep = False
+                resolved_any = False
                 for loc in locations:
                     art = loc.get("physicalLocation", {}).get("artifactLocation", {})
                     rel = to_repo_relative(art.get("uri"), repo_root, repo_root_len)
                     if rel is None:
+                        sample("unresolved", json.dumps(loc)[:300])
                         continue
+                    resolved_any = True
                     art["uri"] = rel
                     art.pop("uriBaseId", None)
                     if rel.startswith(PERIMETER):
@@ -158,7 +173,12 @@ def main():
                         art.pop("uriBaseId", None)
 
                 if not keep:
-                    outside += 1
+                    if resolved_any:
+                        outside += 1
+                        sample("outside", (locations[0].get("physicalLocation", {})
+                                           .get("artifactLocation", {}).get("uri", "")))
+                    else:
+                        unresolved += 1
                     continue
 
                 key = (rule_id, primary, result.get("message", {}).get("text"))
@@ -200,8 +220,16 @@ def main():
         json.dump(sarif, fh, indent=1)
 
     print("unreadable logs:        %d" % unreadable)
-    print("dropped, outside %s:  %d" % (PERIMETER, outside))
+    print("dropped, no location:   %d" % no_location)
+    print("dropped, path not under the checkout: %d" % unresolved)
+    print("dropped, outside %s: %d" % (PERIMETER, outside))
     print("dropped as duplicate:   %d" % duplicates)
+    print("repo root used for matching: %s" % repo_root)
+    for kind in ("unresolved", "outside", "no_location"):
+        if samples[kind]:
+            print("--- sample %s ---" % kind)
+            for value in samples[kind]:
+                print("  %s" % value)
     print("distinct rules:         %d" % len(merged_rules))
     print("results written:        %d" % len(results))
     if merged_rules:

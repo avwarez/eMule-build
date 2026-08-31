@@ -88,6 +88,26 @@ jobs:
             --repo-root "${{ github.workspace }}" `
             --output msvc-analyze.sarif
 
+      - name: Collect the raw per-TU logs
+        # Kept as an artifact of their own so that a mapping or schema problem
+        # in the merge can be reproduced and fixed locally, rather than by
+        # re-running the analysis once per hypothesis.
+        if: always()
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path raw-analyze | Out-Null
+          Get-ChildItem -Path build -Recurse -Filter *.sarif |
+            ForEach-Object { Copy-Item $_.FullName -Destination (Join-Path raw-analyze $_.Name) -Force }
+          Write-Host ("raw logs collected: " + (Get-ChildItem raw-analyze).Count)
+
+      - name: Upload the raw per-TU logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: msvc-analyze-raw
+          path: raw-analyze
+          if-no-files-found: warn
+
       - name: Upload the merged SARIF as a build artifact
         # Independent of the code-scanning upload below: keeps the raw report
         # retrievable even if the upload is rejected, which is how a schema or
