@@ -22,8 +22,16 @@ paths-ignore:
   - emule/srchybrid/Parser.cpp
   - emule/srchybrid/Scanner.cpp
 
-# No `queries:` key on purpose: that leaves the default code-scanning suite in
-# force. security-extended and security-and-quality both raise the count a lot
-# on a codebase of this age, and the first run here is a measurement, not a
-# gate - once we know what the default suite reports and how much of it is
-# real, widening the suite is one line.
+# The default code-scanning suite was run first (run 33411798169) and reported
+# 37 alerts, of which only 19 were in emule/srchybrid and only one was a real
+# defect - a format string declaring %u with no argument passed. That is a thin
+# yield for 196k lines, so the suite is widened here to find out whether the
+# default set was simply too narrow for a codebase of this age, or whether
+# CodeQL's C++ queries have little to say about it either way. Costs one run to
+# answer; revert this key to go back to the default suite.
+#
+# security-extended, not security-and-quality: the latter adds maintainability
+# and style queries, which on twenty-year-old MFC would bury the security
+# findings we are actually looking for.
+queries:
+  - uses: security-extended
