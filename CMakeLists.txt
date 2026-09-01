@@ -58,25 +58,11 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 # filename order; give them a numeric prefix if two of them ever have to
 # touch the same hunk in a defined sequence.
 #
-# The numeric prefixes in emule_build/ also group the patches by why they
-# exist, which is the first thing you want to know when one of them stops
-# applying after a submodule bump:
-#   00-89  the code does not compile as-is (a dependency's API changed, or
-#          the C++ standard we build at removed the construct).
-#   90-94  the code compiles but /Wall flags it; these bring the warning
-#          count back to zero.
-#   95-96  the code compiles and is warning-clean but is not correct on
-#          every target we build (see each patch's own subject).
-#   97     the code is wrong on every target, on input a peer or a web
-#          client controls. These are the commits on the fork's
-#          v0.72a-secfix branch, offered upstream as irwir/eMule#7; a file
-#          here goes away when the same change reaches a released v0.72x.
-#   98     corrections to the shipped language resources, from the fork's
-#          v0.72a-lang branch - source data for the `languages` target
-#          rather than code, so they change no binary.
-#   99     reserved for temporary diagnostics - a patch that makes a build
-#          report something rather than fix it. Nothing lives here now;
-#          whatever lands here is meant to be deleted once it has been read.
+# emule_build/ carries no patches on this branch: the 21 that used to live
+# here are commits on the emule submodule's own v0.72a-next branch, which is
+# what the submodule now points at. The call below is kept because it costs
+# nothing on an empty directory and is where a temporary diagnostic patch
+# would go.
 # ---------------------------------------------------------------------------
 find_package(Git REQUIRED)
 
@@ -224,9 +210,9 @@ add_subdirectory(resizablelib_build)
 add_subdirectory(mbedtls)
 
 # ---------------------------------------------------------------------------
-# eMule sources - vanilla git submodule (emule/, avwarez/eMule pinned to
-# branch v0.72a), never edited in place. Everything it needs on top of that
-# tag is supplied as patch files under emule_build/, applied by
-# emule_apply_patches() near the top of this file.
+# eMule sources - git submodule (emule/), pinned to avwarez/eMule branch
+# v0.72a-next: upstream's v0.72a plus the 21 commits this build needs on top
+# of it, which on the v0.72a branch of this repo were patch files under
+# emule_build/ instead.
 # ---------------------------------------------------------------------------
 add_subdirectory(emule_build)

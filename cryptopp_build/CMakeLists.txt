@@ -143,7 +143,8 @@ add_library(cryptopp STATIC ${CRYPTOPP_SOURCES} ${CRYPTOPP_ASM_SOURCES})
 # every inline function, template and class in those headers has two different
 # definitions inside one binary - an ODR violation whose visible failure mode
 # is exactly the noexcept-in-the-type-system mismatch that already showed up
-# inside eMule (see emule_build/80-noexcept-in-function-type.patch).
+# inside eMule (see the "noexcept in function type" commit on the emule
+# submodule's v0.72a-next branch).
 #
 # Safe for a crypto library specifically because Crypto++'s own feature gates
 # key off CRYPTOPP_MSC_VERSION, not the language flag: config_cxx.h guards

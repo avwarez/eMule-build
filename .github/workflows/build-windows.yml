@@ -44,8 +44,9 @@ jobs:
     steps:
       - name: Pin deterministic line endings before checkout
         # GitHub's windows runner images ship core.autocrlf=true globally, so
-        # actions/checkout below would rewrite every source file in the emule
-        # submodule to CRLF. The patch files in emule_build/ are generated
+        # actions/checkout below would rewrite every source file in every
+        # submodule to CRLF. The patch files in the *_build/ directories are
+        # generated
         # against the repository's own bytes (LF), and git apply then refuses
         # the mismatched context - confirmed by an actual run, where
         # 30-conformant-parsing.patch failed with "patch does not apply" on
