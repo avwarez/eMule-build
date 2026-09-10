@@ -1,0 +1,62 @@
+diff --git a/srchybrid/UploadDiskIOThread.cpp b/srchybrid/UploadDiskIOThread.cpp
+index e72b5cd..0eefff2 100644
+--- a/srchybrid/UploadDiskIOThread.cpp
++++ b/srchybrid/UploadDiskIOThread.cpp
+@@ -45,6 +45,12 @@ static char THIS_FILE[] = __FILE__;
+ #define RUN_WORK	2
+ #define WAKEUP		((ULONG_PTR)(~0))
+ 
++// Upper bound on how long a lost wakeup may keep an upload slot idle. Before
++// the completion port was introduced the thread waited on its events with this
++// same timeout, which made the scan in RunInternal() self-healing; an infinite
++// wait turns any dropped notification into a slot that never gets data again.
++#define IOPORT_TIMEOUT	500
++
+ IMPLEMENT_DYNCREATE(CUploadDiskIOThread, CWinThread)
+ 
+ CUploadDiskIOThread::CUploadDiskIOThread()
+@@ -90,18 +96,39 @@ UINT CUploadDiskIOThread::RunInternal()
+ 	ULONG_PTR completionKey = 0;
+ 	OverlappedRead_Struct *pCurIO = NULL;
+ 	m_Run = RUN_IDLE;
+-	while (m_Run
+-			&& ::GetQueuedCompletionStatus(m_hPort, &dwRead, &completionKey, (LPOVERLAPPED*)&pCurIO, INFINITE)
+-			&& completionKey)
+-	{
++	for (;;) {
++		pCurIO = NULL;
++		if (!::GetQueuedCompletionStatus(m_hPort, &dwRead, &completionKey, (LPOVERLAPPED*)&pCurIO, IOPORT_TIMEOUT)) {
++			if (!m_Run)
++				break;
++			if (pCurIO != NULL) {
++				// A read completed with an error (a cancelled operation counts).
++				// Clean it up and keep going: this thread feeds every upload slot,
++				// so ending it here would stall all of them at once.
++				// ReadCompletionRoutine() marks the client for the main thread.
++				ReadCompletionRoutine(0, pCurIO);
++				continue;
++			}
++			if (::GetLastError() != (DWORD)WAIT_TIMEOUT)
++				break;
++			// Nothing was queued in time. Scan the upload list anyway, so that a
++			// wakeup lost between AddReqBlock() and the scan below costs one
++			// timeout instead of leaving that slot waiting for data forever.
++			completionKey = WAKEUP;
++		}
++		if (!m_Run || !completionKey) //thread termination
++			break;
+ 		m_Run = RUN_WORK;
+ 		//start new reads
+ 		CCriticalSection *pcsUploadListRead = NULL;
+ 		const CUploadingPtrList &rUploadList = theApp.uploadqueue->GetUploadListTS(&pcsUploadListRead);
+ 		pcsUploadListRead->Lock();
++		// Cleared before the scan, not after: a WakeUpCall() raised while the scan
++		// is running has to survive it, or a request queued for a client the scan
++		// has already walked past is dropped without anyone posting a wakeup.
++		InterlockedExchange8(&m_bNewData, 0);
+ 		for (POSITION pos = rUploadList.GetHeadPosition(); pos != NULL;)
+ 			StartCreateNextBlockPackage(rUploadList.GetNext(pos));
+-		InterlockedExchange8(&m_bNewData, 0);
+ 		pcsUploadListRead->Unlock();
+ 
+ 		//check completed I/O

@@ -10,6 +10,10 @@ on:
   push:
     branches:
       - v0.72a
+      # Topic branch for the upload disk I/O thread liveness fix. Deliberately
+      # absent from AUTO_PUBLISH_BRANCHES below: it builds and leaves the
+      # per-platform zips as run artifacts, and never cuts a release.
+      - v0.72a-uploadio
 
 # Branches whose pushes publish a public pre-release on their own. There is one
 # line of development: v0.72a-cpp23 and v0.72a-cpp23-fix were folded into
