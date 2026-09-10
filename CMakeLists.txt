@@ -118,7 +118,11 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          timeout fires and the moment a socket passes three quarters of its
 #          allowance and then survives - the allowance that applied, which
 #          branch extended it, how long the slot had been open, and the state
-#          of the socket underneath. Vanilla reports none of this, so a
+#          of the socket underneath. Every line describing a socket also
+#          carries how many block requests are still waiting on that slot and
+#          which caller last pushed the timer forward, so a socket left alone
+#          while it still had work to do is visible while it happens rather
+#          than only in the snapshot taken as it dies. Vanilla reports none of this, so a
 #          slot that dies holding data looks the same whether the peer stopped
 #          asking, the request was dropped, the send never completed, the
 #          send completed and nobody collected it, or the timer simply ran

@@ -1,3 +1,15 @@
+diff --git a/srchybrid/BaseClient.cpp b/srchybrid/BaseClient.cpp
+index 5bcda5b..0dd9fda 100644
+--- a/srchybrid/BaseClient.cpp
++++ b/srchybrid/BaseClient.cpp
+@@ -108,6 +108,7 @@ void CUpDownClient::Init()
+ 	m_abyUpPartStatus = NULL;
+ 	m_lastPartAsked = _UI16_MAX;
+ 	m_bAddNextConnect = false;
++	m_nDiagPendingBlocks = 0; //UPDIAG
+ 
+ 	if (socket) {
+ 		SOCKADDR_IN sockAddr = {};
 diff --git a/srchybrid/EMSocket.cpp b/srchybrid/EMSocket.cpp
 index cd8e44c..8cb7628 100644
 --- a/srchybrid/EMSocket.cpp
@@ -181,7 +193,7 @@ index 3875a13..82267fc 100644
  };
 \ No newline at end of file
 diff --git a/srchybrid/ListenSocket.cpp b/srchybrid/ListenSocket.cpp
-index 15674a1..9d45b12 100644
+index 15674a1..e4b3b7a 100644
 --- a/srchybrid/ListenSocket.cpp
 +++ b/srchybrid/ListenSocket.cpp
 @@ -53,14 +53,16 @@ static char THIS_FILE[] = __FILE__;
@@ -272,10 +284,31 @@ index 15674a1..9d45b12 100644
  	timeout_timer = curTick;
  	CString str;
  	str.Format(_T("Timeout: State:%u (0 = SS_Other, 1 = SS_Half, 2 = SS_Complete)"), m_nOnConnect);
-@@ -153,6 +188,24 @@ bool CClientReqSocket::CheckTimeOut()
+@@ -153,6 +188,40 @@ bool CClientReqSocket::CheckTimeOut()
  	return true;
  }
  
++//UPDIAG: everything the base socket reports, plus the slot state around it. The throttler's
++//per-slot line goes through here, so a socket sitting still with block requests waiting - the
++//one state the bounded wait exists to prevent - is visible while it happens, not only at the end.
++void CClientReqSocket::DbgGetDiagInfo(CString &rstrOut)
++{
++	CEMSocket::DbgGetDiagInfo(rstrOut);
++	DbgAppendSlotInfo(rstrOut);
++}
++
++void CClientReqSocket::DbgAppendSlotInfo(CString &rstrOut)
++{
++	CString strAdd;
++	strAdd.Format(_T(" pending=%ld lastreset=%s resets=[open %u onsend %u onrecv %u ctrldata %u filedata %u packet %u]")
++		, client != NULL ? client->DbgGetPendingBlocks() : -1
++		, m_nDiagResetSrc >= 0 && m_nDiagResetSrc < DIAGRESET_COUNT
++			? s_apszDiagResetSrc[m_nDiagResetSrc] : _T("?")
++		, m_aDiagReset[DIAGRESET_OPEN], m_aDiagReset[DIAGRESET_ONSEND], m_aDiagReset[DIAGRESET_ONRECV]
++		, m_aDiagReset[DIAGRESET_CTRLDATA], m_aDiagReset[DIAGRESET_FILEDATA], m_aDiagReset[DIAGRESET_PACKET]);
++	rstrOut += strAdd;
++}
++
 +//UPDIAG: one shape for both the near miss and the kill, so the two are directly comparable.
 +void CClientReqSocket::DbgLogTimeoutState(LPCTSTR pszWhat, DWORD dwElapsed, DWORD uTimeout
 +	, LPCTSTR pszExt, UINT uLevel)
@@ -283,21 +316,16 @@ index 15674a1..9d45b12 100644
 +	CString strSock;
 +	DbgGetDiagInfo(strSock);
 +	theApp.QueueDebugLogLineEx(uLevel
-+		, _T("UPDIAG|timeout %s elapsed=%ums limit=%ums base=%ums ext=%s upage=%ums lastreset=%s")
-+		  _T(" resets=[open %u onsend %u onrecv %u ctrldata %u filedata %u packet %u] %s client: %s")
++		, _T("UPDIAG|timeout %s elapsed=%ums limit=%ums base=%ums ext=%s upage=%ums %s client: %s")
 +		, pszWhat, dwElapsed, uTimeout, GetTimeOut(), pszExt
 +		, client != NULL ? client->GetUpStartTimeDelay() : 0
-+		, m_nDiagResetSrc >= 0 && m_nDiagResetSrc < DIAGRESET_COUNT
-+			? s_apszDiagResetSrc[m_nDiagResetSrc] : _T("?")
-+		, m_aDiagReset[DIAGRESET_OPEN], m_aDiagReset[DIAGRESET_ONSEND], m_aDiagReset[DIAGRESET_ONRECV]
-+		, m_aDiagReset[DIAGRESET_CTRLDATA], m_aDiagReset[DIAGRESET_FILEDATA], m_aDiagReset[DIAGRESET_PACKET]
 +		, (LPCTSTR)strSock, (LPCTSTR)DbgGetClientInfo());
 +}
 +
  void CClientReqSocket::OnClose(int nErrorCode)
  {
  	ASSERT(theApp.listensocket->IsValidSocket(this));
-@@ -1692,12 +1745,12 @@ void CClientReqSocket::OnConnect(int nErrorCode)
+@@ -1692,12 +1761,12 @@ void CClientReqSocket::OnConnect(int nErrorCode)
  			Disconnect(_T(""));
  	} else
  		//This socket may have been delayed by SP2 protection, lets make sure it doesn't time out instantly.
@@ -312,7 +340,7 @@ index 15674a1..9d45b12 100644
  	CEMSocket::OnSend(nErrorCode);
  }
  
-@@ -1809,7 +1862,7 @@ bool CClientReqSocket::PacketReceived(Packet *packet)
+@@ -1809,7 +1878,7 @@ bool CClientReqSocket::PacketReceived(Packet *packet)
  
  void CClientReqSocket::OnReceive(int nErrorCode)
  {
@@ -321,7 +349,7 @@ index 15674a1..9d45b12 100644
  	CEMSocket::OnReceive(nErrorCode);
  }
  
-@@ -1823,7 +1876,7 @@ SocketSentBytes CClientReqSocket::SendControlData(uint32 maxNumberOfBytesToSend,
+@@ -1823,7 +1892,7 @@ SocketSentBytes CClientReqSocket::SendControlData(uint32 maxNumberOfBytesToSend,
  {
  	SocketSentBytes returnStatus = CEMSocket::SendControlData(maxNumberOfBytesToSend, overchargeMaxBytesToSend);
  	if (returnStatus.success && (returnStatus.sentBytesControlPackets > 0 || returnStatus.sentBytesStandardPackets > 0))
@@ -330,7 +358,7 @@ index 15674a1..9d45b12 100644
  	return returnStatus;
  }
  
-@@ -1831,13 +1884,13 @@ SocketSentBytes CClientReqSocket::SendFileAndControlData(uint32 maxNumberOfBytes
+@@ -1831,13 +1900,13 @@ SocketSentBytes CClientReqSocket::SendFileAndControlData(uint32 maxNumberOfBytes
  {
  	SocketSentBytes returnStatus = CEMSocket::SendFileAndControlData(maxNumberOfBytesToSend, overchargeMaxBytesToSend);
  	if (returnStatus.success && (returnStatus.sentBytesControlPackets > 0 || returnStatus.sentBytesStandardPackets > 0))
@@ -346,7 +374,7 @@ index 15674a1..9d45b12 100644
  	CEMSocket::SendPacket(packet, controlpacket, actualPayloadSize, bForceImmediateSend);
  }
  
-@@ -1953,6 +2006,9 @@ bool CListenSocket::StartListening()
+@@ -1953,6 +2022,9 @@ bool CListenSocket::StartListening()
  
  void CListenSocket::ReStartListening()
  {
@@ -356,7 +384,7 @@ index 15674a1..9d45b12 100644
  	bListening = true;
  
  	ASSERT(m_nPendingConnections >= 0);
-@@ -1964,6 +2020,13 @@ void CListenSocket::ReStartListening()
+@@ -1964,6 +2036,13 @@ void CListenSocket::ReStartListening()
  
  void CListenSocket::StopListening()
  {
@@ -371,10 +399,10 @@ index 15674a1..9d45b12 100644
  	++maxconnectionreached;
  }
 diff --git a/srchybrid/ListenSocket.h b/srchybrid/ListenSocket.h
-index 7a0311d..f496949 100644
+index 7a0311d..cc82797 100644
 --- a/srchybrid/ListenSocket.h
 +++ b/srchybrid/ListenSocket.h
-@@ -40,8 +40,14 @@ public:
+@@ -40,8 +40,18 @@ public:
  	void	SetClient(CUpDownClient *pClient);
  	void	Disconnect(LPCTSTR pszReason);
  	void	WaitForOnConnect();
@@ -387,10 +415,14 @@ index 7a0311d..f496949 100644
  	bool	CheckTimeOut();
 +	void	DbgLogTimeoutState(LPCTSTR pszWhat, DWORD dwElapsed, DWORD uTimeout
 +				, LPCTSTR pszExt, UINT uLevel); //UPDIAG
++	//UPDIAG: the socket alone cannot say why it was left alone. Append what the slot around it
++	//looks like: how many block requests are waiting, and which caller last fed the timer.
++	virtual void DbgGetDiagInfo(CString &rstrOut);
++	void	DbgAppendSlotInfo(CString &rstrOut); //UPDIAG
  	virtual void Safe_Delete();
  	//virtual void Close()						{ CAsyncSocketEx::Close(); }
  
-@@ -73,6 +79,8 @@ protected:
+@@ -73,6 +83,8 @@ protected:
  	void	SetConState(SocketState val);
  
  	DWORD	timeout_timer;
@@ -399,7 +431,7 @@ index 7a0311d..f496949 100644
  	DWORD	deltimer;
  	uint32	m_nOnConnect;
  	bool	deletethis;
-@@ -114,6 +122,7 @@ public:
+@@ -114,6 +126,7 @@ public:
  	uint32	GetActiveConnections() const		{ return activeconnections; }
  	uint16	GetConnectedPort() const			{ return m_port; }
  	uint32	GetTotalHalfCon() const				{ return m_nHalfOpen; }
@@ -424,6 +456,23 @@ index f348815..3631b2f 100644
  
  // <-- ZZ:UploadBandWithThrottler (UDP)
 \ No newline at end of file
+diff --git a/srchybrid/UpdownClient.h b/srchybrid/UpdownClient.h
+index f9b28d4..a6e3eff 100644
+--- a/srchybrid/UpdownClient.h
++++ b/srchybrid/UpdownClient.h
+@@ -231,6 +231,12 @@ public:
+ 	UINT			GetScore(bool sysvalue, bool isdownloading = false, bool onlybasevalue = false) const;
+ 	void			AddReqBlock(Requested_Block_Struct *reqblock, bool bSignalIOThread);
+ 	DWORD			GetUpStartTime() const							{ return m_dwUploadTime; }
++	//UPDIAG: how many block requests are waiting to be turned into packets. Kept as a plain
++	//counter beside the list so the throttler can read it without taking the block list lock,
++	//which it must not do: the disk I/O thread holds that lock while queueing on the socket,
++	//and taking the two in the other order here would cross them.
++	LONG			DbgGetPendingBlocks() const						{ return m_nDiagPendingBlocks; }
++	volatile LONG	m_nDiagPendingBlocks;
+ 	DWORD			GetUpStartTimeDelay() const						{ return ::GetTickCount() - m_dwUploadTime; }
+ 	void			SetUpStartTime()								{ m_dwUploadTime = ::GetTickCount(); }
+ 	void			SendHashsetPacket(const uchar *pData, uint32 nSize, bool bFileIdentifiers);
 diff --git a/srchybrid/UploadBandwidthThrottler.cpp b/srchybrid/UploadBandwidthThrottler.cpp
 index bbdff60..ab84f6b 100644
 --- a/srchybrid/UploadBandwidthThrottler.cpp
@@ -614,7 +663,7 @@ index bbdff60..ab84f6b 100644
  	}
  
 diff --git a/srchybrid/UploadClient.cpp b/srchybrid/UploadClient.cpp
-index 61ad554..8b11ed8 100644
+index 61ad554..1770331 100644
 --- a/srchybrid/UploadClient.cpp
 +++ b/srchybrid/UploadClient.cpp
 @@ -316,12 +316,26 @@ void CUpDownClient::SetUploadFileID(CKnownFile *newreqfile)
@@ -660,7 +709,7 @@ index 61ad554..8b11ed8 100644
  				delete reqblock;
  				return;
  			}
-@@ -402,15 +425,22 @@ void CUpDownClient::AddReqBlock(Requested_Block_Struct *reqblock, bool bSignalIO
+@@ -402,15 +425,24 @@ void CUpDownClient::AddReqBlock(Requested_Block_Struct *reqblock, bool bSignalIO
  				&& reqblock->EndOffset == cur_reqblock->EndOffset
  				&& md4equ(reqblock->FileID, cur_reqblock->FileID))
  			{
@@ -672,6 +721,8 @@ index 61ad554..8b11ed8 100644
  			}
  		}
  		pUploadingClientStruct->m_BlockRequests_queue.AddTail(reqblock);
++		::InterlockedExchange(&m_nDiagPendingBlocks
++			, (LONG)pUploadingClientStruct->m_BlockRequests_queue.GetCount()); //UPDIAG
  		dbgLastQueueCount = pUploadingClientStruct->m_BlockRequests_queue.GetCount();
 +		++g_nDiagReqQueued; //UPDIAG
 +		theApp.QueueDebugLogLineEx(LOG_INFO, _T("UPDIAG|reqblock queued, pending=%d served=%d")
@@ -684,7 +735,7 @@ index 61ad554..8b11ed8 100644
  			, dbgLastQueueCount
  			, (LPCTSTR)CastItoXBytes(GetQueueSessionUploadAdded() - (GetQueueSessionPayloadUp() + socket->GetSentPayloadSinceLastCall(false)), false, false, 2)
 diff --git a/srchybrid/UploadDiskIOThread.cpp b/srchybrid/UploadDiskIOThread.cpp
-index e6b3706..30437f1 100644
+index e6b3706..6984ea1 100644
 --- a/srchybrid/UploadDiskIOThread.cpp
 +++ b/srchybrid/UploadDiskIOThread.cpp
 @@ -46,6 +46,9 @@ static char THIS_FILE[] = __FILE__;
@@ -844,7 +895,7 @@ index e6b3706..30437f1 100644
  
  	try {
  		// Get more data if currently buffered was less than nBufferLimit Bytes
-@@ -266,6 +333,9 @@ void CUploadDiskIOThread::StartCreateNextBlockPackage(UploadingToClient_Struct *
+@@ -266,11 +333,16 @@ void CUploadDiskIOThread::StartCreateNextBlockPackage(UploadingToClient_Struct *
  			}
  			++pFile->nInUse;
  			pOverlappedRead->pos = m_listPendingIO.AddTail(pOverlappedRead);
@@ -854,7 +905,14 @@ index e6b3706..30437f1 100644
  			DEBUG_ONLY(dbgDataReadPending += uTogo);
  
  			addedPayloadQueueSession += uTogo;
-@@ -296,8 +366,15 @@ void CUploadDiskIOThread::ReadCompletionRoutine(DWORD dwRead, const OverlappedRe
+ 			pClient->SetQueueSessionUploadAdded(addedPayloadQueueSession);
+ 			pUploadClientStruct->m_DoneBlocks_list.AddHead(pUploadClientStruct->m_BlockRequests_queue.RemoveHead());
++			::InterlockedExchange(&pClient->m_nDiagPendingBlocks
++				, (LONG)pUploadClientStruct->m_BlockRequests_queue.GetCount()); //UPDIAG
+ 		}
+ 		return; //no errors
+ 	} catch (const CString &ex) {
+@@ -296,8 +368,15 @@ void CUploadDiskIOThread::ReadCompletionRoutine(DWORD dwRead, const OverlappedRe
  	if (m_Run) {
  		m_listPendingIO.RemoveAt(pOvRead->pos);
  		bool bReadError = !dwRead;
@@ -906,7 +964,7 @@ index 710756c..2145cfd 100644
  };
 \ No newline at end of file
 diff --git a/srchybrid/UploadQueue.cpp b/srchybrid/UploadQueue.cpp
-index c6130f6..9b08de5 100644
+index c6130f6..695a1e3 100644
 --- a/srchybrid/UploadQueue.cpp
 +++ b/srchybrid/UploadQueue.cpp
 @@ -44,6 +44,8 @@
@@ -1066,3 +1124,11 @@ index c6130f6..9b08de5 100644
  	if (updatewindow) {
  		theApp.emuledlg->transferwnd->GetQueueList().RemoveClient(todelete);
  		theApp.emuledlg->transferwnd->ShowQueueCount(waitinglist.GetCount());
+@@ -1091,6 +1176,7 @@ UploadingToClient_Struct::~UploadingToClient_Struct()
+ 	m_csBlockListsLock.Lock();
+ 	while (!m_BlockRequests_queue.IsEmpty())
+ 		delete m_BlockRequests_queue.RemoveHead();
++	::InterlockedExchange(&m_pClient->m_nDiagPendingBlocks, 0); //UPDIAG
+ 
+ 	while (!m_DoneBlocks_list.IsEmpty())
+ 		delete m_DoneBlocks_list.RemoveHead();
