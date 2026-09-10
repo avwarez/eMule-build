@@ -181,10 +181,172 @@ index 3875a13..82267fc 100644
  };
 \ No newline at end of file
 diff --git a/srchybrid/ListenSocket.cpp b/srchybrid/ListenSocket.cpp
-index 15674a1..b96e4b3 100644
+index 15674a1..9d45b12 100644
 --- a/srchybrid/ListenSocket.cpp
 +++ b/srchybrid/ListenSocket.cpp
-@@ -1953,6 +1953,9 @@ bool CListenSocket::StartListening()
+@@ -53,14 +53,16 @@ static char THIS_FILE[] = __FILE__;
+ IMPLEMENT_DYNCREATE(CClientReqSocket, CEMSocket)
+ 
+ CClientReqSocket::CClientReqSocket(CUpDownClient *in_client)
+-	: deltimer()
++	: m_nDiagResetSrc() //UPDIAG - declared right after timeout_timer, so it is initialised here
++	, deltimer()
+ 	, m_nOnConnect(SS_Other)
+ 	, deletethis()
+ 	, m_bPortTestCon()
+ {
++	memset(m_aDiagReset, 0, sizeof m_aDiagReset); //UPDIAG
+ 	SetClient(in_client);
+ 	theApp.listensocket->AddSocket(this);
+-	ResetTimeOutTimer();
++	ResetTimeOutTimer(DIAGRESET_OPEN);
+ }
+ 
+ void CClientReqSocket::SetConState(SocketState val)
+@@ -112,11 +114,24 @@ void CClientReqSocket::SetClient(CUpDownClient *pClient)
+ 		client->socket = this;
+ }
+ 
+-void CClientReqSocket::ResetTimeOutTimer()
++void CClientReqSocket::ResetTimeOutTimer(int nDiagSrc)
+ {
+ 	timeout_timer = ::GetTickCount();
++	//UPDIAG: the timer is what stands between an upload slot and its removal, and five different
++	//callers can push it forward. Remember which one did, so a slot that dies says why.
++	m_nDiagResetSrc = nDiagSrc;
++	if (nDiagSrc >= 0 && nDiagSrc < DIAGRESET_COUNT)
++		++m_aDiagReset[nDiagSrc];
+ }
+ 
++//UPDIAG: names for the counters above, in the order of the enum.
++static LPCTSTR const s_apszDiagResetSrc[] = { _T("open"), _T("onsend"), _T("onrecv")
++	, _T("ctrldata"), _T("filedata"), _T("packet") };
++
++//UPDIAG: at most one near-miss line a second across every socket, so a bad minute cannot
++//drown the log in lines about sockets that then went on living.
++static DWORD s_dwDiagLastNearMiss = 0;
++
+ bool CClientReqSocket::CheckTimeOut()
+ {
+ 	const DWORD curTick = ::GetTickCount();
+@@ -134,18 +149,38 @@ bool CClientReqSocket::CheckTimeOut()
+ 		return true;
+ 	}
+ 	DWORD uTimeout = GetTimeOut();
++	LPCTSTR pszDiagExt = _T("none"); //UPDIAG - which branch below granted extra time
+ 	if (client)
+-		if (client->GetKadState() == KS_CONNECTED_BUDDY)
++		if (client->GetKadState() == KS_CONNECTED_BUDDY) {
+ 			uTimeout += MIN2MS(15);
+-		else if (client->IsDownloading() && curTick < client->GetUpStartTime() + 4 * CONNECTION_TIMEOUT)
++			pszDiagExt = _T("buddy"); //UPDIAG
++		} else if (client->IsDownloading() && curTick < client->GetUpStartTime() + 4 * CONNECTION_TIMEOUT) {
+ 			//TCP flow control might need more time to begin throttling for slow peers
+ 			uTimeout += 4 * CONNECTION_TIMEOUT; //2'30" or slightly more
+-		else if (client->GetChatState() != MS_NONE)
++			pszDiagExt = _T("upstart"); //UPDIAG
++		} else if (client->GetChatState() != MS_NONE) {
+ 			//We extend the timeout time here to avoid chatting people from disconnecting too fast.
+ 			uTimeout += CONNECTION_TIMEOUT;
++			pszDiagExt = _T("chat"); //UPDIAG
++		}
+ 
+-	if (curTick < timeout_timer + uTimeout)
++	const DWORD dwDiagElapsed = curTick - timeout_timer; //UPDIAG - read before the reset below
++	if (curTick < timeout_timer + uTimeout) {
++		//UPDIAG: a socket that gets close to the limit and then survives is the counter-example
++		//that separates a peer which came back from one which did not. Report it once it is past
++		//three quarters of its allowance, and only while a slot is actually on it.
++		if (client != NULL && client->IsDownloading() && dwDiagElapsed >= uTimeout - uTimeout / 4
++			&& curTick - s_dwDiagLastNearMiss >= 1000)
++		{
++			s_dwDiagLastNearMiss = curTick;
++			DbgLogTimeoutState(_T("near miss"), dwDiagElapsed, uTimeout, pszDiagExt, LOG_INFO);
++		}
+ 		return false;
++	}
++	//UPDIAG: the one place an upload slot dies of its own accord. Everything that decided it is
++	//here: the allowance that applied, how it was spent, and what had been feeding the timer.
++	if (client != NULL && client->IsDownloading())
++		DbgLogTimeoutState(_T("FIRED"), dwDiagElapsed, uTimeout, pszDiagExt, LOG_WARNING);
+ 	timeout_timer = curTick;
+ 	CString str;
+ 	str.Format(_T("Timeout: State:%u (0 = SS_Other, 1 = SS_Half, 2 = SS_Complete)"), m_nOnConnect);
+@@ -153,6 +188,24 @@ bool CClientReqSocket::CheckTimeOut()
+ 	return true;
+ }
+ 
++//UPDIAG: one shape for both the near miss and the kill, so the two are directly comparable.
++void CClientReqSocket::DbgLogTimeoutState(LPCTSTR pszWhat, DWORD dwElapsed, DWORD uTimeout
++	, LPCTSTR pszExt, EDebugLogPriority eLevel)
++{
++	CString strSock;
++	DbgGetDiagInfo(strSock);
++	theApp.QueueDebugLogLineEx(eLevel
++		, _T("UPDIAG|timeout %s elapsed=%ums limit=%ums base=%ums ext=%s upage=%ums lastreset=%s")
++		  _T(" resets=[open %u onsend %u onrecv %u ctrldata %u filedata %u packet %u] %s client: %s")
++		, pszWhat, dwElapsed, uTimeout, GetTimeOut(), pszExt
++		, client != NULL ? client->GetUpStartTimeDelay() : 0
++		, m_nDiagResetSrc >= 0 && m_nDiagResetSrc < DIAGRESET_COUNT
++			? s_apszDiagResetSrc[m_nDiagResetSrc] : _T("?")
++		, m_aDiagReset[DIAGRESET_OPEN], m_aDiagReset[DIAGRESET_ONSEND], m_aDiagReset[DIAGRESET_ONRECV]
++		, m_aDiagReset[DIAGRESET_CTRLDATA], m_aDiagReset[DIAGRESET_FILEDATA], m_aDiagReset[DIAGRESET_PACKET]
++		, (LPCTSTR)strSock, (LPCTSTR)DbgGetClientInfo());
++}
++
+ void CClientReqSocket::OnClose(int nErrorCode)
+ {
+ 	ASSERT(theApp.listensocket->IsValidSocket(this));
+@@ -1692,12 +1745,12 @@ void CClientReqSocket::OnConnect(int nErrorCode)
+ 			Disconnect(_T(""));
+ 	} else
+ 		//This socket may have been delayed by SP2 protection, lets make sure it doesn't time out instantly.
+-		ResetTimeOutTimer();
++		ResetTimeOutTimer(DIAGRESET_OPEN);
+ }
+ 
+ void CClientReqSocket::OnSend(int nErrorCode)
+ {
+-	ResetTimeOutTimer();
++	ResetTimeOutTimer(DIAGRESET_ONSEND);
+ 	CEMSocket::OnSend(nErrorCode);
+ }
+ 
+@@ -1809,7 +1862,7 @@ bool CClientReqSocket::PacketReceived(Packet *packet)
+ 
+ void CClientReqSocket::OnReceive(int nErrorCode)
+ {
+-	ResetTimeOutTimer();
++	ResetTimeOutTimer(DIAGRESET_ONRECV);
+ 	CEMSocket::OnReceive(nErrorCode);
+ }
+ 
+@@ -1823,7 +1876,7 @@ SocketSentBytes CClientReqSocket::SendControlData(uint32 maxNumberOfBytesToSend,
+ {
+ 	SocketSentBytes returnStatus = CEMSocket::SendControlData(maxNumberOfBytesToSend, overchargeMaxBytesToSend);
+ 	if (returnStatus.success && (returnStatus.sentBytesControlPackets > 0 || returnStatus.sentBytesStandardPackets > 0))
+-		ResetTimeOutTimer();
++		ResetTimeOutTimer(DIAGRESET_CTRLDATA);
+ 	return returnStatus;
+ }
+ 
+@@ -1831,13 +1884,13 @@ SocketSentBytes CClientReqSocket::SendFileAndControlData(uint32 maxNumberOfBytes
+ {
+ 	SocketSentBytes returnStatus = CEMSocket::SendFileAndControlData(maxNumberOfBytesToSend, overchargeMaxBytesToSend);
+ 	if (returnStatus.success && (returnStatus.sentBytesControlPackets > 0 || returnStatus.sentBytesStandardPackets > 0))
+-		ResetTimeOutTimer();
++		ResetTimeOutTimer(DIAGRESET_FILEDATA);
+ 	return returnStatus;
+ }
+ 
+ void CClientReqSocket::SendPacket(Packet *packet, bool controlpacket, uint32 actualPayloadSize, bool bForceImmediateSend)
+ {
+-	ResetTimeOutTimer();
++	ResetTimeOutTimer(DIAGRESET_PACKET);
+ 	CEMSocket::SendPacket(packet, controlpacket, actualPayloadSize, bForceImmediateSend);
+ }
+ 
+@@ -1953,6 +2006,9 @@ bool CListenSocket::StartListening()
  
  void CListenSocket::ReStartListening()
  {
@@ -194,7 +356,7 @@ index 15674a1..b96e4b3 100644
  	bListening = true;
  
  	ASSERT(m_nPendingConnections >= 0);
-@@ -1964,6 +1967,13 @@ void CListenSocket::ReStartListening()
+@@ -1964,6 +2020,13 @@ void CListenSocket::ReStartListening()
  
  void CListenSocket::StopListening()
  {
@@ -209,10 +371,35 @@ index 15674a1..b96e4b3 100644
  	++maxconnectionreached;
  }
 diff --git a/srchybrid/ListenSocket.h b/srchybrid/ListenSocket.h
-index 7a0311d..4cb1903 100644
+index 7a0311d..f496949 100644
 --- a/srchybrid/ListenSocket.h
 +++ b/srchybrid/ListenSocket.h
-@@ -114,6 +114,7 @@ public:
+@@ -40,8 +40,14 @@ public:
+ 	void	SetClient(CUpDownClient *pClient);
+ 	void	Disconnect(LPCTSTR pszReason);
+ 	void	WaitForOnConnect();
+-	void	ResetTimeOutTimer();
++	//UPDIAG: nDiagSrc records which of the callers kept the socket alive, so a socket that dies
++	//can be told apart by what stopped feeding it rather than by the timeout alone.
++	void	ResetTimeOutTimer(int nDiagSrc = 0);
++	enum EDiagResetSrc { DIAGRESET_OPEN, DIAGRESET_ONSEND, DIAGRESET_ONRECV
++		, DIAGRESET_CTRLDATA, DIAGRESET_FILEDATA, DIAGRESET_PACKET, DIAGRESET_COUNT };
+ 	bool	CheckTimeOut();
++	void	DbgLogTimeoutState(LPCTSTR pszWhat, DWORD dwElapsed, DWORD uTimeout
++				, LPCTSTR pszExt, EDebugLogPriority eLevel); //UPDIAG
+ 	virtual void Safe_Delete();
+ 	//virtual void Close()						{ CAsyncSocketEx::Close(); }
+ 
+@@ -73,6 +79,8 @@ protected:
+ 	void	SetConState(SocketState val);
+ 
+ 	DWORD	timeout_timer;
++	int		m_nDiagResetSrc;					//UPDIAG - who reset it last
++	DWORD	m_aDiagReset[DIAGRESET_COUNT];		//UPDIAG - how often each one did
+ 	DWORD	deltimer;
+ 	uint32	m_nOnConnect;
+ 	bool	deletethis;
+@@ -114,6 +122,7 @@ public:
  	uint32	GetActiveConnections() const		{ return activeconnections; }
  	uint16	GetConnectedPort() const			{ return m_port; }
  	uint32	GetTotalHalfCon() const				{ return m_nHalfOpen; }
