@@ -1,3 +1,43 @@
+diff --git a/srchybrid/ListenSocket.cpp b/srchybrid/ListenSocket.cpp
+index 15674a1..b96e4b3 100644
+--- a/srchybrid/ListenSocket.cpp
++++ b/srchybrid/ListenSocket.cpp
+@@ -1953,6 +1953,9 @@ bool CListenSocket::StartListening()
+ 
+ void CListenSocket::ReStartListening()
+ {
++	if (!bListening) //UPDIAG
++		theApp.QueueDebugLogLineEx(LOG_INFO, _T("UPDIAG|listen resumed, sockets=%u max=%u")
++			, GetOpenSockets(), thePrefs.GetMaxConnections());
+ 	bListening = true;
+ 
+ 	ASSERT(m_nPendingConnections >= 0);
+@@ -1964,6 +1967,13 @@ void CListenSocket::ReStartListening()
+ 
+ void CListenSocket::StopListening()
+ {
++	// UPDIAG: from here until ReStartListening() no incoming connection is taken,
++	// so no peer can reach us to ask for an upload and the queue cannot grow.
++	if (bListening)
++		theApp.QueueDebugLogLineEx(LOG_WARNING
++			, _T("UPDIAG|listen STOPPED, sockets=%u max=%u half=%u maxhalf=%u")
++			, GetOpenSockets(), thePrefs.GetMaxConnections()
++			, GetTotalHalfCon(), thePrefs.GetMaxHalfConnections());
+ 	bListening = false;
+ 	++maxconnectionreached;
+ }
+diff --git a/srchybrid/ListenSocket.h b/srchybrid/ListenSocket.h
+index 7a0311d..4cb1903 100644
+--- a/srchybrid/ListenSocket.h
++++ b/srchybrid/ListenSocket.h
+@@ -114,6 +114,7 @@ public:
+ 	uint32	GetActiveConnections() const		{ return activeconnections; }
+ 	uint16	GetConnectedPort() const			{ return m_port; }
+ 	uint32	GetTotalHalfCon() const				{ return m_nHalfOpen; }
++	bool	IsListening() const					{ return bListening; } //UPDIAG
+ 	uint32	GetTotalComp() const				{ return m_nComp; }
+ 
+ private:
 diff --git a/srchybrid/UploadDiskIOThread.cpp b/srchybrid/UploadDiskIOThread.cpp
 index e72b5cd..bfa384a 100644
 --- a/srchybrid/UploadDiskIOThread.cpp
@@ -212,18 +252,19 @@ index 710756c..912e621 100644
  };
 \ No newline at end of file
 diff --git a/srchybrid/UploadQueue.cpp b/srchybrid/UploadQueue.cpp
-index c6130f6..4415173 100644
+index c6130f6..568dadf 100644
 --- a/srchybrid/UploadQueue.cpp
 +++ b/srchybrid/UploadQueue.cpp
-@@ -44,6 +44,7 @@
+@@ -44,6 +44,8 @@
  #include "Kademlia/Kademlia/Prefs.h"
  #include "Log.h"
  #include "collection.h"
 +#include "UploadDiskIOThread.h" //UPDIAG
++#include "ListenSocket.h" //UPDIAG
  
  #ifdef _DEBUG
  #define new DEBUG_NEW
-@@ -285,10 +286,28 @@ void CUploadQueue::Process()
+@@ -285,10 +287,34 @@ void CUploadQueue::Process()
  	const DWORD curTick = ::GetTickCount();
  	UpdateActiveClientsInfo(curTick);
  
@@ -242,10 +283,16 @@ index c6130f6..4415173 100644
 +		if (curTick >= s_dwDiagLastTick + SEC2MS(10)) {
 +			s_dwDiagLastTick = curTick;
 +			theApp.QueueDebugLogLineEx(LOG_INFO
-+				, _T("UPDIAG|queue waiting=%d uploading=%d datarate=%u maxup=%u force=%d accept=%d | %s")
++				, _T("UPDIAG|queue waiting=%d uploading=%d datarate=%u maxup=%u force=%d accept=%d")
++				_T(" | sockets=%u/%u half=%u listening=%d refused=%u | %s")
 +				, (int)waitinglist.GetCount(), (int)uploadinglist.GetCount()
 +				, datarate, thePrefs.GetMaxUpload(), (int)bDiagForce
 +				, (int)AcceptNewClient(uploadinglist.GetCount())
++				, theApp.listensocket ? theApp.listensocket->GetOpenSockets() : 0u
++				, thePrefs.GetMaxConnections()
++				, theApp.listensocket ? theApp.listensocket->GetTotalHalfCon() : 0u
++				, (int)(theApp.listensocket && theApp.listensocket->IsListening())
++				, theApp.listensocket ? theApp.listensocket->GetMaxConnectionReached() : 0u
 +				, theApp.m_pUploadDiskIOThread ? (LPCTSTR)theApp.m_pUploadDiskIOThread->DbgGetDiagInfo() : _T("iothread=none"));
 +		}
 +	}
@@ -253,7 +300,7 @@ index c6130f6..4415173 100644
  	// The loop that feeds the upload slots with data.
  	for (POSITION pos = uploadinglist.GetHeadPosition(); pos != NULL;) {
  		// Get the client. Note! Also updates pos as a side effect.
-@@ -520,6 +539,8 @@ void CUploadQueue::AddClientToQueue(CUpDownClient *client, bool bIgnoreTimelimit
+@@ -520,6 +546,8 @@ void CUploadQueue::AddClientToQueue(CUpDownClient *client, bool bIgnoreTimelimit
  		&& !theApp.serverconnect->IsLocalServer(client->GetServerIP(), client->GetServerPort())
  		&& GetWaitingUserCount() > 50)
  	{
@@ -262,7 +309,7 @@ index c6130f6..4415173 100644
  		return;
  	}
  	client->IncrementAskedCount();
-@@ -629,6 +650,9 @@ void CUploadQueue::AddClientToQueue(CUpDownClient *client, bool bIgnoreTimelimit
+@@ -629,6 +657,9 @@ void CUploadQueue::AddClientToQueue(CUpDownClient *client, bool bIgnoreTimelimit
  	   )
  	{
  		// block client from getting on queue
@@ -272,7 +319,7 @@ index c6130f6..4415173 100644
  		return;
  	}
  	if (client->IsDownloading()) {
-@@ -646,6 +670,10 @@ void CUploadQueue::AddClientToQueue(CUpDownClient *client, bool bIgnoreTimelimit
+@@ -646,6 +677,10 @@ void CUploadQueue::AddClientToQueue(CUpDownClient *client, bool bIgnoreTimelimit
  	} else {
  		m_bStatisticsWaitingListDirty = true;
  		waitinglist.AddTail(client);
@@ -283,7 +330,7 @@ index c6130f6..4415173 100644
  		client->SetUploadState(US_ONUPLOADQUEUE);
  		theApp.emuledlg->transferwnd->GetQueueList().AddClient(client, true);
  		theApp.emuledlg->transferwnd->ShowQueueCount(waitinglist.GetCount());
-@@ -748,6 +776,11 @@ void CUploadQueue::RemoveFromWaitingQueue(POSITION pos, bool updatewindow)
+@@ -748,6 +783,11 @@ void CUploadQueue::RemoveFromWaitingQueue(POSITION pos, bool updatewindow)
  	m_bStatisticsWaitingListDirty = true;
  	CUpDownClient *todelete = waitinglist.GetAt(pos);
  	waitinglist.RemoveAt(pos);
