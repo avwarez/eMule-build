@@ -278,11 +278,11 @@ index 15674a1..9d45b12 100644
  
 +//UPDIAG: one shape for both the near miss and the kill, so the two are directly comparable.
 +void CClientReqSocket::DbgLogTimeoutState(LPCTSTR pszWhat, DWORD dwElapsed, DWORD uTimeout
-+	, LPCTSTR pszExt, EDebugLogPriority eLevel)
++	, LPCTSTR pszExt, UINT uLevel)
 +{
 +	CString strSock;
 +	DbgGetDiagInfo(strSock);
-+	theApp.QueueDebugLogLineEx(eLevel
++	theApp.QueueDebugLogLineEx(uLevel
 +		, _T("UPDIAG|timeout %s elapsed=%ums limit=%ums base=%ums ext=%s upage=%ums lastreset=%s")
 +		  _T(" resets=[open %u onsend %u onrecv %u ctrldata %u filedata %u packet %u] %s client: %s")
 +		, pszWhat, dwElapsed, uTimeout, GetTimeOut(), pszExt
@@ -386,7 +386,7 @@ index 7a0311d..f496949 100644
 +		, DIAGRESET_CTRLDATA, DIAGRESET_FILEDATA, DIAGRESET_PACKET, DIAGRESET_COUNT };
  	bool	CheckTimeOut();
 +	void	DbgLogTimeoutState(LPCTSTR pszWhat, DWORD dwElapsed, DWORD uTimeout
-+				, LPCTSTR pszExt, EDebugLogPriority eLevel); //UPDIAG
++				, LPCTSTR pszExt, UINT uLevel); //UPDIAG
  	virtual void Safe_Delete();
  	//virtual void Close()						{ CAsyncSocketEx::Close(); }
  
