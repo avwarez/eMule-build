@@ -1,5 +1,5 @@
 diff --git a/srchybrid/UploadDiskIOThread.cpp b/srchybrid/UploadDiskIOThread.cpp
-index e72b5cd..f1ad7a3 100644
+index e72b5cd..bfa384a 100644
 --- a/srchybrid/UploadDiskIOThread.cpp
 +++ b/srchybrid/UploadDiskIOThread.cpp
 @@ -45,6 +45,9 @@ static char THIS_FILE[] = __FILE__;
@@ -12,19 +12,25 @@ index e72b5cd..f1ad7a3 100644
  IMPLEMENT_DYNCREATE(CUploadDiskIOThread, CWinThread)
  
  CUploadDiskIOThread::CUploadDiskIOThread()
-@@ -56,6 +59,11 @@ CUploadDiskIOThread::CUploadDiskIOThread()
+@@ -56,6 +59,17 @@ CUploadDiskIOThread::CUploadDiskIOThread()
  	, m_Run(RUN_STOP)
  	, m_bNewData()
  	, m_bSignalThrottler()
 +	, m_nDiagLoops()
 +	, m_nDiagWakeups()
-+	, m_nDiagCompletions()
++	, m_nDiagOuterIO()
++	, m_nDiagDrained()
++	, m_nDiagReads()
++	, m_nDiagPendMax()
 +	, m_nDiagZeroReads()
 +	, m_nDiagOrphaned()
++	, m_nDiagNoBlocks()
++	, m_nDiagNoSocket()
++	, m_nDiagBuffered()
  {
  	ASSERT(theApp.uploadqueue != NULL);
  	AfxBeginThread(RunProc, (LPVOID)this);
-@@ -89,11 +97,30 @@ UINT CUploadDiskIOThread::RunInternal()
+@@ -89,11 +103,30 @@ UINT CUploadDiskIOThread::RunInternal()
  	DWORD dwRead = 0;
  	ULONG_PTR completionKey = 0;
  	OverlappedRead_Struct *pCurIO = NULL;
@@ -55,14 +61,19 @@ index e72b5cd..f1ad7a3 100644
 +		if (completionKey == WAKEUP)
 +			++m_nDiagWakeups;
 +		else
-+			++m_nDiagCompletions;
++			++m_nDiagOuterIO;
  		m_Run = RUN_WORK;
  		//start new reads
  		CCriticalSection *pcsUploadListRead = NULL;
-@@ -110,7 +137,17 @@ UINT CUploadDiskIOThread::RunInternal()
+@@ -108,9 +141,21 @@ UINT CUploadDiskIOThread::RunInternal()
+ 		do {
+ 			if (!completionKey)
  				break;
- 			if (completionKey != WAKEUP) //ignore wakeups
+-			if (completionKey != WAKEUP) //ignore wakeups
++			if (completionKey != WAKEUP) { //ignore wakeups
++				++m_nDiagDrained; //UPDIAG: nearly every completion is taken here, not by the outer wait
  				ReadCompletionRoutine(dwRead, pCurIO);
++			}
 +			pCurIO = NULL; //UPDIAG: the test below must not see a freed pointer
  		} while (::GetQueuedCompletionStatus(m_hPort, &dwRead, &completionKey, (LPOVERLAPPED*)&pCurIO, 0));
 +		// UPDIAG: this loop stops on the first failed completion it takes off the
@@ -77,7 +88,7 @@ index e72b5cd..f1ad7a3 100644
  
  		if (!completionKey) //thread termination
  			break;
-@@ -122,6 +159,13 @@ UINT CUploadDiskIOThread::RunInternal()
+@@ -122,6 +167,13 @@ UINT CUploadDiskIOThread::RunInternal()
  		}
  		if (InterlockedExchange8(&m_bNewData, 0) && m_listPendingIO.IsEmpty())
  			PostQueuedCompletionStatus(m_hPort, 0, WAKEUP, NULL);
@@ -91,7 +102,7 @@ index e72b5cd..f1ad7a3 100644
  	}
  	m_Run = RUN_STOP;
  
-@@ -137,6 +181,17 @@ UINT CUploadDiskIOThread::RunInternal()
+@@ -137,6 +189,19 @@ UINT CUploadDiskIOThread::RunInternal()
  	return 0;
  }
  
@@ -99,17 +110,58 @@ index e72b5cd..f1ad7a3 100644
 +CString CUploadDiskIOThread::DbgGetDiagInfo() const
 +{
 +	CString strInfo;
-+	strInfo.Format(_T("run=%d newdata=%d pending=%d loops=%ld wakeups=%ld completions=%ld zeroreads=%ld orphaned=%ld")
-+		, (int)m_Run, (int)m_bNewData, (int)m_listPendingIO.GetCount()
-+		, (LONG)m_nDiagLoops, (LONG)m_nDiagWakeups, (LONG)m_nDiagCompletions
-+		, (LONG)m_nDiagZeroReads, (LONG)m_nDiagOrphaned);
++	strInfo.Format(_T("run=%d newdata=%d pending=%d pendmax=%ld loops=%ld wakeups=%ld outerio=%ld")
++		_T(" drained=%ld reads=%ld zeroreads=%ld orphaned=%ld noblocks=%ld nosock=%ld buffered=%ld")
++		, (int)m_Run, (int)m_bNewData, (int)m_listPendingIO.GetCount(), (LONG)m_nDiagPendMax
++		, (LONG)m_nDiagLoops, (LONG)m_nDiagWakeups, (LONG)m_nDiagOuterIO
++		, (LONG)m_nDiagDrained, (LONG)m_nDiagReads, (LONG)m_nDiagZeroReads, (LONG)m_nDiagOrphaned
++		, (LONG)m_nDiagNoBlocks, (LONG)m_nDiagNoSocket, (LONG)m_nDiagBuffered);
 +	return strInfo;
 +}
 +
  bool CUploadDiskIOThread::AssociateFile(CKnownFile *pFile)
  {
  	ASSERT(m_hPort && m_Run);
-@@ -284,8 +339,15 @@ void CUploadDiskIOThread::ReadCompletionRoutine(DWORD dwRead, const OverlappedRe
+@@ -170,14 +235,18 @@ void CUploadDiskIOThread::DissociateFile(CKnownFile *pFile)
+ 
+ void CUploadDiskIOThread::StartCreateNextBlockPackage(UploadingToClient_Struct *pUploadClientStruct)
+ {
+-	if (pUploadClientStruct->m_bIOError || pUploadClientStruct->m_BlockRequests_queue.IsEmpty())
++	if (pUploadClientStruct->m_bIOError || pUploadClientStruct->m_BlockRequests_queue.IsEmpty()) {
++		++m_nDiagNoBlocks; //UPDIAG: the peer has asked for nothing we still owe it
+ 		return;
++	}
+ 	// when calling this function we already have a lock on the uploadlist
+ 	// (so pUploadClientStruct and its members are safe in terms of not getting deleted/changed)
+ 	CUpDownClient *pClient = pUploadClientStruct->m_pClient;
+ 	CClientReqSocket *pSock = pClient->socket;
+-	if (pSock == NULL || !pSock->IsConnected())
++	if (pSock == NULL || !pSock->IsConnected()) {
++		++m_nDiagNoSocket; //UPDIAG
+ 		return;
++	}
+ 
+ 	// now also get a lock on the Block lists
+ 	CSingleLock lockBlockLists(&pUploadClientStruct->m_csBlockListsLock, TRUE);
+@@ -192,6 +261,7 @@ void CUploadDiskIOThread::StartCreateNextBlockPackage(UploadingToClient_Struct *
+ 	const uint32 nBufferLimit = (pClient->GetUploadDatarate() > BIGBUFFER_MINDATARATE) ? (5 * EMBLOCKSIZE + 1) : (EMBLOCKSIZE + 1);
+ 
+ 	if (addedPayloadQueueSession > nCurQueueSessionPayloadUp && addedPayloadQueueSession - nCurQueueSessionPayloadUp >= nBufferLimit)
++		++m_nDiagBuffered; //UPDIAG: a slot that only ever lands here is a fed slot, not a starved one
+ 		return; // the buffered data is large enough already
+ 
+ 	try {
+@@ -254,6 +324,9 @@ void CUploadDiskIOThread::StartCreateNextBlockPackage(UploadingToClient_Struct *
+ 			}
+ 			++pFile->nInUse;
+ 			pOverlappedRead->pos = m_listPendingIO.AddTail(pOverlappedRead);
++			++m_nDiagReads; //UPDIAG
++			if (m_listPendingIO.GetCount() > m_nDiagPendMax)
++				m_nDiagPendMax = (LONG)m_listPendingIO.GetCount();
+ 			DEBUG_ONLY(dbgDataReadPending += uTogo);
+ 
+ 			addedPayloadQueueSession += uTogo;
+@@ -284,8 +357,15 @@ void CUploadDiskIOThread::ReadCompletionRoutine(DWORD dwRead, const OverlappedRe
  	if (m_Run) {
  		m_listPendingIO.RemoveAt(pOvRead->pos);
  		bool bReadError = !dwRead;
@@ -127,7 +179,7 @@ index e72b5cd..f1ad7a3 100644
  			theApp.QueueDebugLogLineEx(LOG_ERROR, _T("ReadCompletionRoutine: Didn't read requested data count - wanted: %lu, read: %lu")
  				, (DWORD)(pOvRead->uEndOffset - pOvRead->uStartOffset), dwRead);
 diff --git a/srchybrid/UploadDiskIOThread.h b/srchybrid/UploadDiskIOThread.h
-index 710756c..3c67024 100644
+index 710756c..912e621 100644
 --- a/srchybrid/UploadDiskIOThread.h
 +++ b/srchybrid/UploadDiskIOThread.h
 @@ -45,6 +45,10 @@ public:
@@ -141,16 +193,22 @@ index 710756c..3c67024 100644
  
  private:
  	static UINT AFX_CDECL RunProc(LPVOID pParam);
-@@ -68,4 +72,10 @@ private:
+@@ -68,4 +72,16 @@ private:
  	volatile char m_Run; //0 - not running; 1 - idle; 2 - processing
  	volatile char m_bNewData;
  	bool		m_bSignalThrottler;
 +	// UPDIAG counters, written by the I/O thread only
 +	volatile LONG m_nDiagLoops;
 +	volatile LONG m_nDiagWakeups;
-+	volatile LONG m_nDiagCompletions;
++	volatile LONG m_nDiagOuterIO;
++	volatile LONG m_nDiagDrained;
++	volatile LONG m_nDiagReads;
++	volatile LONG m_nDiagPendMax;
 +	volatile LONG m_nDiagZeroReads;
 +	volatile LONG m_nDiagOrphaned;
++	volatile LONG m_nDiagNoBlocks;
++	volatile LONG m_nDiagNoSocket;
++	volatile LONG m_nDiagBuffered;
  };
 \ No newline at end of file
 diff --git a/srchybrid/UploadQueue.cpp b/srchybrid/UploadQueue.cpp
