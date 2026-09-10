@@ -77,9 +77,12 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #   99     reserved for temporary diagnostics - a patch that makes a build
 #          report something rather than fix it, and that is deleted once it
 #          has been read. In use: 99-diag-upload-queue-and-io, which logs the
-#          waiting queue and the upload disk I/O thread. It corrects nothing
-#          on purpose, so a build carrying it still reproduces the fault it
-#          is there to describe.
+#          waiting queue, the upload disk I/O thread, the block requests
+#          arriving from peers and the bandwidth throttler - the last two
+#          because vanilla logs neither, and a stalled slot looks the same
+#          whether the peer stopped asking or the request was dropped. It
+#          corrects nothing on purpose, so a build carrying it still
+#          reproduces the fault it is there to describe.
 # ---------------------------------------------------------------------------
 find_package(Git REQUIRED)
 

@@ -38,6 +38,158 @@ index 7a0311d..4cb1903 100644
  	uint32	GetTotalComp() const				{ return m_nComp; }
  
  private:
+diff --git a/srchybrid/UploadBandwidthThrottler.cpp b/srchybrid/UploadBandwidthThrottler.cpp
+index d9a8e54..9545392 100644
+--- a/srchybrid/UploadBandwidthThrottler.cpp
++++ b/srchybrid/UploadBandwidthThrottler.cpp
+@@ -25,6 +25,7 @@
+ #include "uploadqueue.h"
+ #include "preferences.h"
+ #include "UploadDiskIOThread.h"
++#include "Log.h" //UPDIAG
+ 
+ #ifdef _DEBUG
+ #define new DEBUG_NEW
+@@ -313,6 +314,13 @@ UINT UploadBandwidthThrottler::RunInternal()
+ 	uint32 changesCount = 0;
+ 	uint32 loopsCount = 0;
+ 	int nSlotsBusyLevel = 0;
++	// UPDIAG: temporary instrumentation. Both log flags above are hardcoded false,
++	// so nothing from this thread reaches the log file in a vanilla build.
++	DWORD dwDiagLastTick = timeGetTime();
++	LONG nDiagLoops = 0;
++	LONG nDiagLoopsNoSend = 0;
++	LONG nDiagWakeNoData = 0;
++	LONG nDiagWakeNeedMore = 0;
+ 
+ 	lastTickReachedBandwidth = lastLoopTick = timeGetTime();
+ 	while (m_bRun) {
+@@ -322,6 +330,8 @@ UINT UploadBandwidthThrottler::RunInternal()
+ 
+ 		// Get the current speed from UploadSpeedSense
+ 		uint32 allowedDataRate = theApp.lastCommonRouteFinder->GetUpload();
++		const uint32 nDiagRawAllowed = allowedDataRate; //UPDIAG: before the estimator clamps it
++		++nDiagLoops; //UPDIAG
+ 
+ 		// check busy level for all the slots (WSAEWOULDBLOCK status)
+ 		uint32 nBusy = 0;
+@@ -338,6 +348,7 @@ UINT UploadBandwidthThrottler::RunInternal()
+ 			}
+ 		}
+ 		queueLocker.Unlock();
++		nDiagLoopsNoSend += (LONG)(nCanSend == 0); //UPDIAG
+ 
+ 		// if this is kept, the loop above can be optimized a little (don't count nCanSend,
+ 		// just use nCanSend = GetSlotLimit(theApp.uploadqueue->GetDatarate())
+@@ -434,6 +445,20 @@ UINT UploadBandwidthThrottler::RunInternal()
+ 			}
+ 		}
+ 
++		// UPDIAG: aggregated, so a 1 ms loop cannot flood the log.
++		{
++			const DWORD dwDiagNow = timeGetTime();
++			if (dwDiagNow >= dwDiagLastTick + 10000) {
++				dwDiagLastTick = dwDiagNow;
++				theApp.QueueDebugLogLineEx(LOG_INFO
++					, _T("UPDIAG|throttler allowed=%u raw=%u est=%u cansend=%u busy=%u slots=%d busylevel=%d spend=%I64d")
++					_T(" | loops=%ld nosend=%ld wake_nodata=%ld wake_needmore=%ld")
++					, allowedDataRate, nDiagRawAllowed, nEstiminatedDataRate, nCanSend, nBusy
++					, (int)GetStandardListSize(), nSlotsBusyLevel, (LONGLONG)spendingRate
++					, nDiagLoops, nDiagLoopsNoSend, nDiagWakeNoData, nDiagWakeNeedMore);
++			}
++		}
++
+ 		uint32 minFragSize, doubleSendSize;
+ 		if (allowedDataRate < 6 * 1024)
+ 			doubleSendSize = minFragSize = 536; // send one packet at a time at very low speeds for smoother upload
+@@ -459,8 +484,10 @@ UINT UploadBandwidthThrottler::RunInternal()
+ 		if (timeSinceLastLoop < sleepTime) {
+ 			DWORD dwSleep = sleepTime - timeSinceLastLoop;
+ 			if (nCanSend == 0) {
+-				if (theApp.uploadqueue->GetUploadQueueLength() > 0 && theApp.m_pUploadDiskIOThread)
++				if (theApp.uploadqueue->GetUploadQueueLength() > 0 && theApp.m_pUploadDiskIOThread) {
++					++nDiagWakeNoData; //UPDIAG: a wakeup nobody asked for, sent because we have nothing queued
+ 					theApp.m_pUploadDiskIOThread->WakeUpCall();
++				}
+ 				::WaitForSingleObject(m_eventDataAvailable, dwSleep);
+ 			} else if (nCanSend <= nBusy)
+ 				::WaitForSingleObject(m_eventSocketAvailable, dwSleep);
+@@ -624,8 +651,10 @@ UINT UploadBandwidthThrottler::RunInternal()
+ 			InterlockedAdd64((LONG64*)&m_SentBytesSinceLastCall, (LONG64)spentBytes);
+ 			InterlockedAdd64((LONG64*)&m_SentBytesSinceLastCallOverhead, (LONG64)spentOverhead);
+ 
+-			if (bNeedMoreData && theApp.uploadqueue->GetUploadQueueLength() > 0 && theApp.m_pUploadDiskIOThread)
++			if (bNeedMoreData && theApp.uploadqueue->GetUploadQueueLength() > 0 && theApp.m_pUploadDiskIOThread) {
++				++nDiagWakeNeedMore; //UPDIAG: a wakeup a draining socket asked for
+ 				theApp.m_pUploadDiskIOThread->WakeUpCall();
++			}
+ 		}
+ 	}
+ 
+diff --git a/srchybrid/UploadClient.cpp b/srchybrid/UploadClient.cpp
+index 612f2be..8f6571a 100644
+--- a/srchybrid/UploadClient.cpp
++++ b/srchybrid/UploadClient.cpp
+@@ -316,12 +316,26 @@ void CUpDownClient::SetUploadFileID(CKnownFile *newreqfile)
+ }
+ 
+ static INT_PTR dbgLastQueueCount = 0;
++// UPDIAG: temporary counters for the block requests peers send us. Cumulative,
++// read by CUploadQueue::Process() for its periodic line.
++volatile LONG g_nDiagReqIn = 0;
++volatile LONG g_nDiagReqQueued = 0;
++volatile LONG g_nDiagReqDupDone = 0;
++volatile LONG g_nDiagReqDupPending = 0;
++volatile LONG g_nDiagReqWake = 0;
++
+ void CUpDownClient::AddReqBlock(Requested_Block_Struct *reqblock, bool bSignalIOThread)
+ {
+ 	// do _all_ sanity checks on the requested block here, than put it on the block list for the client
+ 	// UploadDiskIOThread will handle those later on
+ 
+ 	if (reqblock != NULL) {
++		// UPDIAG: the arrival of a block request is the event the whole investigation
++		// turns on. eMule logs nothing here, so "the peer stopped asking" and "the peer
++		// asked and we dropped it" are indistinguishable in a vanilla trace.
++		++g_nDiagReqIn;
++		theApp.QueueDebugLogLineEx(LOG_INFO, _T("UPDIAG|reqblock in, upstate=%d off=%I64u-%I64u client: %s")
++			, (int)GetUploadState(), reqblock->StartOffset, reqblock->EndOffset, (LPCTSTR)DbgGetClientInfo());
+ 		if (GetUploadState() != US_UPLOADING) {
+ 			if (thePrefs.GetLogUlDlEvents())
+ 				AddDebugLogLine(DLP_LOW, false, _T("UploadClient: Client tried to add req block when not in upload slot! Prevented req blocks from being added. %s"), (LPCTSTR)DbgGetClientInfo());
+@@ -392,6 +406,9 @@ void CUpDownClient::AddReqBlock(Requested_Block_Struct *reqblock, bool bSignalIO
+ 				&& reqblock->EndOffset == cur_reqblock->EndOffset
+ 				&& md4equ(reqblock->FileID, cur_reqblock->FileID))
+ 			{
++				++g_nDiagReqDupDone; //UPDIAG: dropped without a word by vanilla
++				theApp.QueueDebugLogLineEx(LOG_WARNING, _T("UPDIAG|reqblock dropped, already served, client: %s")
++					, (LPCTSTR)DbgGetClientInfo());
+ 				delete reqblock;
+ 				return;
+ 			}
+@@ -402,15 +419,22 @@ void CUpDownClient::AddReqBlock(Requested_Block_Struct *reqblock, bool bSignalIO
+ 				&& reqblock->EndOffset == cur_reqblock->EndOffset
+ 				&& md4equ(reqblock->FileID, cur_reqblock->FileID))
+ 			{
++				++g_nDiagReqDupPending; //UPDIAG: dropped without a word by vanilla
++				theApp.QueueDebugLogLineEx(LOG_WARNING, _T("UPDIAG|reqblock dropped, already pending, client: %s")
++					, (LPCTSTR)DbgGetClientInfo());
+ 				delete reqblock;
+ 				return;
+ 			}
+ 		}
+ 		pUploadingClientStruct->m_BlockRequests_queue.AddTail(reqblock);
+ 		dbgLastQueueCount = pUploadingClientStruct->m_BlockRequests_queue.GetCount();
++		++g_nDiagReqQueued; //UPDIAG
++		theApp.QueueDebugLogLineEx(LOG_INFO, _T("UPDIAG|reqblock queued, pending=%d served=%d")
++			, (int)dbgLastQueueCount, (int)pUploadingClientStruct->m_DoneBlocks_list.GetCount());
+ 		lockBlockLists.Unlock(); // not needed, just to make it visible
+ 	}
+ 	if (bSignalIOThread && theApp.m_pUploadDiskIOThread != NULL) {
++		++g_nDiagReqWake; //UPDIAG: a wakeup the protocol asked for, unlike the throttler's
+ 		/*DebugLog(_T("BlockRequest Packet received, we have currently %u waiting requests and %s data in buffer (%u in ready packets, %s in pending IO Disk read), socket busy: %s")
+ 			, dbgLastQueueCount
+ 			, (LPCTSTR)CastItoXBytes(GetQueueSessionUploadAdded() - (GetQueueSessionPayloadUp() + socket->GetSentPayloadSinceLastCall(false)), false, false, 2)
 diff --git a/srchybrid/UploadDiskIOThread.cpp b/srchybrid/UploadDiskIOThread.cpp
 index e72b5cd..65411ba 100644
 --- a/srchybrid/UploadDiskIOThread.cpp
@@ -256,7 +408,7 @@ index 710756c..912e621 100644
  };
 \ No newline at end of file
 diff --git a/srchybrid/UploadQueue.cpp b/srchybrid/UploadQueue.cpp
-index c6130f6..568dadf 100644
+index c6130f6..9e5f27d 100644
 --- a/srchybrid/UploadQueue.cpp
 +++ b/srchybrid/UploadQueue.cpp
 @@ -44,6 +44,8 @@
@@ -268,7 +420,7 @@ index c6130f6..568dadf 100644
  
  #ifdef _DEBUG
  #define new DEBUG_NEW
-@@ -285,10 +287,34 @@ void CUploadQueue::Process()
+@@ -285,10 +287,16 @@ void CUploadQueue::Process()
  	const DWORD curTick = ::GetTickCount();
  	UpdateActiveClientsInfo(curTick);
  
@@ -278,20 +430,48 @@ index c6130f6..568dadf 100644
  		// There's not enough open uploads. Open another one.
  		AddUpNextClient(_T("Not enough open upload slots for the current speed"));
  
++	// UPDIAG: counters for the slots walked by the loop below, summed while it
++	// already holds each client's block list lock.
++	int nDiagReqPending = 0;
++	int nDiagReqServed = 0;
++
+ 	// The loop that feeds the upload slots with data.
+ 	for (POSITION pos = uploadinglist.GetHeadPosition(); pos != NULL;) {
+ 		// Get the client. Note! Also updates pos as a side effect.
+@@ -325,6 +333,8 @@ void CUploadQueue::Process()
+ 			// the IO thread will wait for us (only for this client of course) to fix it for cross-thread sync reasons
+ 			CSingleLock lockBlockLists(&pCurClientStruct->m_csBlockListsLock, TRUE);
+ 			ASSERT(lockBlockLists.IsLocked());
++			nDiagReqPending += (int)pCurClientStruct->m_BlockRequests_queue.GetCount(); //UPDIAG
++			nDiagReqServed += (int)pCurClientStruct->m_DoneBlocks_list.GetCount(); //UPDIAG
+ 			// be careful what functions to call while having locks, RemoveFromUploadQueue could,
+ 			// for example, lead to a deadlock here because it tries to get the uploadlist lock,
+ 			// while the IO thread tries to fetch the uploadlist lock and then the blocklist lock
+@@ -346,6 +356,36 @@ void CUploadQueue::Process()
+ 		}
+ 	}
+ 
 +	// UPDIAG: one line every 10 seconds with everything that decides whether a
-+	// waiting client ever reaches a slot. The state of the upload disk I/O thread
-+	// is reported from here on purpose: if that thread is stuck in its wait it
-+	// cannot report itself, and its absence from the log is the interesting part.
++	// waiting client ever reaches a slot, and whether the slots it did reach are
++	// being asked for anything. The state of the upload disk I/O thread is reported
++	// from here on purpose: if that thread is stuck in its wait it cannot report
++	// itself, and its absence from the log is the interesting part.
 +	{
++		extern volatile LONG g_nDiagReqIn, g_nDiagReqQueued, g_nDiagReqDupDone
++			, g_nDiagReqDupPending, g_nDiagReqWake; //defined in UploadClient.cpp
 +		static DWORD s_dwDiagLastTick = 0; //main thread only
 +		if (curTick >= s_dwDiagLastTick + SEC2MS(10)) {
 +			s_dwDiagLastTick = curTick;
 +			theApp.QueueDebugLogLineEx(LOG_INFO
 +				, _T("UPDIAG|queue waiting=%d uploading=%d datarate=%u maxup=%u force=%d accept=%d")
++				_T(" | reqpending=%d reqserved=%d reqin=%ld reqq=%ld dupserved=%ld duppending=%ld reqwake=%ld")
 +				_T(" | sockets=%u/%u half=%u listening=%d refused=%u | %s")
 +				, (int)waitinglist.GetCount(), (int)uploadinglist.GetCount()
 +				, datarate, thePrefs.GetMaxUpload(), (int)bDiagForce
 +				, (int)AcceptNewClient(uploadinglist.GetCount())
++				, nDiagReqPending, nDiagReqServed
++				, (LONG)g_nDiagReqIn, (LONG)g_nDiagReqQueued, (LONG)g_nDiagReqDupDone
++				, (LONG)g_nDiagReqDupPending, (LONG)g_nDiagReqWake
 +				, theApp.listensocket ? theApp.listensocket->GetOpenSockets() : 0u
 +				, thePrefs.GetMaxConnections()
 +				, theApp.listensocket ? theApp.listensocket->GetTotalHalfCon() : 0u
@@ -301,10 +481,10 @@ index c6130f6..568dadf 100644
 +		}
 +	}
 +
- 	// The loop that feeds the upload slots with data.
- 	for (POSITION pos = uploadinglist.GetHeadPosition(); pos != NULL;) {
- 		// Get the client. Note! Also updates pos as a side effect.
-@@ -520,6 +546,8 @@ void CUploadQueue::AddClientToQueue(CUpDownClient *client, bool bIgnoreTimelimit
+ 	// Save used bandwidth for speed calculations
+ 	(void)theApp.uploadBandwidthThrottler->GetNumberOfSentBytesOverheadSinceLastCallAndReset(); //reset only
+ 	uint64 sentBytes = theApp.uploadBandwidthThrottler->GetNumberOfSentBytesSinceLastCallAndReset();
+@@ -520,6 +560,8 @@ void CUploadQueue::AddClientToQueue(CUpDownClient *client, bool bIgnoreTimelimit
  		&& !theApp.serverconnect->IsLocalServer(client->GetServerIP(), client->GetServerPort())
  		&& GetWaitingUserCount() > 50)
  	{
@@ -313,7 +493,7 @@ index c6130f6..568dadf 100644
  		return;
  	}
  	client->IncrementAskedCount();
-@@ -629,6 +657,9 @@ void CUploadQueue::AddClientToQueue(CUpDownClient *client, bool bIgnoreTimelimit
+@@ -629,6 +671,9 @@ void CUploadQueue::AddClientToQueue(CUpDownClient *client, bool bIgnoreTimelimit
  	   )
  	{
  		// block client from getting on queue
@@ -323,7 +503,7 @@ index c6130f6..568dadf 100644
  		return;
  	}
  	if (client->IsDownloading()) {
-@@ -646,6 +677,10 @@ void CUploadQueue::AddClientToQueue(CUpDownClient *client, bool bIgnoreTimelimit
+@@ -646,6 +691,10 @@ void CUploadQueue::AddClientToQueue(CUpDownClient *client, bool bIgnoreTimelimit
  	} else {
  		m_bStatisticsWaitingListDirty = true;
  		waitinglist.AddTail(client);
@@ -334,7 +514,7 @@ index c6130f6..568dadf 100644
  		client->SetUploadState(US_ONUPLOADQUEUE);
  		theApp.emuledlg->transferwnd->GetQueueList().AddClient(client, true);
  		theApp.emuledlg->transferwnd->ShowQueueCount(waitinglist.GetCount());
-@@ -748,6 +783,11 @@ void CUploadQueue::RemoveFromWaitingQueue(POSITION pos, bool updatewindow)
+@@ -748,6 +797,11 @@ void CUploadQueue::RemoveFromWaitingQueue(POSITION pos, bool updatewindow)
  	m_bStatisticsWaitingListDirty = true;
  	CUpDownClient *todelete = waitinglist.GetAt(pos);
  	waitinglist.RemoveAt(pos);
