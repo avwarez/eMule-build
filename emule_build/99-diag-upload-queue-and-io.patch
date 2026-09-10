@@ -39,7 +39,7 @@ index 7a0311d..4cb1903 100644
  
  private:
 diff --git a/srchybrid/UploadDiskIOThread.cpp b/srchybrid/UploadDiskIOThread.cpp
-index e72b5cd..bfa384a 100644
+index e72b5cd..65411ba 100644
 --- a/srchybrid/UploadDiskIOThread.cpp
 +++ b/srchybrid/UploadDiskIOThread.cpp
 @@ -45,6 +45,9 @@ static char THIS_FILE[] = __FILE__;
@@ -183,15 +183,19 @@ index e72b5cd..bfa384a 100644
  
  	// now also get a lock on the Block lists
  	CSingleLock lockBlockLists(&pUploadClientStruct->m_csBlockListsLock, TRUE);
-@@ -192,6 +261,7 @@ void CUploadDiskIOThread::StartCreateNextBlockPackage(UploadingToClient_Struct *
+@@ -191,8 +260,10 @@ void CUploadDiskIOThread::StartCreateNextBlockPackage(UploadingToClient_Struct *
+ 	// buffer at least 1 block (180KB) for normal uploads, and 5 blocks (~900KB) for fast uploads
  	const uint32 nBufferLimit = (pClient->GetUploadDatarate() > BIGBUFFER_MINDATARATE) ? (5 * EMBLOCKSIZE + 1) : (EMBLOCKSIZE + 1);
  
- 	if (addedPayloadQueueSession > nCurQueueSessionPayloadUp && addedPayloadQueueSession - nCurQueueSessionPayloadUp >= nBufferLimit)
+-	if (addedPayloadQueueSession > nCurQueueSessionPayloadUp && addedPayloadQueueSession - nCurQueueSessionPayloadUp >= nBufferLimit)
++	if (addedPayloadQueueSession > nCurQueueSessionPayloadUp && addedPayloadQueueSession - nCurQueueSessionPayloadUp >= nBufferLimit) {
 +		++m_nDiagBuffered; //UPDIAG: a slot that only ever lands here is a fed slot, not a starved one
  		return; // the buffered data is large enough already
++	}
  
  	try {
-@@ -254,6 +324,9 @@ void CUploadDiskIOThread::StartCreateNextBlockPackage(UploadingToClient_Struct *
+ 		// Get more data if currently buffered was less than nBufferLimit Bytes
+@@ -254,6 +325,9 @@ void CUploadDiskIOThread::StartCreateNextBlockPackage(UploadingToClient_Struct *
  			}
  			++pFile->nInUse;
  			pOverlappedRead->pos = m_listPendingIO.AddTail(pOverlappedRead);
@@ -201,7 +205,7 @@ index e72b5cd..bfa384a 100644
  			DEBUG_ONLY(dbgDataReadPending += uTogo);
  
  			addedPayloadQueueSession += uTogo;
-@@ -284,8 +357,15 @@ void CUploadDiskIOThread::ReadCompletionRoutine(DWORD dwRead, const OverlappedRe
+@@ -284,8 +358,15 @@ void CUploadDiskIOThread::ReadCompletionRoutine(DWORD dwRead, const OverlappedRe
  	if (m_Run) {
  		m_listPendingIO.RemoveAt(pOvRead->pos);
  		bool bReadError = !dwRead;
