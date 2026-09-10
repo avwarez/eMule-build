@@ -81,6 +81,18 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          fed. It gives the wait the bound the loop had before the
 #          completion port replaced it, and wakes the thread from the
 #          throttler in the one case the throttler could not report.
+#          97e also belongs to no branch yet, and is the one that addresses
+#          the fault the other two only insure against: a send that has
+#          finished is collected in exactly one place, the busy scan the
+#          throttler runs over its slot list, and that scan looks only at
+#          sockets reporting queued data. A socket that handed its whole
+#          queue to the send reports none, so its completion is never taken,
+#          it keeps answering that it is busy, every send loop skips it, and
+#          it stays that way until something else queues data on it - which
+#          is precisely what a peer repeating a request it has already been
+#          served does not do. It collects on that socket too and leaves the
+#          two counters the scan produces untouched, so no bandwidth or
+#          sleep decision downstream changes.
 #   98     corrections to the shipped language resources, from the fork's
 #          v0.72a-lang branch - source data for the `languages` target
 #          rather than code, so they change no binary.
@@ -93,7 +105,13 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          throttler decided not to send to: whether a send is outstanding,
 #          for how long, what the completion port says about it, how much is
 #          queued behind it, how often the socket was asked to send and how
-#          often it answered with nothing. Vanilla reports none of this, so a
+#          often it answered with nothing. It also counts what the collection
+#          added by 97e finds - how many finished sends it takes that nothing
+#          else could have reached, how long the oldest had been waiting, and
+#          how many were still in flight - names the socket each time one had
+#          been held half a second or longer, and records, on every repeated
+#          request dropped as already served, how long that peer's send had
+#          been outstanding. Vanilla reports none of this, so a
 #          slot that dies holding data looks the same whether the peer stopped
 #          asking, the request was dropped, the send never completed, or the
 #          send completed and nobody collected it. It corrects nothing on
