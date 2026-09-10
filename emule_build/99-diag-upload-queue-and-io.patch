@@ -1,5 +1,5 @@
 diff --git a/srchybrid/EMSocket.cpp b/srchybrid/EMSocket.cpp
-index 975aec0..3759075 100644
+index cd8e44c..f326022 100644
 --- a/srchybrid/EMSocket.cpp
 +++ b/srchybrid/EMSocket.cpp
 @@ -34,6 +34,14 @@
@@ -16,7 +16,7 @@ index 975aec0..3759075 100644
 +
  namespace
  {
- 	inline void EMTrace(char *fmt, ...)
+ 	inline void EMTrace(const char *fmt, ...)
 @@ -111,6 +119,8 @@ CEMSocket::CEMSocket()
  	, m_bUseBigSendBuffers()
  	, m_bUseOverlappedSend(true)
@@ -79,7 +79,7 @@ index 975aec0..3759075 100644
  	switch (recvRetCode) {
  	case 0:
  		if (GetRealReceivedBytes() <= 0) { // we received data but it was for the underlying encryption layer - all fine
-@@ -1113,6 +1150,7 @@ bool CEMSocket::IsBusyExtensiveCheck()
+@@ -1114,6 +1151,7 @@ bool CEMSocket::IsBusyExtensiveCheck()
  		return false;
  	DWORD dwTransferred, dwFlags;
  	if (WSAGetOverlappedResult(GetSocketHandle(), &m_PendingSendOperation, &dwTransferred, FALSE, &dwFlags)) {
@@ -240,7 +240,7 @@ index d9a8e54..9545392 100644
  	}
  
 diff --git a/srchybrid/UploadClient.cpp b/srchybrid/UploadClient.cpp
-index 612f2be..8f6571a 100644
+index 61ad554..351b27d 100644
 --- a/srchybrid/UploadClient.cpp
 +++ b/srchybrid/UploadClient.cpp
 @@ -316,12 +316,26 @@ void CUpDownClient::SetUploadFileID(CKnownFile *newreqfile)
