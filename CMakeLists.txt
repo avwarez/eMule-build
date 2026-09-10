@@ -65,10 +65,8 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          the C++ standard we build at removed the construct).
 #   90-94  the code compiles but /Wall flags it; these bring the warning
 #          count back to zero.
-#   95-96  the code compiles and is warning-clean but is not correct: either
-#          only on some of the targets we build, or - as with the upload
-#          disk I/O thread - on all of them, without any peer being able to
-#          provoke it (see each patch's own subject).
+#   95-96  the code compiles and is warning-clean but is not correct on
+#          every target we build (see each patch's own subject).
 #   97     the code is wrong on every target, on input a peer or a web
 #          client controls. These are the commits on the fork's
 #          v0.72a-secfix branch, offered upstream as irwir/eMule#7; a file
