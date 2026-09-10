@@ -1,3 +1,116 @@
+diff --git a/srchybrid/EMSocket.cpp b/srchybrid/EMSocket.cpp
+index 975aec0..3759075 100644
+--- a/srchybrid/EMSocket.cpp
++++ b/srchybrid/EMSocket.cpp
+@@ -34,6 +34,14 @@
+ static char THIS_FILE[] = __FILE__;
+ #endif
+ 
++// UPDIAG: temporary counters for the overlapped send. Vanilla reads the transferred
++// byte count of a completed WSASend and throws it away, so a short send drops the tail
++// of the block without any counter noticing: the payload is booked in SendOv() as each
++// buffer is handed over, before WSASend() is even called. Read by CUploadQueue::Process().
++volatile LONG g_nDiagShortSends = 0;
++volatile LONG g_nDiagShortSendBytes = 0;
++volatile LONG g_nDiagSendsChecked = 0;
++
+ namespace
+ {
+ 	inline void EMTrace(char *fmt, ...)
+@@ -111,6 +119,8 @@ CEMSocket::CEMSocket()
+ 	, m_bUseBigSendBuffers()
+ 	, m_bUseOverlappedSend(true)
+ 	, m_bPendingSendOv()
++	, m_nDiagRecvBytes() //UPDIAG
++	, m_dwDiagLastRecv() //UPDIAG
+ {
+ 	lastCalledSend = timeGetTime();
+ 	lastSent = lastCalledSend > SEC2MS(1) ? lastCalledSend - SEC2MS(1) : 0;
+@@ -692,6 +702,25 @@ SocketSentBytes CEMSocket::SendStd(uint32 maxNumberOfBytesToSend, uint32 minFrag
+ 	return ret;
+ }
+ 
++//UPDIAG: compare what the completed overlapped send actually wrote with what was submitted.
++void CEMSocket::DiagCheckOverlappedSend(LPCTSTR pszWhere)
++{
++	DWORD dwTransferred = 0, dwFlags = 0;
++	if (!::WSAGetOverlappedResult(GetSocketHandle(), &m_PendingSendOperation, &dwTransferred, FALSE, &dwFlags))
++		return;
++	ULONGLONG uSubmitted = 0;
++	for (INT_PTR i = m_aBufferSend.GetCount(); --i >= 0;)
++		uSubmitted += m_aBufferSend[i].len;
++	::InterlockedIncrement(&g_nDiagSendsChecked);
++	if (dwTransferred == uSubmitted)
++		return;
++	::InterlockedIncrement(&g_nDiagShortSends);
++	if (uSubmitted > dwTransferred)
++		::InterlockedExchangeAdd(&g_nDiagShortSendBytes, (LONG)(uSubmitted - dwTransferred));
++	theApp.QueueDebugLogLineEx(LOG_WARNING, _T("UPDIAG|overlapped send mismatch at %s, submitted=%I64u transferred=%u buffers=%d")
++		, pszWhere, uSubmitted, dwTransferred, (int)m_aBufferSend.GetCount());
++}
++
+ /**
+  * Try to put queued up data on the socket with Overlapped methods.
+  *
+@@ -810,9 +839,10 @@ SocketSentBytes CEMSocket::SendOv(uint32 maxNumberOfBytesToSend, uint32 minFragS
+ 				memset(&m_PendingSendOperation, 0, sizeof WSAOVERLAPPED);
+ 				m_PendingSendOperation.hEvent = theApp.uploadBandwidthThrottler->GetSocketAvailableEvent();
+ 				m_bPendingSendOv = true;
+-				if (CEncryptedStreamSocket::SendOv(m_aBufferSend, &m_PendingSendOperation) == 0)
++				if (CEncryptedStreamSocket::SendOv(m_aBufferSend, &m_PendingSendOperation) == 0) {
++					DiagCheckOverlappedSend(_T("immediate")); //UPDIAG
+ 					CleanUpOverlappedSendOperation(false);
+-				else {
++				} else {
+ 					int nError = WSAGetLastError();
+ 					if (nError != WSA_IO_PENDING) {
+ 						ret.success = false;
+@@ -899,6 +929,13 @@ int CEMSocket::Receive(void *lpBuf, int nBufLen, int nFlags)
+ {
+ 	//EMTrace("CEMSocket::Receive on %u, maxSize=%d", (SOCKET)this, nBufLen);
+ 	int recvRetCode = CEncryptedStreamSocket::Receive(lpBuf, nBufLen, nFlags); // deadlake PROXYSUPPORT - changed to AsyncSocketEx
++	//UPDIAG: remember that the peer said something, and how much. Counted on the raw bytes
++	//so that traffic consumed entirely by the encryption layer still counts as the peer talking.
++	const int nDiagRawBytes = GetRealReceivedBytes();
++	if (nDiagRawBytes > 0) {
++		m_nDiagRecvBytes += (uint64)nDiagRawBytes;
++		m_dwDiagLastRecv = ::GetTickCount();
++	}
+ 	switch (recvRetCode) {
+ 	case 0:
+ 		if (GetRealReceivedBytes() <= 0) { // we received data but it was for the underlying encryption layer - all fine
+@@ -1113,6 +1150,7 @@ bool CEMSocket::IsBusyExtensiveCheck()
+ 		return false;
+ 	DWORD dwTransferred, dwFlags;
+ 	if (WSAGetOverlappedResult(GetSocketHandle(), &m_PendingSendOperation, &dwTransferred, FALSE, &dwFlags)) {
++		DiagCheckOverlappedSend(_T("completion")); //UPDIAG
+ 		CleanUpOverlappedSendOperation(false);
+ 		OnSend(0);
+ 		return false;
+diff --git a/srchybrid/EMSocket.h b/srchybrid/EMSocket.h
+index 3875a13..82042ff 100644
+--- a/srchybrid/EMSocket.h
++++ b/srchybrid/EMSocket.h
+@@ -78,6 +78,11 @@ public:
+ 	uint32 GetSentPayloadSinceLastCall(bool bReset);
+ 	void TruncateQueues();
+ 
++	//UPDIAG: was the peer still talking to us, and when did it last do so?
++	uint64 GetDiagRecvBytes() const							{ return m_nDiagRecvBytes; }
++	DWORD GetDiagLastRecvTick() const						{ return m_dwDiagLastRecv; }
++	void DiagCheckOverlappedSend(LPCTSTR pszWhere);
++
+ 	virtual SocketSentBytes SendControlData(uint32 maxNumberOfBytesToSend, uint32 minFragSize)			{ return SendEM(maxNumberOfBytesToSend, minFragSize, true); }
+ 	virtual SocketSentBytes SendFileAndControlData(uint32 maxNumberOfBytesToSend, uint32 minFragSize)	{ return SendEM(maxNumberOfBytesToSend, minFragSize, false); }
+ 
+@@ -148,4 +153,6 @@ private:
+ 	bool	m_bUseBigSendBuffers;
+ 	bool	m_bUseOverlappedSend;
+ 	bool	m_bPendingSendOv;
++	uint64	m_nDiagRecvBytes; //UPDIAG
++	DWORD	m_dwDiagLastRecv; //UPDIAG - 0 means the peer never sent us anything
+ };
+\ No newline at end of file
 diff --git a/srchybrid/ListenSocket.cpp b/srchybrid/ListenSocket.cpp
 index 15674a1..b96e4b3 100644
 --- a/srchybrid/ListenSocket.cpp
@@ -408,7 +521,7 @@ index 710756c..912e621 100644
  };
 \ No newline at end of file
 diff --git a/srchybrid/UploadQueue.cpp b/srchybrid/UploadQueue.cpp
-index c6130f6..9e5f27d 100644
+index c6130f6..9b08de5 100644
 --- a/srchybrid/UploadQueue.cpp
 +++ b/srchybrid/UploadQueue.cpp
 @@ -44,6 +44,8 @@
@@ -420,7 +533,7 @@ index c6130f6..9e5f27d 100644
  
  #ifdef _DEBUG
  #define new DEBUG_NEW
-@@ -285,10 +287,16 @@ void CUploadQueue::Process()
+@@ -285,10 +287,19 @@ void CUploadQueue::Process()
  	const DWORD curTick = ::GetTickCount();
  	UpdateActiveClientsInfo(curTick);
  
@@ -434,11 +547,25 @@ index c6130f6..9e5f27d 100644
 +	// already holds each client's block list lock.
 +	int nDiagReqPending = 0;
 +	int nDiagReqServed = 0;
++	// longest silence over all busy slots: how long ago the most silent peer last
++	// sent us anything at all. A slot that holds data but hears nothing is the fault.
++	DWORD nDiagQuietMax = 0;
 +
  	// The loop that feeds the upload slots with data.
  	for (POSITION pos = uploadinglist.GetHeadPosition(); pos != NULL;) {
  		// Get the client. Note! Also updates pos as a side effect.
-@@ -325,6 +333,8 @@ void CUploadQueue::Process()
+@@ -321,10 +332,19 @@ void CUploadQueue::Process()
+ 					sock->UseBigSendBuffer();
+ 			}
+ 
++			if (cur_client->socket != NULL) { //UPDIAG
++				DWORD dwLastRecv = cur_client->socket->GetDiagLastRecvTick();
++				DWORD dwQuiet = (dwLastRecv != 0 && curTick >= dwLastRecv) ? curTick - dwLastRecv : 0;
++				if (dwQuiet > nDiagQuietMax)
++					nDiagQuietMax = dwQuiet;
++			}
++
+ 			// check if the file id of the topmost block request matches the current upload file, otherwise
  			// the IO thread will wait for us (only for this client of course) to fix it for cross-thread sync reasons
  			CSingleLock lockBlockLists(&pCurClientStruct->m_csBlockListsLock, TRUE);
  			ASSERT(lockBlockLists.IsLocked());
@@ -447,7 +574,7 @@ index c6130f6..9e5f27d 100644
  			// be careful what functions to call while having locks, RemoveFromUploadQueue could,
  			// for example, lead to a deadlock here because it tries to get the uploadlist lock,
  			// while the IO thread tries to fetch the uploadlist lock and then the blocklist lock
-@@ -346,6 +356,36 @@ void CUploadQueue::Process()
+@@ -346,6 +366,41 @@ void CUploadQueue::Process()
  		}
  	}
  
@@ -459,12 +586,15 @@ index c6130f6..9e5f27d 100644
 +	{
 +		extern volatile LONG g_nDiagReqIn, g_nDiagReqQueued, g_nDiagReqDupDone
 +			, g_nDiagReqDupPending, g_nDiagReqWake; //defined in UploadClient.cpp
++		extern volatile LONG g_nDiagShortSends, g_nDiagShortSendBytes
++			, g_nDiagSendsChecked; //defined in EMSocket.cpp
 +		static DWORD s_dwDiagLastTick = 0; //main thread only
 +		if (curTick >= s_dwDiagLastTick + SEC2MS(10)) {
 +			s_dwDiagLastTick = curTick;
 +			theApp.QueueDebugLogLineEx(LOG_INFO
 +				, _T("UPDIAG|queue waiting=%d uploading=%d datarate=%u maxup=%u force=%d accept=%d")
 +				_T(" | reqpending=%d reqserved=%d reqin=%ld reqq=%ld dupserved=%ld duppending=%ld reqwake=%ld")
++				_T(" | quiet=%ums sendschecked=%ld shortsends=%ld shortbytes=%ld")
 +				_T(" | sockets=%u/%u half=%u listening=%d refused=%u | %s")
 +				, (int)waitinglist.GetCount(), (int)uploadinglist.GetCount()
 +				, datarate, thePrefs.GetMaxUpload(), (int)bDiagForce
@@ -472,6 +602,8 @@ index c6130f6..9e5f27d 100644
 +				, nDiagReqPending, nDiagReqServed
 +				, (LONG)g_nDiagReqIn, (LONG)g_nDiagReqQueued, (LONG)g_nDiagReqDupDone
 +				, (LONG)g_nDiagReqDupPending, (LONG)g_nDiagReqWake
++				, nDiagQuietMax, (LONG)g_nDiagSendsChecked
++				, (LONG)g_nDiagShortSends, (LONG)g_nDiagShortSendBytes
 +				, theApp.listensocket ? theApp.listensocket->GetOpenSockets() : 0u
 +				, thePrefs.GetMaxConnections()
 +				, theApp.listensocket ? theApp.listensocket->GetTotalHalfCon() : 0u
@@ -484,7 +616,7 @@ index c6130f6..9e5f27d 100644
  	// Save used bandwidth for speed calculations
  	(void)theApp.uploadBandwidthThrottler->GetNumberOfSentBytesOverheadSinceLastCallAndReset(); //reset only
  	uint64 sentBytes = theApp.uploadBandwidthThrottler->GetNumberOfSentBytesSinceLastCallAndReset();
-@@ -520,6 +560,8 @@ void CUploadQueue::AddClientToQueue(CUpDownClient *client, bool bIgnoreTimelimit
+@@ -520,6 +575,8 @@ void CUploadQueue::AddClientToQueue(CUpDownClient *client, bool bIgnoreTimelimit
  		&& !theApp.serverconnect->IsLocalServer(client->GetServerIP(), client->GetServerPort())
  		&& GetWaitingUserCount() > 50)
  	{
@@ -493,7 +625,7 @@ index c6130f6..9e5f27d 100644
  		return;
  	}
  	client->IncrementAskedCount();
-@@ -629,6 +671,9 @@ void CUploadQueue::AddClientToQueue(CUpDownClient *client, bool bIgnoreTimelimit
+@@ -629,6 +686,9 @@ void CUploadQueue::AddClientToQueue(CUpDownClient *client, bool bIgnoreTimelimit
  	   )
  	{
  		// block client from getting on queue
@@ -503,7 +635,7 @@ index c6130f6..9e5f27d 100644
  		return;
  	}
  	if (client->IsDownloading()) {
-@@ -646,6 +691,10 @@ void CUploadQueue::AddClientToQueue(CUpDownClient *client, bool bIgnoreTimelimit
+@@ -646,6 +706,10 @@ void CUploadQueue::AddClientToQueue(CUpDownClient *client, bool bIgnoreTimelimit
  	} else {
  		m_bStatisticsWaitingListDirty = true;
  		waitinglist.AddTail(client);
@@ -514,7 +646,30 @@ index c6130f6..9e5f27d 100644
  		client->SetUploadState(US_ONUPLOADQUEUE);
  		theApp.emuledlg->transferwnd->GetQueueList().AddClient(client, true);
  		theApp.emuledlg->transferwnd->ShowQueueCount(waitinglist.GetCount());
-@@ -748,6 +797,11 @@ void CUploadQueue::RemoveFromWaitingQueue(POSITION pos, bool updatewindow)
+@@ -692,6 +756,22 @@ bool CUploadQueue::RemoveFromUploadQueue(CUpDownClient *client, LPCTSTR pszReaso
+ 					, (LPCTSTR)CastItoXBytes(client->GetPayloadInBuffer()), curClientStruct->m_BlockRequests_queue.GetCount()
+ 					, theApp.sharedfiles->GetFileByID(client->GetUploadFileID()) ? (LPCTSTR)theApp.sharedfiles->GetFileByID(client->GetUploadFileID())->GetFileName() : _T(""));
+ 			}
++			// UPDIAG: vanilla says how much we handed to the socket, never whether the
++			// peer was still talking to us. A slot that dies on a socket timeout while
++			// the peer has been silent since the last block is the case under investigation.
++			{
++				CClientReqSocket *pDiagSock = client->socket;
++				DWORD dwLastRecv = pDiagSock ? pDiagSock->GetDiagLastRecvTick() : 0;
++				theApp.QueueDebugLogLineEx(LOG_INFO
++					, _T("UPDIAG|slot removed (%s) recvbytes=%I64u quiet=%dms pending=%d served=%d added=%I64u payload=%I64u client: %s")
++					, pszReason == NULL ? _T("") : pszReason
++					, pDiagSock ? pDiagSock->GetDiagRecvBytes() : (uint64)0
++					, dwLastRecv != 0 ? (int)(::GetTickCount() - dwLastRecv) : -1
++					, (int)curClientStruct->m_BlockRequests_queue.GetCount()
++					, (int)curClientStruct->m_DoneBlocks_list.GetCount()
++					, client->GetQueueSessionUploadAdded(), client->GetQueueSessionPayloadUp()
++					, (LPCTSTR)client->DbgGetClientInfo());
++			}
+ 			client->m_bAddNextConnect = false;
+ 
+ 			m_csUploadListMainThrdWriteOtherThrdsRead.Lock();
+@@ -748,6 +828,11 @@ void CUploadQueue::RemoveFromWaitingQueue(POSITION pos, bool updatewindow)
  	m_bStatisticsWaitingListDirty = true;
  	CUpDownClient *todelete = waitinglist.GetAt(pos);
  	waitinglist.RemoveAt(pos);

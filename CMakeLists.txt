@@ -78,11 +78,14 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          report something rather than fix it, and that is deleted once it
 #          has been read. In use: 99-diag-upload-queue-and-io, which logs the
 #          waiting queue, the upload disk I/O thread, the block requests
-#          arriving from peers and the bandwidth throttler - the last two
-#          because vanilla logs neither, and a stalled slot looks the same
-#          whether the peer stopped asking or the request was dropped. It
-#          corrects nothing on purpose, so a build carrying it still
-#          reproduces the fault it is there to describe.
+#          arriving from peers, the bandwidth throttler, and both ends of the
+#          socket: whether the peer is still talking to us, and whether a
+#          completed overlapped send wrote as many bytes as were handed to it.
+#          Vanilla reports none of this, so a slot that dies holding data looks
+#          the same whether the peer stopped asking, the request was dropped,
+#          or the tail of the block never reached the wire. It corrects nothing
+#          on purpose, so a build carrying it still reproduces the fault it is
+#          there to describe.
 # ---------------------------------------------------------------------------
 find_package(Git REQUIRED)
 
