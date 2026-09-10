@@ -1,0 +1,239 @@
+diff --git a/srchybrid/UploadDiskIOThread.cpp b/srchybrid/UploadDiskIOThread.cpp
+index e72b5cd..f1ad7a3 100644
+--- a/srchybrid/UploadDiskIOThread.cpp
++++ b/srchybrid/UploadDiskIOThread.cpp
+@@ -45,6 +45,9 @@ static char THIS_FILE[] = __FILE__;
+ #define RUN_WORK	2
+ #define WAKEUP		((ULONG_PTR)(~0))
+ 
++// UPDIAG: how often the aggregated counters are written to the log, in ms.
++#define UPDIAG_INTERVAL	10000
++
+ IMPLEMENT_DYNCREATE(CUploadDiskIOThread, CWinThread)
+ 
+ CUploadDiskIOThread::CUploadDiskIOThread()
+@@ -56,6 +59,11 @@ CUploadDiskIOThread::CUploadDiskIOThread()
+ 	, m_Run(RUN_STOP)
+ 	, m_bNewData()
+ 	, m_bSignalThrottler()
++	, m_nDiagLoops()
++	, m_nDiagWakeups()
++	, m_nDiagCompletions()
++	, m_nDiagZeroReads()
++	, m_nDiagOrphaned()
+ {
+ 	ASSERT(theApp.uploadqueue != NULL);
+ 	AfxBeginThread(RunProc, (LPVOID)this);
+@@ -89,11 +97,30 @@ UINT CUploadDiskIOThread::RunInternal()
+ 	DWORD dwRead = 0;
+ 	ULONG_PTR completionKey = 0;
+ 	OverlappedRead_Struct *pCurIO = NULL;
++	DWORD dwDiagLastTick = ::GetTickCount();
+ 	m_Run = RUN_IDLE;
+-	while (m_Run
+-			&& ::GetQueuedCompletionStatus(m_hPort, &dwRead, &completionKey, (LPOVERLAPPED*)&pCurIO, INFINITE)
+-			&& completionKey)
+-	{
++	// UPDIAG: the same three tests as the loop this replaces, in the same order
++	// and with the same INFINITE wait, spelled out only so that the reason the
++	// loop ends can be written to the log. This patch observes, it never corrects.
++	for (;;) {
++		if (!m_Run)
++			break;
++		pCurIO = NULL;
++		if (!::GetQueuedCompletionStatus(m_hPort, &dwRead, &completionKey, (LPOVERLAPPED*)&pCurIO, INFINITE)) {
++			theApp.QueueDebugLogLineEx(LOG_ERROR
++				, _T("UPDIAG|iothread wait failed, err=%u dequeued=%d pending=%d - the thread ends here")
++				, ::GetLastError(), (int)(pCurIO != NULL), (int)m_listPendingIO.GetCount());
++			break;
++		}
++		if (!completionKey) {
++			theApp.QueueDebugLogLineEx(LOG_INFO, _T("UPDIAG|iothread stop packet, pending=%d"), (int)m_listPendingIO.GetCount());
++			break;
++		}
++		++m_nDiagLoops;
++		if (completionKey == WAKEUP)
++			++m_nDiagWakeups;
++		else
++			++m_nDiagCompletions;
+ 		m_Run = RUN_WORK;
+ 		//start new reads
+ 		CCriticalSection *pcsUploadListRead = NULL;
+@@ -110,7 +137,17 @@ UINT CUploadDiskIOThread::RunInternal()
+ 				break;
+ 			if (completionKey != WAKEUP) //ignore wakeups
+ 				ReadCompletionRoutine(dwRead, pCurIO);
++			pCurIO = NULL; //UPDIAG: the test below must not see a freed pointer
+ 		} while (::GetQueuedCompletionStatus(m_hPort, &dwRead, &completionKey, (LPOVERLAPPED*)&pCurIO, 0));
++		// UPDIAG: this loop stops on the first failed completion it takes off the
++		// port, and that packet is then never processed: its m_listPendingIO entry
++		// stays behind, and while the list is not empty WakeUpCall() posts nothing.
++		if (pCurIO != NULL) {
++			++m_nDiagOrphaned;
++			theApp.QueueDebugLogLineEx(LOG_ERROR
++				, _T("UPDIAG|iothread dropped a failed completion, err=%u pending=%d")
++				, ::GetLastError(), (int)m_listPendingIO.GetCount());
++		}
+ 
+ 		if (!completionKey) //thread termination
+ 			break;
+@@ -122,6 +159,13 @@ UINT CUploadDiskIOThread::RunInternal()
+ 		}
+ 		if (InterlockedExchange8(&m_bNewData, 0) && m_listPendingIO.IsEmpty())
+ 			PostQueuedCompletionStatus(m_hPort, 0, WAKEUP, NULL);
++
++		// UPDIAG: aggregated, so that a busy completion port cannot flood the log.
++		const DWORD dwDiagNow = ::GetTickCount();
++		if (dwDiagNow >= dwDiagLastTick + UPDIAG_INTERVAL) {
++			dwDiagLastTick = dwDiagNow;
++			theApp.QueueDebugLogLineEx(LOG_INFO, _T("UPDIAG|iothread %s"), (LPCTSTR)DbgGetDiagInfo());
++		}
+ 	}
+ 	m_Run = RUN_STOP;
+ 
+@@ -137,6 +181,17 @@ UINT CUploadDiskIOThread::RunInternal()
+ 	return 0;
+ }
+ 
++// UPDIAG: temporary instrumentation, removed together with the 99- patch.
++CString CUploadDiskIOThread::DbgGetDiagInfo() const
++{
++	CString strInfo;
++	strInfo.Format(_T("run=%d newdata=%d pending=%d loops=%ld wakeups=%ld completions=%ld zeroreads=%ld orphaned=%ld")
++		, (int)m_Run, (int)m_bNewData, (int)m_listPendingIO.GetCount()
++		, (LONG)m_nDiagLoops, (LONG)m_nDiagWakeups, (LONG)m_nDiagCompletions
++		, (LONG)m_nDiagZeroReads, (LONG)m_nDiagOrphaned);
++	return strInfo;
++}
++
+ bool CUploadDiskIOThread::AssociateFile(CKnownFile *pFile)
+ {
+ 	ASSERT(m_hPort && m_Run);
+@@ -284,8 +339,15 @@ void CUploadDiskIOThread::ReadCompletionRoutine(DWORD dwRead, const OverlappedRe
+ 	if (m_Run) {
+ 		m_listPendingIO.RemoveAt(pOvRead->pos);
+ 		bool bReadError = !dwRead;
+-		if (bReadError)
++		if (bReadError) {
+ 			Debug(_T("  Completed read, dwRead=0\n"));
++			// UPDIAG: Debug() goes to the debugger only; this one reaches the log file.
++			++m_nDiagZeroReads;
++			theApp.QueueDebugLogLineEx(LOG_ERROR
++				, _T("UPDIAG|read returned 0 bytes, wanted=%u handle=%d pending=%d")
++				, (DWORD)(pOvRead->uEndOffset - pOvRead->uStartOffset)
++				, (int)(pKnownFile->m_hRead != INVALID_HANDLE_VALUE), (int)m_listPendingIO.GetCount());
++		}
+ 		else if (dwRead != pOvRead->uEndOffset - pOvRead->uStartOffset) {
+ 			theApp.QueueDebugLogLineEx(LOG_ERROR, _T("ReadCompletionRoutine: Didn't read requested data count - wanted: %lu, read: %lu")
+ 				, (DWORD)(pOvRead->uEndOffset - pOvRead->uStartOffset), dwRead);
+diff --git a/srchybrid/UploadDiskIOThread.h b/srchybrid/UploadDiskIOThread.h
+index 710756c..3c67024 100644
+--- a/srchybrid/UploadDiskIOThread.h
++++ b/srchybrid/UploadDiskIOThread.h
+@@ -45,6 +45,10 @@ public:
+ 	void		EndThread();	//completionkey == 0
+ 	void		WakeUpCall();	//completionkey == WAKEUP
+ 	static void	DissociateFile(CKnownFile *pFile);
++	// UPDIAG: temporary instrumentation. Called from the main thread, so that a
++	// thread stuck in its wait is still reported; the counters it reads are not
++	// synchronized, which is good enough for numbers nobody acts on.
++	CString		DbgGetDiagInfo() const;
+ 
+ private:
+ 	static UINT AFX_CDECL RunProc(LPVOID pParam);
+@@ -68,4 +72,10 @@ private:
+ 	volatile char m_Run; //0 - not running; 1 - idle; 2 - processing
+ 	volatile char m_bNewData;
+ 	bool		m_bSignalThrottler;
++	// UPDIAG counters, written by the I/O thread only
++	volatile LONG m_nDiagLoops;
++	volatile LONG m_nDiagWakeups;
++	volatile LONG m_nDiagCompletions;
++	volatile LONG m_nDiagZeroReads;
++	volatile LONG m_nDiagOrphaned;
+ };
+\ No newline at end of file
+diff --git a/srchybrid/UploadQueue.cpp b/srchybrid/UploadQueue.cpp
+index c6130f6..4415173 100644
+--- a/srchybrid/UploadQueue.cpp
++++ b/srchybrid/UploadQueue.cpp
+@@ -44,6 +44,7 @@
+ #include "Kademlia/Kademlia/Prefs.h"
+ #include "Log.h"
+ #include "collection.h"
++#include "UploadDiskIOThread.h" //UPDIAG
+ 
+ #ifdef _DEBUG
+ #define new DEBUG_NEW
+@@ -285,10 +286,28 @@ void CUploadQueue::Process()
+ 	const DWORD curTick = ::GetTickCount();
+ 	UpdateActiveClientsInfo(curTick);
+ 
+-	if (ForceNewClient())
++	const bool bDiagForce = ForceNewClient(); //UPDIAG: same single call, result kept for the log
++	if (bDiagForce)
+ 		// There's not enough open uploads. Open another one.
+ 		AddUpNextClient(_T("Not enough open upload slots for the current speed"));
+ 
++	// UPDIAG: one line every 10 seconds with everything that decides whether a
++	// waiting client ever reaches a slot. The state of the upload disk I/O thread
++	// is reported from here on purpose: if that thread is stuck in its wait it
++	// cannot report itself, and its absence from the log is the interesting part.
++	{
++		static DWORD s_dwDiagLastTick = 0; //main thread only
++		if (curTick >= s_dwDiagLastTick + SEC2MS(10)) {
++			s_dwDiagLastTick = curTick;
++			theApp.QueueDebugLogLineEx(LOG_INFO
++				, _T("UPDIAG|queue waiting=%d uploading=%d datarate=%u maxup=%u force=%d accept=%d | %s")
++				, (int)waitinglist.GetCount(), (int)uploadinglist.GetCount()
++				, datarate, thePrefs.GetMaxUpload(), (int)bDiagForce
++				, (int)AcceptNewClient(uploadinglist.GetCount())
++				, theApp.m_pUploadDiskIOThread ? (LPCTSTR)theApp.m_pUploadDiskIOThread->DbgGetDiagInfo() : _T("iothread=none"));
++		}
++	}
++
+ 	// The loop that feeds the upload slots with data.
+ 	for (POSITION pos = uploadinglist.GetHeadPosition(); pos != NULL;) {
+ 		// Get the client. Note! Also updates pos as a side effect.
+@@ -520,6 +539,8 @@ void CUploadQueue::AddClientToQueue(CUpDownClient *client, bool bIgnoreTimelimit
+ 		&& !theApp.serverconnect->IsLocalServer(client->GetServerIP(), client->GetServerPort())
+ 		&& GetWaitingUserCount() > 50)
+ 	{
++		theApp.QueueDebugLogLineEx(LOG_INFO, _T("UPDIAG|queue refused (lowid callback rule) client: %s")
++			, (LPCTSTR)client->DbgGetClientInfo());
+ 		return;
+ 	}
+ 	client->IncrementAskedCount();
+@@ -629,6 +650,9 @@ void CUploadQueue::AddClientToQueue(CUpDownClient *client, bool bIgnoreTimelimit
+ 	   )
+ 	{
+ 		// block client from getting on queue
++		theApp.QueueDebugLogLineEx(LOG_INFO, _T("UPDIAG|queue refused (list full, waiting=%d soft=%d hard=%d) client: %s")
++			, (int)waitinglist.GetCount(), (int)softQueueLimit, (int)hardQueueLimit
++			, (LPCTSTR)client->DbgGetClientInfo());
+ 		return;
+ 	}
+ 	if (client->IsDownloading()) {
+@@ -646,6 +670,10 @@ void CUploadQueue::AddClientToQueue(CUpDownClient *client, bool bIgnoreTimelimit
+ 	} else {
+ 		m_bStatisticsWaitingListDirty = true;
+ 		waitinglist.AddTail(client);
++		// UPDIAG: entering the waiting queue is not logged by eMule at all, which
++		// is why "nobody asked" and "asked and never promoted" look alike in a trace.
++		theApp.QueueDebugLogLineEx(LOG_INFO, _T("UPDIAG|queue joined, waiting=%d client: %s")
++			, (int)waitinglist.GetCount(), (LPCTSTR)client->DbgGetClientInfo());
+ 		client->SetUploadState(US_ONUPLOADQUEUE);
+ 		theApp.emuledlg->transferwnd->GetQueueList().AddClient(client, true);
+ 		theApp.emuledlg->transferwnd->ShowQueueCount(waitinglist.GetCount());
+@@ -748,6 +776,11 @@ void CUploadQueue::RemoveFromWaitingQueue(POSITION pos, bool updatewindow)
+ 	m_bStatisticsWaitingListDirty = true;
+ 	CUpDownClient *todelete = waitinglist.GetAt(pos);
+ 	waitinglist.RemoveAt(pos);
++	// UPDIAG: every exit from the waiting queue, promotion to a slot included.
++	// This is the event the whole investigation is about, and eMule logs none of it.
++	theApp.QueueDebugLogLineEx(LOG_INFO, _T("UPDIAG|queue left, waiting=%d upstate=%d asked=%u client: %s")
++		, (int)waitinglist.GetCount(), (int)todelete->GetUploadState()
++		, todelete->GetAskedCount(), (LPCTSTR)todelete->DbgGetClientInfo());
+ 	if (updatewindow) {
+ 		theApp.emuledlg->transferwnd->GetQueueList().RemoveClient(todelete);
+ 		theApp.emuledlg->transferwnd->ShowQueueCount(waitinglist.GetCount());

@@ -75,8 +75,11 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          v0.72a-lang branch - source data for the `languages` target
 #          rather than code, so they change no binary.
 #   99     reserved for temporary diagnostics - a patch that makes a build
-#          report something rather than fix it. Nothing lives here now;
-#          whatever lands here is meant to be deleted once it has been read.
+#          report something rather than fix it, and that is deleted once it
+#          has been read. In use: 99-diag-upload-queue-and-io, which logs the
+#          waiting queue and the upload disk I/O thread. It corrects nothing
+#          on purpose, so a build carrying it still reproduces the fault it
+#          is there to describe.
 # ---------------------------------------------------------------------------
 find_package(Git REQUIRED)
 
