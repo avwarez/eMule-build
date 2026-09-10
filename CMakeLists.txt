@@ -67,10 +67,20 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          count back to zero.
 #   95-96  the code compiles and is warning-clean but is not correct on
 #          every target we build (see each patch's own subject).
-#   97     the code is wrong on every target, on input a peer or a web
-#          client controls. These are the commits on the fork's
+#   97     the code is wrong on every target, on input or on timing a peer
+#          or a web client controls. 97a-c are the commits on the fork's
 #          v0.72a-secfix branch, offered upstream as irwir/eMule#7; a file
 #          here goes away when the same change reaches a released v0.72x.
+#          97d stands on its own and belongs to no branch yet: the upload
+#          disk I/O thread waits on its completion port without a timeout,
+#          and every caller that posts a wakeup to it does so as a
+#          consequence of data moving - a block request arriving, or the
+#          throttler having just sent something. Once every socket holding
+#          data is blocked none of that happens, nothing is left to wake the
+#          thread, and the slots whose sockets are still free stop being
+#          fed. It gives the wait the bound the loop had before the
+#          completion port replaced it, and wakes the thread from the
+#          throttler in the one case the throttler could not report.
 #   98     corrections to the shipped language resources, from the fork's
 #          v0.72a-lang branch - source data for the `languages` target
 #          rather than code, so they change no binary.
@@ -78,13 +88,16 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          report something rather than fix it, and that is deleted once it
 #          has been read. In use: 99-diag-upload-queue-and-io, which logs the
 #          waiting queue, the upload disk I/O thread, the block requests
-#          arriving from peers, the bandwidth throttler, and both ends of the
-#          socket: whether the peer is still talking to us, and whether a
-#          completed overlapped send wrote as many bytes as were handed to it.
-#          Vanilla reports none of this, so a slot that dies holding data looks
-#          the same whether the peer stopped asking, the request was dropped,
-#          or the tail of the block never reached the wire. It corrects nothing
-#          on purpose, so a build carrying it still reproduces the fault it is
+#          arriving from peers, the bandwidth throttler, and, every ten
+#          seconds, one line per upload slot describing the socket the
+#          throttler decided not to send to: whether a send is outstanding,
+#          for how long, what the completion port says about it, how much is
+#          queued behind it, how often the socket was asked to send and how
+#          often it answered with nothing. Vanilla reports none of this, so a
+#          slot that dies holding data looks the same whether the peer stopped
+#          asking, the request was dropped, the send never completed, or the
+#          send completed and nobody collected it. It corrects nothing on
+#          purpose, so a build carrying it still reproduces the fault it is
 #          there to describe.
 # ---------------------------------------------------------------------------
 find_package(Git REQUIRED)

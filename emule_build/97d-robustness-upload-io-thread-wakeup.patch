@@ -1,0 +1,60 @@
+diff --git a/srchybrid/UploadBandwidthThrottler.cpp b/srchybrid/UploadBandwidthThrottler.cpp
+index d9a8e54..6a2db70 100644
+--- a/srchybrid/UploadBandwidthThrottler.cpp
++++ b/srchybrid/UploadBandwidthThrottler.cpp
+@@ -462,9 +462,15 @@ UINT UploadBandwidthThrottler::RunInternal()
+ 				if (theApp.uploadqueue->GetUploadQueueLength() > 0 && theApp.m_pUploadDiskIOThread)
+ 					theApp.m_pUploadDiskIOThread->WakeUpCall();
+ 				::WaitForSingleObject(m_eventDataAvailable, dwSleep);
+-			} else if (nCanSend <= nBusy)
++			} else if (nCanSend <= nBusy) {
++				// Every socket that holds data is blocked, so this loop will send nothing and
++				// will not reach the wakeup at the end of it either. The slots whose sockets
++				// are still free need their next block prepared regardless of what the blocked
++				// ones are doing, and only the disk I/O thread can prepare it.
++				if (theApp.uploadqueue->GetUploadQueueLength() > 0 && theApp.m_pUploadDiskIOThread)
++					theApp.m_pUploadDiskIOThread->WakeUpCall();
+ 				::WaitForSingleObject(m_eventSocketAvailable, dwSleep);
+-			else
++			} else
+ 				::Sleep(dwSleep);
+ 		}
+ 		if (!m_bRun)
+diff --git a/srchybrid/UploadDiskIOThread.cpp b/srchybrid/UploadDiskIOThread.cpp
+index e72b5cd..e6b3706 100644
+--- a/srchybrid/UploadDiskIOThread.cpp
++++ b/srchybrid/UploadDiskIOThread.cpp
+@@ -44,6 +44,7 @@ static char THIS_FILE[] = __FILE__;
+ #define RUN_IDLE	1
+ #define RUN_WORK	2
+ #define WAKEUP		((ULONG_PTR)(~0))
++#define IOPORT_WAIT	500				// ms between two unsolicited passes over the upload list
+ 
+ IMPLEMENT_DYNCREATE(CUploadDiskIOThread, CWinThread)
+ 
+@@ -90,10 +91,21 @@ UINT CUploadDiskIOThread::RunInternal()
+ 	ULONG_PTR completionKey = 0;
+ 	OverlappedRead_Struct *pCurIO = NULL;
+ 	m_Run = RUN_IDLE;
+-	while (m_Run
+-			&& ::GetQueuedCompletionStatus(m_hPort, &dwRead, &completionKey, (LPOVERLAPPED*)&pCurIO, INFINITE)
+-			&& completionKey)
+-	{
++	// The wait is bounded rather than INFINITE. Every caller that posts a wakeup here does so
++	// as a consequence of data moving: a block request arriving from a peer, or the throttler
++	// having just sent something. When every socket that holds data is blocked neither happens
++	// any more, so nothing is left to post one and the slots whose sockets are still free never
++	// get their next block prepared. A pass twice a second costs one walk of the upload list and
++	// restores the behaviour of the loop this thread replaced, which waited with a timeout.
++	while (m_Run) {
++		if (!::GetQueuedCompletionStatus(m_hPort, &dwRead, &completionKey, (LPOVERLAPPED*)&pCurIO, IOPORT_WAIT)) {
++			if (pCurIO != NULL || ::GetLastError() != WAIT_TIMEOUT)
++				break;			// a dequeued operation failed, or the port itself did
++			completionKey = WAKEUP;	// nothing was queued; look at the upload list anyway
++			dwRead = 0;
++		}
++		if (!completionKey)
++			break;
+ 		m_Run = RUN_WORK;
+ 		//start new reads
+ 		CCriticalSection *pcsUploadListRead = NULL;
