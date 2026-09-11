@@ -71,64 +71,79 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          or a web client controls. 97a-c are the commits on the fork's
 #          v0.72a-secfix branch, offered upstream as irwir/eMule#7; a file
 #          here goes away when the same change reaches a released v0.72x.
-#          97d stands on its own and belongs to no branch yet: the upload
-#          disk I/O thread waits on its completion port without a timeout,
-#          and every caller that posts a wakeup to it does so as a
-#          consequence of data moving - a block request arriving, or the
-#          throttler having just sent something. Once every socket holding
-#          data is blocked none of that happens, nothing is left to wake the
-#          thread, and the slots whose sockets are still free stop being
-#          fed. It gives the wait the bound the loop had before the
-#          completion port replaced it, and wakes the thread from the
-#          throttler in the one case the throttler could not report.
-#          97e also belongs to no branch yet, and is the one that addresses
-#          the fault the other two only insure against: a send that has
-#          finished is collected in exactly one place, the busy scan the
-#          throttler runs over its slot list, and that scan looks only at
-#          sockets reporting queued data. A socket that handed its whole
-#          queue to the send reports none, so its completion is never taken,
-#          it keeps answering that it is busy, every send loop skips it, and
-#          it stays that way until something else queues data on it - which
-#          is precisely what a peer repeating a request it has already been
-#          served does not do. It collects on that socket too and leaves the
-#          two counters the scan produces untouched, so no bandwidth or
-#          sleep decision downstream changes.
+#          The band held two more files, 97d and 97e, which changed how the
+#          upload disk I/O thread is woken and where a finished send is
+#          collected. Both are gone: measurement showed one of them waking
+#          the thread hundreds of times a second for passes that prepared
+#          nothing, and with it in place the other could not be measured at
+#          all. The upload path is deliberately back to what upstream ships,
+#          so that the 99- band below describes the fault rather than a
+#          build that has already been changed underneath it.
 #   98     corrections to the shipped language resources, from the fork's
 #          v0.72a-lang branch - source data for the `languages` target
 #          rather than code, so they change no binary.
 #   99     reserved for temporary diagnostics - a patch that makes a build
 #          report something rather than fix it, and that is deleted once it
-#          has been read. In use: 99-diag-upload-queue-and-io, which logs the
-#          waiting queue, the upload disk I/O thread, the block requests
-#          arriving from peers, the bandwidth throttler, and, every ten
-#          seconds, one line per upload slot describing the socket the
-#          throttler decided not to send to: whether a send is outstanding,
-#          for how long, what the completion port says about it, how much is
-#          queued behind it, how often the socket was asked to send and how
-#          often it answered with nothing. It also counts what the collection
-#          added by 97e finds - how many finished sends it takes that nothing
-#          else could have reached, how long the oldest had been waiting, and
-#          how many were still in flight - names the socket each time one had
-#          been held half a second or longer, and records, on every repeated
-#          request dropped as already served, how long that peer's send had
-#          been outstanding. It also describes the socket timeout, which is
-#          where an upload slot is actually removed: five different callers
-#          push the timer forward, so the patch counts how often each one did
-#          and remembers which was last, and reports both the moment the
-#          timeout fires and the moment a socket passes three quarters of its
-#          allowance and then survives - the allowance that applied, which
-#          branch extended it, how long the slot had been open, and the state
-#          of the socket underneath. Every line describing a socket also
-#          carries how many block requests are still waiting on that slot and
-#          which caller last pushed the timer forward, so a socket left alone
-#          while it still had work to do is visible while it happens rather
-#          than only in the snapshot taken as it dies. Vanilla reports none of this, so a
-#          slot that dies holding data looks the same whether the peer stopped
-#          asking, the request was dropped, the send never completed, the
-#          send completed and nobody collected it, or the timer simply ran
-#          out because nothing was left to reset it. It corrects nothing on
-#          purpose, so a build carrying it still reproduces the fault it is
-#          there to describe.
+#          has been read. In use: 99-diag-upload-queue-and-io. It corrects
+#          nothing on purpose, so a build carrying it still reproduces the
+#          fault it is there to describe, and it takes care to stay out of
+#          the way: where the state it wants to report could only be read by
+#          calling something that also changes it, it reads what it can
+#          without calling, and says so at the call site.
+#
+#          What it reports, from the outside in. The waiting queue and the
+#          upload list, every ten seconds, with the block requests peers
+#          have sent, how many were queued, how many were dropped as already
+#          served or already pending, and how many sockets are open. The
+#          bandwidth throttler, on the same period: what it was allowed to
+#          spend and what it did spend, how many of its loops found every
+#          socket holding data blocked, how far down its slot list the busy
+#          scan actually looks - which is not the whole list - and one line
+#          per upload slot describing the socket the throttler decided not
+#          to send to.
+#
+#          Each of those socket lines carries whether a send is outstanding
+#          and for how long, what the completion port says about it, how
+#          much is queued behind it, how long the socket has been refusing
+#          sends without interruption and how long the longest such spell
+#          has been - which is how a peer that has stopped reading its own
+#          socket becomes visible from inside the application, since nothing
+#          else in it can see that - how often the socket was asked to send
+#          and how often it answered with nothing, how many block requests
+#          are still waiting on the slot, and which of the six callers last
+#          pushed the socket timeout forward, with a count for each.
+#
+#          Two states get a line of their own the moment they appear rather
+#          than at the next ten-second tick. The first is a slot with block
+#          requests waiting while nothing is queued on its socket and
+#          nothing is in flight: work to do, a free socket, and nobody
+#          preparing it. That is the shape of the fault, so it is reported
+#          with how long it has lasted. The second is the socket timeout.
+#          The allowance a slot gets is extended for the first minutes of
+#          its life, and that extension is a window on the age of the slot,
+#          not a grace period counted from the last sign of life - so a slot
+#          that went quiet early is not killed when it goes quiet but in the
+#          instant the window closes, however much silence it has already
+#          accumulated. The patch says so while the slot is still alive, and
+#          reports again when the timeout fires and when a socket passes
+#          three quarters of its allowance and then survives.
+#
+#          It also attributes the wakeups of the upload disk I/O thread. The
+#          thread sleeps on a completion port, and three different callers
+#          post to it; the key each one posts says who it was, so the log
+#          separates, per caller, how often it asked, how often the ask
+#          reached the port rather than being folded into a flag, how many
+#          passes it caused, and in how many of those a read was actually
+#          started. A caller whose last number stays at zero is waking the
+#          thread for nothing, however large the first three are - which is
+#          the question any change to this path has to answer before it can
+#          be kept.
+#
+#          Vanilla reports none of this, so a slot that dies holding data
+#          looks the same whether the peer stopped asking, the request was
+#          dropped, the send never completed, the send completed and nobody
+#          collected it, or the timer simply ran out because nothing was
+#          left to reset it.
 # ---------------------------------------------------------------------------
 find_package(Git REQUIRED)
 

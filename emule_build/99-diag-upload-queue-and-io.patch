@@ -11,7 +11,7 @@ index 5bcda5b..0dd9fda 100644
  	if (socket) {
  		SOCKADDR_IN sockAddr = {};
 diff --git a/srchybrid/EMSocket.cpp b/srchybrid/EMSocket.cpp
-index cd8e44c..8cb7628 100644
+index cd8e44c..9fb1dba 100644
 --- a/srchybrid/EMSocket.cpp
 +++ b/srchybrid/EMSocket.cpp
 @@ -34,6 +34,14 @@
@@ -29,7 +29,7 @@ index cd8e44c..8cb7628 100644
  namespace
  {
  	inline void EMTrace(const char *fmt, ...)
-@@ -111,6 +119,12 @@ CEMSocket::CEMSocket()
+@@ -111,6 +119,16 @@ CEMSocket::CEMSocket()
  	, m_bUseBigSendBuffers()
  	, m_bUseOverlappedSend(true)
  	, m_bPendingSendOv()
@@ -39,10 +39,14 @@ index cd8e44c..8cb7628 100644
 +	, m_nDiagSendOvBytes() //UPDIAG
 +	, m_nDiagSendCalls() //UPDIAG
 +	, m_nDiagSendZero() //UPDIAG
++	, m_dwDiagBusySince() //UPDIAG
++	, m_dwDiagBusyTotal() //UPDIAG
++	, m_dwDiagBusyMax() //UPDIAG
++	, m_nDiagBusySpells() //UPDIAG
  {
  	lastCalledSend = timeGetTime();
  	lastSent = lastCalledSend > SEC2MS(1) ? lastCalledSend - SEC2MS(1) : 0;
-@@ -506,9 +520,15 @@ SocketSentBytes CEMSocket::SendEM(uint32 maxNumberOfBytesToSend, uint32 minFragS
+@@ -506,9 +524,15 @@ SocketSentBytes CEMSocket::SendEM(uint32 maxNumberOfBytesToSend, uint32 minFragS
  {
  	if (byConnected == EMS_DISCONNECTED)
  		return SocketSentBytes{};
@@ -61,7 +65,7 @@ index cd8e44c..8cb7628 100644
  }
  
  /**
-@@ -692,6 +712,59 @@ SocketSentBytes CEMSocket::SendStd(uint32 maxNumberOfBytesToSend, uint32 minFrag
+@@ -692,6 +716,62 @@ SocketSentBytes CEMSocket::SendStd(uint32 maxNumberOfBytesToSend, uint32 minFrag
  	return ret;
  }
  
@@ -108,12 +112,15 @@ index cd8e44c..8cb7628 100644
 +			? 1 : -::WSAGetLastError();
 +	}
 +	rstrOut.Format(_T("pendov=%d ovage=%ums ovbytes=%u ovres=%d ovdone=%u std=%d ctrl=%d sendbuf=%u")
++		_T(" busyage=%ums busymax=%ums busytotal=%ums spells=%ld")
 +		_T(" calls=%ld zero=%ld conn=%u recvbytes=%I64u quiet=%dms")
 +		, (int)m_bPendingSendOv
 +		, m_bPendingSendOv ? ::GetTickCount() - m_dwDiagSendOvStart : 0
 +		, m_nDiagSendOvBytes, nOvRes, dwTransferred
 +		, (int)standardpacket_queue.GetCount(), (int)controlpacket_queue.GetCount()
 +		, sendbuffer != NULL ? m_sendblen - m_sent : 0
++		, m_dwDiagBusySince != 0 ? ::GetTickCount() - m_dwDiagBusySince : 0
++		, m_dwDiagBusyMax, m_dwDiagBusyTotal, m_nDiagBusySpells
 +		, (LONG)m_nDiagSendCalls, (LONG)m_nDiagSendZero, (unsigned)byConnected, m_nDiagRecvBytes
 +		, m_dwDiagLastRecv != 0 ? (int)(::GetTickCount() - m_dwDiagLastRecv) : -1);
 +}
@@ -121,7 +128,7 @@ index cd8e44c..8cb7628 100644
  /**
   * Try to put queued up data on the socket with Overlapped methods.
   *
-@@ -810,9 +883,16 @@ SocketSentBytes CEMSocket::SendOv(uint32 maxNumberOfBytesToSend, uint32 minFragS
+@@ -810,9 +890,16 @@ SocketSentBytes CEMSocket::SendOv(uint32 maxNumberOfBytesToSend, uint32 minFragS
  				memset(&m_PendingSendOperation, 0, sizeof WSAOVERLAPPED);
  				m_PendingSendOperation.hEvent = theApp.uploadBandwidthThrottler->GetSocketAvailableEvent();
  				m_bPendingSendOv = true;
@@ -140,7 +147,7 @@ index cd8e44c..8cb7628 100644
  					int nError = WSAGetLastError();
  					if (nError != WSA_IO_PENDING) {
  						ret.success = false;
-@@ -899,6 +979,13 @@ int CEMSocket::Receive(void *lpBuf, int nBufLen, int nFlags)
+@@ -899,6 +986,13 @@ int CEMSocket::Receive(void *lpBuf, int nBufLen, int nFlags)
  {
  	//EMTrace("CEMSocket::Receive on %u, maxSize=%d", (SOCKET)this, nBufLen);
  	int recvRetCode = CEncryptedStreamSocket::Receive(lpBuf, nBufLen, nFlags); // deadlake PROXYSUPPORT - changed to AsyncSocketEx
@@ -154,19 +161,63 @@ index cd8e44c..8cb7628 100644
  	switch (recvRetCode) {
  	case 0:
  		if (GetRealReceivedBytes() <= 0) { // we received data but it was for the underlying encryption layer - all fine
-@@ -1114,6 +1201,7 @@ bool CEMSocket::IsBusyExtensiveCheck()
- 		return false;
+@@ -1104,26 +1198,46 @@ bool CEMSocket::UseBigSendBuffer()
+ 	return m_bUseBigSendBuffers;
+ }
+ 
++//UPDIAG: called from the throttler thread only, so the timestamps below need no interlocking.
++bool CEMSocket::DiagNoteBusy(bool bBusy)
++{
++	const DWORD dwNow = ::GetTickCount();
++	if (bBusy) {
++		if (m_dwDiagBusySince == 0) {
++			m_dwDiagBusySince = dwNow;
++			++m_nDiagBusySpells;
++		}
++	} else if (m_dwDiagBusySince != 0) {
++		const DWORD dwSpell = dwNow - m_dwDiagBusySince;
++		m_dwDiagBusyTotal += dwSpell;
++		if (dwSpell > m_dwDiagBusyMax)
++			m_dwDiagBusyMax = dwSpell;
++		m_dwDiagBusySince = 0;
++	}
++	return bBusy;
++}
++
+ bool CEMSocket::IsBusyExtensiveCheck()
+ {
+ 	if (!m_bUseOverlappedSend)
+-		return m_bBusy;
++		return DiagNoteBusy(m_bBusy); //UPDIAG
+ 
+ 	CSingleLock lockSend(&sendLocker, TRUE);
+ 	if (!m_bPendingSendOv)
+-		return false;
++		return DiagNoteBusy(false); //UPDIAG
  	DWORD dwTransferred, dwFlags;
  	if (WSAGetOverlappedResult(GetSocketHandle(), &m_PendingSendOperation, &dwTransferred, FALSE, &dwFlags)) {
 +		DiagCheckOverlappedSend(_T("completion")); //UPDIAG
  		CleanUpOverlappedSendOperation(false);
  		OnSend(0);
- 		return false;
+-		return false;
++		return DiagNoteBusy(false); //UPDIAG
+ 	}
+ 	int nError = WSAGetLastError();
+ 	if (nError == WSA_IO_INCOMPLETE)
+-		return true;
++		return DiagNoteBusy(true); //UPDIAG
+ 	CleanUpOverlappedSendOperation(true);
+ 	theApp.QueueDebugLogLineEx(LOG_ERROR, _T("WSAGetOverlappedResult return error: %s"), (LPCTSTR)GetErrorMessage(nError));
+-	return false;
++	return DiagNoteBusy(false); //UPDIAG
+ }
+ 
+ // won't always deliver the proper result (sometimes reports busy even if it isn't any more
 diff --git a/srchybrid/EMSocket.h b/srchybrid/EMSocket.h
-index 3875a13..82267fc 100644
+index 3875a13..ffe8967 100644
 --- a/srchybrid/EMSocket.h
 +++ b/srchybrid/EMSocket.h
-@@ -78,6 +78,13 @@ public:
+@@ -78,6 +78,17 @@ public:
  	uint32 GetSentPayloadSinceLastCall(bool bReset);
  	void TruncateQueues();
  
@@ -174,13 +225,17 @@ index 3875a13..82267fc 100644
 +	uint64 GetDiagRecvBytes() const							{ return m_nDiagRecvBytes; }
 +	DWORD GetDiagLastRecvTick() const						{ return m_dwDiagLastRecv; }
 +	void DiagCheckOverlappedSend(LPCTSTR pszWhere);
++	//UPDIAG: how long this socket has been unable to accept a send, without interruption. A peer
++	//that stops reading its own socket shows up here and nowhere else inside the application: the
++	//send buffer fills, every send is refused, and the only symptom is that this keeps growing.
++	bool DiagNoteBusy(bool bBusy);
 +	virtual void DbgGetDiagInfo(CString &rstrOut);
 +	virtual DWORD DbgGetPendingSendAge() const;
 +
  	virtual SocketSentBytes SendControlData(uint32 maxNumberOfBytesToSend, uint32 minFragSize)			{ return SendEM(maxNumberOfBytesToSend, minFragSize, true); }
  	virtual SocketSentBytes SendFileAndControlData(uint32 maxNumberOfBytesToSend, uint32 minFragSize)	{ return SendEM(maxNumberOfBytesToSend, minFragSize, false); }
  
-@@ -148,4 +155,10 @@ private:
+@@ -148,4 +159,14 @@ private:
  	bool	m_bUseBigSendBuffers;
  	bool	m_bUseOverlappedSend;
  	bool	m_bPendingSendOv;
@@ -190,18 +245,24 @@ index 3875a13..82267fc 100644
 +	uint32	m_nDiagSendOvBytes; //UPDIAG - how many bytes that send was given
 +	volatile LONG m_nDiagSendCalls; //UPDIAG - times the throttler asked this socket to send
 +	volatile LONG m_nDiagSendZero; //UPDIAG - times it answered with nothing
++	DWORD	m_dwDiagBusySince; //UPDIAG - 0 when the socket is not busy
++	DWORD	m_dwDiagBusyTotal; //UPDIAG - summed over the finished spells
++	DWORD	m_dwDiagBusyMax;   //UPDIAG - the longest single spell
++	LONG	m_nDiagBusySpells; //UPDIAG
  };
 \ No newline at end of file
 diff --git a/srchybrid/ListenSocket.cpp b/srchybrid/ListenSocket.cpp
-index 15674a1..e4b3b7a 100644
+index 15674a1..bdf9760 100644
 --- a/srchybrid/ListenSocket.cpp
 +++ b/srchybrid/ListenSocket.cpp
-@@ -53,14 +53,16 @@ static char THIS_FILE[] = __FILE__;
+@@ -53,14 +53,18 @@ static char THIS_FILE[] = __FILE__;
  IMPLEMENT_DYNCREATE(CClientReqSocket, CEMSocket)
  
  CClientReqSocket::CClientReqSocket(CUpDownClient *in_client)
 -	: deltimer()
 +	: m_nDiagResetSrc() //UPDIAG - declared right after timeout_timer, so it is initialised here
++	, m_dwDiagStarvedSince() //UPDIAG
++	, m_bDiagDoomedLogged() //UPDIAG
 +	, deltimer()
  	, m_nOnConnect(SS_Other)
  	, deletethis()
@@ -215,7 +276,7 @@ index 15674a1..e4b3b7a 100644
  }
  
  void CClientReqSocket::SetConState(SocketState val)
-@@ -112,11 +114,24 @@ void CClientReqSocket::SetClient(CUpDownClient *pClient)
+@@ -112,11 +116,25 @@ void CClientReqSocket::SetClient(CUpDownClient *pClient)
  		client->socket = this;
  }
  
@@ -228,6 +289,7 @@ index 15674a1..e4b3b7a 100644
 +	m_nDiagResetSrc = nDiagSrc;
 +	if (nDiagSrc >= 0 && nDiagSrc < DIAGRESET_COUNT)
 +		++m_aDiagReset[nDiagSrc];
++	m_bDiagDoomedLogged = false; //UPDIAG: the allowance starts again, so the verdict does too
  }
  
 +//UPDIAG: names for the counters above, in the order of the enum.
@@ -241,7 +303,7 @@ index 15674a1..e4b3b7a 100644
  bool CClientReqSocket::CheckTimeOut()
  {
  	const DWORD curTick = ::GetTickCount();
-@@ -134,18 +149,38 @@ bool CClientReqSocket::CheckTimeOut()
+@@ -134,18 +152,48 @@ bool CClientReqSocket::CheckTimeOut()
  		return true;
  	}
  	DWORD uTimeout = GetTimeOut();
@@ -265,6 +327,16 @@ index 15674a1..e4b3b7a 100644
  
 -	if (curTick < timeout_timer + uTimeout)
 +	const DWORD dwDiagElapsed = curTick - timeout_timer; //UPDIAG - read before the reset below
++	//UPDIAG: the extension is not a grace period counted from the last sign of life, it is an
++	//absolute window on the age of the slot. A socket that is already past its base allowance is
++	//therefore not going to recover by being quick: it dies the instant the window closes,
++	//however long that still is. Say so while it is still alive, once per socket.
++	if (client != NULL && !m_bDiagDoomedLogged && dwDiagElapsed >= GetTimeOut()
++		&& uTimeout > GetTimeOut() && curTick < timeout_timer + uTimeout)
++	{
++		m_bDiagDoomedLogged = true;
++		DbgLogTimeoutState(_T("doomed"), dwDiagElapsed, uTimeout, pszDiagExt, LOG_WARNING);
++	}
 +	if (curTick < timeout_timer + uTimeout) {
 +		//UPDIAG: a socket that gets close to the limit and then survives is the counter-example
 +		//that separates a peer which came back from one which did not. Report it once it is past
@@ -284,7 +356,7 @@ index 15674a1..e4b3b7a 100644
  	timeout_timer = curTick;
  	CString str;
  	str.Format(_T("Timeout: State:%u (0 = SS_Other, 1 = SS_Half, 2 = SS_Complete)"), m_nOnConnect);
-@@ -153,6 +188,40 @@ bool CClientReqSocket::CheckTimeOut()
+@@ -153,6 +201,63 @@ bool CClientReqSocket::CheckTimeOut()
  	return true;
  }
  
@@ -309,6 +381,29 @@ index 15674a1..e4b3b7a 100644
 +	rstrOut += strAdd;
 +}
 +
++//UPDIAG: the throttler reads this once a loop, so it must not touch the block list lock. The
++//disk I/O thread holds that lock while queueing on this very socket; taking it here in the other
++//order would cross the two. The client keeps a plain counter beside the list for exactly this.
++LONG CClientReqSocket::DbgGetPendingBlocks() const
++{
++	return client != NULL ? client->DbgGetPendingBlocks() : -1;
++}
++
++//UPDIAG: only the throttler thread calls this, so the timestamp needs no interlocking.
++DWORD CClientReqSocket::DbgTrackStarved(bool bStarved)
++{
++	if (!bStarved) {
++		m_dwDiagStarvedSince = 0;
++		return 0;
++	}
++	const DWORD dwNow = ::GetTickCount();
++	if (m_dwDiagStarvedSince == 0) {
++		m_dwDiagStarvedSince = dwNow;
++		return 1;
++	}
++	return max(dwNow - m_dwDiagStarvedSince, 1u);
++}
++
 +//UPDIAG: one shape for both the near miss and the kill, so the two are directly comparable.
 +void CClientReqSocket::DbgLogTimeoutState(LPCTSTR pszWhat, DWORD dwElapsed, DWORD uTimeout
 +	, LPCTSTR pszExt, UINT uLevel)
@@ -325,7 +420,7 @@ index 15674a1..e4b3b7a 100644
  void CClientReqSocket::OnClose(int nErrorCode)
  {
  	ASSERT(theApp.listensocket->IsValidSocket(this));
-@@ -1692,12 +1761,12 @@ void CClientReqSocket::OnConnect(int nErrorCode)
+@@ -1692,12 +1797,12 @@ void CClientReqSocket::OnConnect(int nErrorCode)
  			Disconnect(_T(""));
  	} else
  		//This socket may have been delayed by SP2 protection, lets make sure it doesn't time out instantly.
@@ -340,7 +435,7 @@ index 15674a1..e4b3b7a 100644
  	CEMSocket::OnSend(nErrorCode);
  }
  
-@@ -1809,7 +1878,7 @@ bool CClientReqSocket::PacketReceived(Packet *packet)
+@@ -1809,7 +1914,7 @@ bool CClientReqSocket::PacketReceived(Packet *packet)
  
  void CClientReqSocket::OnReceive(int nErrorCode)
  {
@@ -349,7 +444,7 @@ index 15674a1..e4b3b7a 100644
  	CEMSocket::OnReceive(nErrorCode);
  }
  
-@@ -1823,7 +1892,7 @@ SocketSentBytes CClientReqSocket::SendControlData(uint32 maxNumberOfBytesToSend,
+@@ -1823,7 +1928,7 @@ SocketSentBytes CClientReqSocket::SendControlData(uint32 maxNumberOfBytesToSend,
  {
  	SocketSentBytes returnStatus = CEMSocket::SendControlData(maxNumberOfBytesToSend, overchargeMaxBytesToSend);
  	if (returnStatus.success && (returnStatus.sentBytesControlPackets > 0 || returnStatus.sentBytesStandardPackets > 0))
@@ -358,7 +453,7 @@ index 15674a1..e4b3b7a 100644
  	return returnStatus;
  }
  
-@@ -1831,13 +1900,13 @@ SocketSentBytes CClientReqSocket::SendFileAndControlData(uint32 maxNumberOfBytes
+@@ -1831,13 +1936,13 @@ SocketSentBytes CClientReqSocket::SendFileAndControlData(uint32 maxNumberOfBytes
  {
  	SocketSentBytes returnStatus = CEMSocket::SendFileAndControlData(maxNumberOfBytesToSend, overchargeMaxBytesToSend);
  	if (returnStatus.success && (returnStatus.sentBytesControlPackets > 0 || returnStatus.sentBytesStandardPackets > 0))
@@ -374,7 +469,7 @@ index 15674a1..e4b3b7a 100644
  	CEMSocket::SendPacket(packet, controlpacket, actualPayloadSize, bForceImmediateSend);
  }
  
-@@ -1953,6 +2022,9 @@ bool CListenSocket::StartListening()
+@@ -1953,6 +2058,9 @@ bool CListenSocket::StartListening()
  
  void CListenSocket::ReStartListening()
  {
@@ -384,7 +479,7 @@ index 15674a1..e4b3b7a 100644
  	bListening = true;
  
  	ASSERT(m_nPendingConnections >= 0);
-@@ -1964,6 +2036,13 @@ void CListenSocket::ReStartListening()
+@@ -1964,6 +2072,13 @@ void CListenSocket::ReStartListening()
  
  void CListenSocket::StopListening()
  {
@@ -399,10 +494,10 @@ index 15674a1..e4b3b7a 100644
  	++maxconnectionreached;
  }
 diff --git a/srchybrid/ListenSocket.h b/srchybrid/ListenSocket.h
-index 7a0311d..cc82797 100644
+index 7a0311d..2c3237d 100644
 --- a/srchybrid/ListenSocket.h
 +++ b/srchybrid/ListenSocket.h
-@@ -40,8 +40,18 @@ public:
+@@ -40,8 +40,20 @@ public:
  	void	SetClient(CUpDownClient *pClient);
  	void	Disconnect(LPCTSTR pszReason);
  	void	WaitForOnConnect();
@@ -419,19 +514,23 @@ index 7a0311d..cc82797 100644
 +	//looks like: how many block requests are waiting, and which caller last fed the timer.
 +	virtual void DbgGetDiagInfo(CString &rstrOut);
 +	void	DbgAppendSlotInfo(CString &rstrOut); //UPDIAG
++	virtual LONG DbgGetPendingBlocks() const; //UPDIAG
++	virtual DWORD DbgTrackStarved(bool bStarved); //UPDIAG
  	virtual void Safe_Delete();
  	//virtual void Close()						{ CAsyncSocketEx::Close(); }
  
-@@ -73,6 +83,8 @@ protected:
+@@ -73,6 +85,10 @@ protected:
  	void	SetConState(SocketState val);
  
  	DWORD	timeout_timer;
 +	int		m_nDiagResetSrc;					//UPDIAG - who reset it last
 +	DWORD	m_aDiagReset[DIAGRESET_COUNT];		//UPDIAG - how often each one did
++	DWORD	m_dwDiagStarvedSince;				//UPDIAG - 0 when the slot is not starving
++	bool	m_bDiagDoomedLogged;				//UPDIAG - the extension is all that holds it up
  	DWORD	deltimer;
  	uint32	m_nOnConnect;
  	bool	deletethis;
-@@ -114,6 +126,7 @@ public:
+@@ -114,6 +130,7 @@ public:
  	uint32	GetActiveConnections() const		{ return activeconnections; }
  	uint16	GetConnectedPort() const			{ return m_port; }
  	uint32	GetTotalHalfCon() const				{ return m_nHalfOpen; }
@@ -440,10 +539,10 @@ index 7a0311d..cc82797 100644
  
  private:
 diff --git a/srchybrid/ThrottledSocket.h b/srchybrid/ThrottledSocket.h
-index f348815..3631b2f 100644
+index f348815..ac46cb8 100644
 --- a/srchybrid/ThrottledSocket.h
 +++ b/srchybrid/ThrottledSocket.h
-@@ -28,6 +28,11 @@ public:
+@@ -28,6 +28,18 @@ public:
  	virtual bool IsLowOnFileDataQueued(uint32 nMinFilePayloadBytes) const = 0;
  	virtual bool HasQueues(bool bOnlyStandardPackets = false) const = 0;
  	virtual bool UseBigSendBuffer()					{ return false; }
@@ -452,6 +551,13 @@ index f348815..3631b2f 100644
 +	//UPDIAG: how long a send has been outstanding, 0 when there is none. Read without the send
 +	//lock, the same way the quick busy check is, because it only feeds counters and log lines.
 +	virtual DWORD DbgGetPendingSendAge() const			{ return 0; }
++	//UPDIAG: block requests still waiting on this slot, -1 when the socket carries no slot.
++	//A plain counter, so the throttler can read it without taking the block list lock - which it
++	//must not do: the disk I/O thread holds that lock while queueing on the socket.
++	virtual LONG DbgGetPendingBlocks() const			{ return -1; }
++	//UPDIAG: told once a loop whether this socket is starving right now; answers with how long it
++	//has been. Only the throttler thread calls it, so the timestamp behind it needs no lock.
++	virtual DWORD DbgTrackStarved(bool /*bStarved*/)	{ return 0; }
  };
  
  // <-- ZZ:UploadBandWithThrottler (UDP)
@@ -474,7 +580,7 @@ index f9b28d4..a6e3eff 100644
  	void			SetUpStartTime()								{ m_dwUploadTime = ::GetTickCount(); }
  	void			SendHashsetPacket(const uchar *pData, uint32 nSize, bool bFileIdentifiers);
 diff --git a/srchybrid/UploadBandwidthThrottler.cpp b/srchybrid/UploadBandwidthThrottler.cpp
-index bbdff60..ab84f6b 100644
+index d9a8e54..a5b62e7 100644
 --- a/srchybrid/UploadBandwidthThrottler.cpp
 +++ b/srchybrid/UploadBandwidthThrottler.cpp
 @@ -25,6 +25,7 @@
@@ -485,7 +591,7 @@ index bbdff60..ab84f6b 100644
  
  #ifdef _DEBUG
  #define new DEBUG_NEW
-@@ -313,6 +314,27 @@ UINT UploadBandwidthThrottler::RunInternal()
+@@ -313,6 +314,31 @@ UINT UploadBandwidthThrottler::RunInternal()
  	uint32 changesCount = 0;
  	uint32 loopsCount = 0;
  	int nSlotsBusyLevel = 0;
@@ -496,24 +602,28 @@ index bbdff60..ab84f6b 100644
 +	LONG nDiagLoopsNoSend = 0;
 +	LONG nDiagWakeNoData = 0;
 +	LONG nDiagWakeNeedMore = 0;
-+	LONG nDiagWakeAllBusy = 0;
++	LONG nDiagLoopsAllBusy = 0;	// every socket holding data was blocked, so this loop sent nothing
 +	// the last loop over the slot list is the one that is supposed to use whatever bandwidth
 +	// the two before it left: if a socket holds data and gets none of it, it happens there.
 +	LONG nDiagRestCalls = 0;
 +	LONG nDiagRestBusy = 0;
 +	LONG nDiagRestZero = 0;
 +	INT_PTR nDiagMaxSlot = 0;
++	INT_PTR nDiagWindow = 0;	// how far down the slot list the busy scan below actually looks
 +	sint64 nDiagBytesToSpend = 0;
-+	// the socket that holds a pending send but no queue is the one nothing else can reach:
-+	// count how often the new collection finds one, and how long it had been waiting.
-+	LONG nDiagOrphanReaped = 0;
-+	LONG nDiagOrphanStuck = 0;
++	// A socket that handed its whole queue to a pending send reports no queue, and the busy scan
++	// skips it. Observed here without collecting it, so the build still behaves like vanilla.
++	LONG nDiagOrphanSeen = 0;
 +	DWORD dwDiagOrphanMaxAge = 0;
-+	DWORD dwDiagOrphanLastLog = 0;
++	// The one state that says a slot is being starved rather than being slow: block requests are
++	// waiting for it, nothing is queued on its socket, and nothing is in flight either.
++	LONG nDiagStarvedSeen = 0;
++	DWORD dwDiagStarvedMaxAge = 0;
++	DWORD dwDiagStarvedLastLog = 0;
  
  	lastTickReachedBandwidth = lastLoopTick = timeGetTime();
  	while (m_bRun) {
-@@ -322,6 +344,8 @@ UINT UploadBandwidthThrottler::RunInternal()
+@@ -322,6 +348,8 @@ UINT UploadBandwidthThrottler::RunInternal()
  
  		// Get the current speed from UploadSpeedSense
  		uint32 allowedDataRate = theApp.lastCommonRouteFinder->GetUpload();
@@ -522,45 +632,51 @@ index bbdff60..ab84f6b 100644
  
  		// check busy level for all the slots (WSAEWOULDBLOCK status)
  		uint32 nBusy = 0;
-@@ -337,6 +361,29 @@ UINT UploadBandwidthThrottler::RunInternal()
- 			if (pSocket->HasQueues()) {
+@@ -330,11 +358,41 @@ UINT UploadBandwidthThrottler::RunInternal()
+ 		queueLocker.Lock();
+ 		m_eventDataAvailable.ResetEvent();
+ 		m_eventSocketAvailable.ResetEvent();
+-		for (INT_PTR i = mini(GetStandardListSize(), (INT_PTR)max(GetSlotLimit(theApp.uploadqueue->GetDatarate()), 3u)); --i >= 0;) {
++		nDiagWindow = mini(GetStandardListSize(), (INT_PTR)max(GetSlotLimit(theApp.uploadqueue->GetDatarate()), 3u)); //UPDIAG
++		for (INT_PTR i = nDiagWindow; --i >= 0;) {
+ 			ThrottledFileSocket *pSocket = m_StandardOrder_list[i];
+-			if (pSocket != NULL && pSocket->HasQueues()) {
++			if (pSocket == NULL)
++				continue;
++			const bool bDiagHasQueues = pSocket->HasQueues(); //UPDIAG: asked once, used twice
++			if (bDiagHasQueues) {
  				++nCanSend;
  				nBusy += static_cast<uint32>(pSocket->IsBusyExtensiveCheck());
-+			} else if (const DWORD dwDiagOvAge = pSocket->DbgGetPendingSendAge()) {
-+				//UPDIAG: this branch is the whole point of the change, so measure it. The age is
-+				//read before the collection, because collecting is what clears it. A socket that
-+				//is still not finished is counted apart: that one is waiting on the network, and
-+				//no amount of collecting would have helped it.
-+				if (pSocket->IsBusyExtensiveCheck())
-+					++nDiagOrphanStuck;
-+				else {
-+					++nDiagOrphanReaped;
++			} else {
++				//UPDIAG: read-only. Asking the extensive check here would collect the finished
++				//send, which is a correction and not a measurement, so it is deliberately not done.
++				const DWORD dwDiagOvAge = pSocket->DbgGetPendingSendAge();
++				if (dwDiagOvAge) {
++					++nDiagOrphanSeen;
 +					if (dwDiagOvAge > dwDiagOrphanMaxAge)
 +						dwDiagOrphanMaxAge = dwDiagOvAge;
-+					// One line per event, but only for the ones that were held long enough to
-+					// matter, and at most one a second so a storm of them cannot flood the log.
-+					const DWORD dwDiagNow = timeGetTime();
-+					if (dwDiagOvAge >= 500 && dwDiagNow - dwDiagOrphanLastLog >= 1000) {
-+						dwDiagOrphanLastLog = dwDiagNow;
-+						CString strDiagSocket;
-+						pSocket->DbgGetDiagInfo(strDiagSocket);
-+						theApp.QueueDebugLogLineEx(LOG_INFO
-+							, _T("UPDIAG|reaped slot %d after %ums %s")
-+							, (int)i, dwDiagOvAge, (LPCTSTR)strDiagSocket);
-+					}
 +				}
- 			} else
- 				// A socket that handed its whole queue over to a pending overlapped send reports
- 				// no queued data, and the check above is the only place where a send that has
-@@ -349,6 +396,7 @@ UINT UploadBandwidthThrottler::RunInternal()
- 				pSocket->IsBusyExtensiveCheck();
++			}
++			//UPDIAG: work waiting, nothing queued, nothing in flight - nobody is preparing it
++			const DWORD dwDiagStarved = pSocket->DbgTrackStarved(pSocket->DbgGetPendingBlocks() > 0
++				&& !bDiagHasQueues && pSocket->DbgGetPendingSendAge() == 0);
++			if (dwDiagStarved >= 1000) {
++				++nDiagStarvedSeen;
++				if (dwDiagStarved > dwDiagStarvedMaxAge)
++					dwDiagStarvedMaxAge = dwDiagStarved;
++				const DWORD dwDiagNow = timeGetTime();
++				if (dwDiagNow - dwDiagStarvedLastLog >= 1000) {
++					dwDiagStarvedLastLog = dwDiagNow;
++					CString strDiagSocket;
++					pSocket->DbgGetDiagInfo(strDiagSocket);
++					theApp.QueueDebugLogLineEx(LOG_WARNING
++						, _T("UPDIAG|starved slot %d for %ums %s")
++						, (int)i, dwDiagStarved, (LPCTSTR)strDiagSocket);
++				}
+ 			}
  		}
  		queueLocker.Unlock();
-+		nDiagLoopsNoSend += (LONG)(nCanSend == 0); //UPDIAG
- 
- 		// if this is kept, the loop above can be optimized a little (don't count nCanSend,
- 		// just use nCanSend = GetSlotLimit(theApp.uploadqueue->GetDatarate())
-@@ -445,6 +493,42 @@ UINT UploadBandwidthThrottler::RunInternal()
+@@ -434,6 +492,42 @@ UINT UploadBandwidthThrottler::RunInternal()
  			}
  		}
  
@@ -570,15 +686,15 @@ index bbdff60..ab84f6b 100644
 +			if (dwDiagNow >= dwDiagLastTick + 10000) {
 +				dwDiagLastTick = dwDiagNow;
 +				theApp.QueueDebugLogLineEx(LOG_INFO
-+					, _T("UPDIAG|throttler allowed=%u raw=%u est=%u cansend=%u busy=%u slots=%d busylevel=%d spend=%I64d")
-+					_T(" | loops=%ld nosend=%ld wake_nodata=%ld wake_needmore=%ld wake_allbusy=%ld")
++					, _T("UPDIAG|throttler allowed=%u raw=%u est=%u cansend=%u busy=%u slots=%d window=%d busylevel=%d spend=%I64d")
++					_T(" | loops=%ld nosend=%ld allbusy=%ld wake_nodata=%ld wake_needmore=%ld")
 +					_T(" | maxslot=%d tospend=%I64d restcalls=%ld restbusy=%ld restzero=%ld")
-+					_T(" | reaped=%ld stuck=%ld maxage=%ums")
++					_T(" | orphans=%ld orphanage=%ums starved=%ld starvedage=%ums")
 +					, allowedDataRate, nDiagRawAllowed, nEstiminatedDataRate, nCanSend, nBusy
-+					, (int)GetStandardListSize(), nSlotsBusyLevel, (LONGLONG)spendingRate
-+					, nDiagLoops, nDiagLoopsNoSend, nDiagWakeNoData, nDiagWakeNeedMore, nDiagWakeAllBusy
++					, (int)GetStandardListSize(), (int)nDiagWindow, nSlotsBusyLevel, (LONGLONG)spendingRate
++					, nDiagLoops, nDiagLoopsNoSend, nDiagLoopsAllBusy, nDiagWakeNoData, nDiagWakeNeedMore
 +					, (int)nDiagMaxSlot, (LONGLONG)nDiagBytesToSpend, nDiagRestCalls, nDiagRestBusy, nDiagRestZero
-+					, nDiagOrphanReaped, nDiagOrphanStuck, dwDiagOrphanMaxAge);
++					, nDiagOrphanSeen, dwDiagOrphanMaxAge, nDiagStarvedSeen, dwDiagStarvedMaxAge);
 +
 +				// One line per slot. The counters above say that nothing moved; these say which
 +				// socket was asked and what it answered, which is the only way to tell a socket
@@ -603,30 +719,27 @@ index bbdff60..ab84f6b 100644
  		uint32 minFragSize, doubleSendSize;
  		if (allowedDataRate < 6 * 1024)
  			doubleSendSize = minFragSize = 536; // send one packet at a time at very low speeds for smoother upload
-@@ -470,16 +554,20 @@ UINT UploadBandwidthThrottler::RunInternal()
+@@ -459,12 +553,15 @@ UINT UploadBandwidthThrottler::RunInternal()
  		if (timeSinceLastLoop < sleepTime) {
  			DWORD dwSleep = sleepTime - timeSinceLastLoop;
  			if (nCanSend == 0) {
 -				if (theApp.uploadqueue->GetUploadQueueLength() > 0 && theApp.m_pUploadDiskIOThread)
+-					theApp.m_pUploadDiskIOThread->WakeUpCall();
 +				if (theApp.uploadqueue->GetUploadQueueLength() > 0 && theApp.m_pUploadDiskIOThread) {
 +					++nDiagWakeNoData; //UPDIAG: nothing is queued anywhere, ask for more
- 					theApp.m_pUploadDiskIOThread->WakeUpCall();
++					theApp.m_pUploadDiskIOThread->WakeUpCall(CUploadDiskIOThread::DIAGWAKE_NODATA);
 +				}
  				::WaitForSingleObject(m_eventDataAvailable, dwSleep);
- 			} else if (nCanSend <= nBusy) {
- 				// Every socket that holds data is blocked, so this loop will send nothing and
- 				// will not reach the wakeup at the end of it either. The slots whose sockets
- 				// are still free need their next block prepared regardless of what the blocked
- 				// ones are doing, and only the disk I/O thread can prepare it.
--				if (theApp.uploadqueue->GetUploadQueueLength() > 0 && theApp.m_pUploadDiskIOThread)
-+				if (theApp.uploadqueue->GetUploadQueueLength() > 0 && theApp.m_pUploadDiskIOThread) {
-+					++nDiagWakeAllBusy; //UPDIAG: every socket holding data is blocked
- 					theApp.m_pUploadDiskIOThread->WakeUpCall();
-+				}
+-			} else if (nCanSend <= nBusy)
++			} else if (nCanSend <= nBusy) {
++				++nDiagLoopsAllBusy; //UPDIAG: this loop will send nothing and wakes nobody
  				::WaitForSingleObject(m_eventSocketAvailable, dwSleep);
- 			} else
+-			else
++			} else
  				::Sleep(dwSleep);
-@@ -601,15 +689,22 @@ UINT UploadBandwidthThrottler::RunInternal()
+ 		}
+ 		if (!m_bRun)
+@@ -584,15 +681,22 @@ UINT UploadBandwidthThrottler::RunInternal()
  				++rememberedSlotCounter;
  			}
  
@@ -650,23 +763,24 @@ index bbdff60..ab84f6b 100644
  					spentBytes += lastSpentBytes;
  					spentOverhead += socketSentBytes.sentBytesControlPackets;
  					if (!bNeedMoreData && socketSentBytes.sentBytesStandardPackets > 0)
-@@ -641,8 +736,10 @@ UINT UploadBandwidthThrottler::RunInternal()
+@@ -624,8 +728,10 @@ UINT UploadBandwidthThrottler::RunInternal()
  			InterlockedAdd64((LONG64*)&m_SentBytesSinceLastCall, (LONG64)spentBytes);
  			InterlockedAdd64((LONG64*)&m_SentBytesSinceLastCallOverhead, (LONG64)spentOverhead);
  
 -			if (bNeedMoreData && theApp.uploadqueue->GetUploadQueueLength() > 0 && theApp.m_pUploadDiskIOThread)
+-				theApp.m_pUploadDiskIOThread->WakeUpCall();
 +			if (bNeedMoreData && theApp.uploadqueue->GetUploadQueueLength() > 0 && theApp.m_pUploadDiskIOThread) {
 +				++nDiagWakeNeedMore; //UPDIAG: a wakeup a draining socket asked for
- 				theApp.m_pUploadDiskIOThread->WakeUpCall();
++				theApp.m_pUploadDiskIOThread->WakeUpCall(CUploadDiskIOThread::DIAGWAKE_NEEDMORE);
 +			}
  		}
  	}
  
 diff --git a/srchybrid/UploadClient.cpp b/srchybrid/UploadClient.cpp
-index 61ad554..1770331 100644
+index 61ad554..4e6d0da 100644
 --- a/srchybrid/UploadClient.cpp
 +++ b/srchybrid/UploadClient.cpp
-@@ -316,12 +316,26 @@ void CUpDownClient::SetUploadFileID(CKnownFile *newreqfile)
+@@ -316,12 +316,40 @@ void CUpDownClient::SetUploadFileID(CKnownFile *newreqfile)
  }
  
  static INT_PTR dbgLastQueueCount = 0;
@@ -678,6 +792,18 @@ index 61ad554..1770331 100644
 +volatile LONG g_nDiagReqDupPending = 0;
 +volatile LONG g_nDiagReqWake = 0;
 +
++// UPDIAG: the three lines below fire once per block request, which on a busy slot is several
++// times a second and crowds out everything else in the log. The counters above stay exact; the
++// lines are thinned to one a second each, which is enough to read the shape of the traffic.
++static bool DiagLogDue(DWORD &rdwLast)
++{
++	const DWORD dwNow = ::GetTickCount();
++	if (dwNow - rdwLast < 1000)
++		return false;
++	rdwLast = dwNow;
++	return true;
++}
++
  void CUpDownClient::AddReqBlock(Requested_Block_Struct *reqblock, bool bSignalIOThread)
  {
  	// do _all_ sanity checks on the requested block here, than put it on the block list for the client
@@ -688,12 +814,14 @@ index 61ad554..1770331 100644
 +		// turns on. eMule logs nothing here, so "the peer stopped asking" and "the peer
 +		// asked and we dropped it" are indistinguishable in a vanilla trace.
 +		++g_nDiagReqIn;
-+		theApp.QueueDebugLogLineEx(LOG_INFO, _T("UPDIAG|reqblock in, upstate=%d off=%I64u-%I64u client: %s")
-+			, (int)GetUploadState(), reqblock->StartOffset, reqblock->EndOffset, (LPCTSTR)DbgGetClientInfo());
++		static DWORD s_dwDiagLastIn = 0;
++		if (DiagLogDue(s_dwDiagLastIn))
++			theApp.QueueDebugLogLineEx(LOG_INFO, _T("UPDIAG|reqblock in, upstate=%d off=%I64u-%I64u client: %s")
++				, (int)GetUploadState(), reqblock->StartOffset, reqblock->EndOffset, (LPCTSTR)DbgGetClientInfo());
  		if (GetUploadState() != US_UPLOADING) {
  			if (thePrefs.GetLogUlDlEvents())
  				AddDebugLogLine(DLP_LOW, false, _T("UploadClient: Client tried to add req block when not in upload slot! Prevented req blocks from being added. %s"), (LPCTSTR)DbgGetClientInfo());
-@@ -392,6 +406,15 @@ void CUpDownClient::AddReqBlock(Requested_Block_Struct *reqblock, bool bSignalIO
+@@ -392,6 +420,17 @@ void CUpDownClient::AddReqBlock(Requested_Block_Struct *reqblock, bool bSignalIO
  				&& reqblock->EndOffset == cur_reqblock->EndOffset
  				&& md4equ(reqblock->FileID, cur_reqblock->FileID))
  			{
@@ -702,14 +830,16 @@ index 61ad554..1770331 100644
 +				//dropping the repeat means nothing new is queued on its socket. Record what that
 +				//socket looked like at this instant: a repeat arriving while a send has been
 +				//outstanding for a long time is the pair of events that leaves the slot idle.
-+				theApp.QueueDebugLogLineEx(LOG_WARNING, _T("UPDIAG|reqblock dropped, already served, sockage=%ums sockbusy=%d client: %s")
-+					, socket != NULL ? socket->DbgGetPendingSendAge() : 0
-+					, socket != NULL ? (int)socket->IsBusyQuickCheck() : -1
-+					, (LPCTSTR)DbgGetClientInfo());
++				static DWORD s_dwDiagLastDup = 0;
++				if (DiagLogDue(s_dwDiagLastDup))
++					theApp.QueueDebugLogLineEx(LOG_WARNING, _T("UPDIAG|reqblock dropped, already served, sockage=%ums sockbusy=%d client: %s")
++						, socket != NULL ? socket->DbgGetPendingSendAge() : 0
++						, socket != NULL ? (int)socket->IsBusyQuickCheck() : -1
++						, (LPCTSTR)DbgGetClientInfo());
  				delete reqblock;
  				return;
  			}
-@@ -402,15 +425,24 @@ void CUpDownClient::AddReqBlock(Requested_Block_Struct *reqblock, bool bSignalIO
+@@ -402,22 +441,33 @@ void CUpDownClient::AddReqBlock(Requested_Block_Struct *reqblock, bool bSignalIO
  				&& reqblock->EndOffset == cur_reqblock->EndOffset
  				&& md4equ(reqblock->FileID, cur_reqblock->FileID))
  			{
@@ -725,8 +855,10 @@ index 61ad554..1770331 100644
 +			, (LONG)pUploadingClientStruct->m_BlockRequests_queue.GetCount()); //UPDIAG
  		dbgLastQueueCount = pUploadingClientStruct->m_BlockRequests_queue.GetCount();
 +		++g_nDiagReqQueued; //UPDIAG
-+		theApp.QueueDebugLogLineEx(LOG_INFO, _T("UPDIAG|reqblock queued, pending=%d served=%d")
-+			, (int)dbgLastQueueCount, (int)pUploadingClientStruct->m_DoneBlocks_list.GetCount());
++		static DWORD s_dwDiagLastQueued = 0;
++		if (DiagLogDue(s_dwDiagLastQueued))
++			theApp.QueueDebugLogLineEx(LOG_INFO, _T("UPDIAG|reqblock queued, pending=%d served=%d")
++				, (int)dbgLastQueueCount, (int)pUploadingClientStruct->m_DoneBlocks_list.GetCount());
  		lockBlockLists.Unlock(); // not needed, just to make it visible
  	}
  	if (bSignalIOThread && theApp.m_pUploadDiskIOThread != NULL) {
@@ -734,21 +866,34 @@ index 61ad554..1770331 100644
  		/*DebugLog(_T("BlockRequest Packet received, we have currently %u waiting requests and %s data in buffer (%u in ready packets, %s in pending IO Disk read), socket busy: %s")
  			, dbgLastQueueCount
  			, (LPCTSTR)CastItoXBytes(GetQueueSessionUploadAdded() - (GetQueueSessionPayloadUp() + socket->GetSentPayloadSinceLastCall(false)), false, false, 2)
+ 			, socket->DbgGetStdQueueCount()
+ 			, (LPCTSTR)CastItoXBytes((uint32)theApp.m_pUploadDiskIOThread->dbgDataReadPending, false, false, 2)
+ 			,_T('?')); */
+-		theApp.m_pUploadDiskIOThread->WakeUpCall();
++		theApp.m_pUploadDiskIOThread->WakeUpCall(CUploadDiskIOThread::DIAGWAKE_REQBLOCK); //UPDIAG
+ 	}
+ }
+ 
 diff --git a/srchybrid/UploadDiskIOThread.cpp b/srchybrid/UploadDiskIOThread.cpp
-index e6b3706..6984ea1 100644
+index e72b5cd..a328acc 100644
 --- a/srchybrid/UploadDiskIOThread.cpp
 +++ b/srchybrid/UploadDiskIOThread.cpp
-@@ -46,6 +46,9 @@ static char THIS_FILE[] = __FILE__;
+@@ -45,6 +45,14 @@ static char THIS_FILE[] = __FILE__;
+ #define RUN_WORK	2
  #define WAKEUP		((ULONG_PTR)(~0))
- #define IOPORT_WAIT	500				// ms between two unsolicited passes over the upload list
  
 +// UPDIAG: how often the aggregated counters are written to the log, in ms.
 +#define UPDIAG_INTERVAL	10000
 +
++// UPDIAG: a wakeup says who asked for it in its own completion key. A real I/O completion
++// carries a CKnownFile pointer there, so the very top of the range is free for this.
++#define WAKEUP_SRC(s)	((ULONG_PTR)(WAKEUP - (ULONG_PTR)(s)))
++#define IS_WAKEUP(k)	((k) >= WAKEUP_SRC(DIAGWAKE_COUNT - 1))
++
  IMPLEMENT_DYNCREATE(CUploadDiskIOThread, CWinThread)
  
  CUploadDiskIOThread::CUploadDiskIOThread()
-@@ -57,6 +60,18 @@ CUploadDiskIOThread::CUploadDiskIOThread()
+@@ -56,7 +64,23 @@ CUploadDiskIOThread::CUploadDiskIOThread()
  	, m_Run(RUN_STOP)
  	, m_bNewData()
  	, m_bSignalThrottler()
@@ -763,54 +908,51 @@ index e6b3706..6984ea1 100644
 +	, m_nDiagNoBlocks()
 +	, m_nDiagNoSocket()
 +	, m_nDiagBuffered()
-+	, m_nDiagRescans()
  {
++	//UPDIAG
++	memset((void*)m_anDiagWakeAsked, 0, sizeof m_anDiagWakeAsked);
++	memset((void*)m_anDiagWakeMerged, 0, sizeof m_anDiagWakeMerged);
++	memset((void*)m_anDiagWakeTaken, 0, sizeof m_anDiagWakeTaken);
++	memset((void*)m_anDiagWakeWork, 0, sizeof m_anDiagWakeWork);
  	ASSERT(theApp.uploadqueue != NULL);
  	AfxBeginThread(RunProc, (LPVOID)this);
-@@ -90,6 +105,7 @@ UINT CUploadDiskIOThread::RunInternal()
+ }
+@@ -89,11 +113,21 @@ UINT CUploadDiskIOThread::RunInternal()
  	DWORD dwRead = 0;
  	ULONG_PTR completionKey = 0;
  	OverlappedRead_Struct *pCurIO = NULL;
 +	DWORD dwDiagLastTick = ::GetTickCount(); //UPDIAG
  	m_Run = RUN_IDLE;
- 	// The wait is bounded rather than INFINITE. Every caller that posts a wakeup here does so
- 	// as a consequence of data moving: a block request arriving from a peer, or the throttler
-@@ -98,14 +114,27 @@ UINT CUploadDiskIOThread::RunInternal()
- 	// get their next block prepared. A pass twice a second costs one walk of the upload list and
- 	// restores the behaviour of the loop this thread replaced, which waited with a timeout.
- 	while (m_Run) {
-+		pCurIO = NULL; //UPDIAG: so the test below reads this call, not the previous one
- 		if (!::GetQueuedCompletionStatus(m_hPort, &dwRead, &completionKey, (LPOVERLAPPED*)&pCurIO, IOPORT_WAIT)) {
--			if (pCurIO != NULL || ::GetLastError() != WAIT_TIMEOUT)
-+			if (pCurIO != NULL || ::GetLastError() != WAIT_TIMEOUT) {
-+				theApp.QueueDebugLogLineEx(LOG_ERROR //UPDIAG
-+					, _T("UPDIAG|iothread wait failed, err=%u dequeued=%d pending=%d - the thread ends here")
-+					, ::GetLastError(), (int)(pCurIO != NULL), (int)m_listPendingIO.GetCount());
- 				break;			// a dequeued operation failed, or the port itself did
-+			}
-+			++m_nDiagRescans; //UPDIAG: a pass that only the timeout can have produced
- 			completionKey = WAKEUP;	// nothing was queued; look at the upload list anyway
- 			dwRead = 0;
- 		}
--		if (!completionKey)
-+		if (!completionKey) {
-+			theApp.QueueDebugLogLineEx(LOG_INFO, _T("UPDIAG|iothread stop packet, pending=%d"), (int)m_listPendingIO.GetCount()); //UPDIAG
- 			break;
-+		}
-+		++m_nDiagLoops; //UPDIAG
-+		if (completionKey == WAKEUP)
+ 	while (m_Run
+ 			&& ::GetQueuedCompletionStatus(m_hPort, &dwRead, &completionKey, (LPOVERLAPPED*)&pCurIO, INFINITE)
+ 			&& completionKey)
+ 	{
++		//UPDIAG: who asked for this pass, and what the pass had produced before it ran
++		const int nDiagSrc = IS_WAKEUP(completionKey) ? (int)(WAKEUP - completionKey) : -1;
++		const LONG nDiagReadsBefore = m_nDiagReads;
++		++m_nDiagLoops;
++		if (nDiagSrc >= 0) {
 +			++m_nDiagWakeups;
-+		else
++			++m_anDiagWakeTaken[nDiagSrc];
++		} else
 +			++m_nDiagOuterIO;
  		m_Run = RUN_WORK;
  		//start new reads
  		CCriticalSection *pcsUploadListRead = NULL;
-@@ -120,9 +149,21 @@ UINT CUploadDiskIOThread::RunInternal()
+@@ -103,14 +137,29 @@ UINT CUploadDiskIOThread::RunInternal()
+ 			StartCreateNextBlockPackage(rUploadList.GetNext(pos));
+ 		InterlockedExchange8(&m_bNewData, 0);
+ 		pcsUploadListRead->Unlock();
++		//UPDIAG: the only question that separates a useful wakeup from a wasted one
++		if (nDiagSrc >= 0 && m_nDiagReads != nDiagReadsBefore)
++			++m_anDiagWakeWork[nDiagSrc];
+ 
+ 		//check completed I/O
  		do {
  			if (!completionKey)
  				break;
 -			if (completionKey != WAKEUP) //ignore wakeups
-+			if (completionKey != WAKEUP) { //ignore wakeups
++			if (!IS_WAKEUP(completionKey)) { //ignore wakeups
 +				++m_nDiagDrained; //UPDIAG: nearly every completion is taken here, not by the outer wait
  				ReadCompletionRoutine(dwRead, pCurIO);
 +			}
@@ -828,10 +970,12 @@ index e6b3706..6984ea1 100644
  
  		if (!completionKey) //thread termination
  			break;
-@@ -134,6 +175,13 @@ UINT CUploadDiskIOThread::RunInternal()
+@@ -121,7 +170,14 @@ UINT CUploadDiskIOThread::RunInternal()
+ 			m_bSignalThrottler = false;
  		}
  		if (InterlockedExchange8(&m_bNewData, 0) && m_listPendingIO.IsEmpty())
- 			PostQueuedCompletionStatus(m_hPort, 0, WAKEUP, NULL);
+-			PostQueuedCompletionStatus(m_hPort, 0, WAKEUP, NULL);
++			PostQueuedCompletionStatus(m_hPort, 0, WAKEUP_SRC(DIAGWAKE_NEWDATA), NULL);
 +
 +		// UPDIAG: aggregated, so that a busy completion port cannot flood the log.
 +		const DWORD dwDiagNow = ::GetTickCount();
@@ -842,7 +986,7 @@ index e6b3706..6984ea1 100644
  	}
  	m_Run = RUN_STOP;
  
-@@ -149,6 +197,19 @@ UINT CUploadDiskIOThread::RunInternal()
+@@ -137,6 +193,28 @@ UINT CUploadDiskIOThread::RunInternal()
  	return 0;
  }
  
@@ -851,18 +995,27 @@ index e6b3706..6984ea1 100644
 +{
 +	CString strInfo;
 +	strInfo.Format(_T("run=%d newdata=%d pending=%d pendmax=%ld loops=%ld wakeups=%ld outerio=%ld")
-+		_T(" drained=%ld reads=%ld zeroreads=%ld orphaned=%ld noblocks=%ld nosock=%ld buffered=%ld rescans=%ld")
++		_T(" drained=%ld reads=%ld zeroreads=%ld orphaned=%ld noblocks=%ld nosock=%ld buffered=%ld")
 +		, (int)m_Run, (int)m_bNewData, (int)m_listPendingIO.GetCount(), (LONG)m_nDiagPendMax
 +		, (LONG)m_nDiagLoops, (LONG)m_nDiagWakeups, (LONG)m_nDiagOuterIO
 +		, (LONG)m_nDiagDrained, (LONG)m_nDiagReads, (LONG)m_nDiagZeroReads, (LONG)m_nDiagOrphaned
-+		, (LONG)m_nDiagNoBlocks, (LONG)m_nDiagNoSocket, (LONG)m_nDiagBuffered, (LONG)m_nDiagRescans);
++		, (LONG)m_nDiagNoBlocks, (LONG)m_nDiagNoSocket, (LONG)m_nDiagBuffered);
++	//UPDIAG: asked/merged/taken/work per caller, in the order of EDiagWakeSrc. The last number
++	//is the only one that says the wakeup was worth posting.
++	static LPCTSTR const apszSrc[DIAGWAKE_COUNT] = { _T("newdata"), _T("reqblock"), _T("nodata"), _T("needmore") };
++	for (int i = 0; i < DIAGWAKE_COUNT; ++i) {
++		CString strOne;
++		strOne.Format(_T(" %s=%ld/%ld/%ld/%ld"), apszSrc[i], (LONG)m_anDiagWakeAsked[i]
++			, (LONG)m_anDiagWakeMerged[i], (LONG)m_anDiagWakeTaken[i], (LONG)m_anDiagWakeWork[i]);
++		strInfo += strOne;
++	}
 +	return strInfo;
 +}
 +
  bool CUploadDiskIOThread::AssociateFile(CKnownFile *pFile)
  {
  	ASSERT(m_hPort && m_Run);
-@@ -182,14 +243,18 @@ void CUploadDiskIOThread::DissociateFile(CKnownFile *pFile)
+@@ -170,14 +248,18 @@ void CUploadDiskIOThread::DissociateFile(CKnownFile *pFile)
  
  void CUploadDiskIOThread::StartCreateNextBlockPackage(UploadingToClient_Struct *pUploadClientStruct)
  {
@@ -883,7 +1036,7 @@ index e6b3706..6984ea1 100644
  
  	// now also get a lock on the Block lists
  	CSingleLock lockBlockLists(&pUploadClientStruct->m_csBlockListsLock, TRUE);
-@@ -203,8 +268,10 @@ void CUploadDiskIOThread::StartCreateNextBlockPackage(UploadingToClient_Struct *
+@@ -191,8 +273,10 @@ void CUploadDiskIOThread::StartCreateNextBlockPackage(UploadingToClient_Struct *
  	// buffer at least 1 block (180KB) for normal uploads, and 5 blocks (~900KB) for fast uploads
  	const uint32 nBufferLimit = (pClient->GetUploadDatarate() > BIGBUFFER_MINDATARATE) ? (5 * EMBLOCKSIZE + 1) : (EMBLOCKSIZE + 1);
  
@@ -895,7 +1048,7 @@ index e6b3706..6984ea1 100644
  
  	try {
  		// Get more data if currently buffered was less than nBufferLimit Bytes
-@@ -266,11 +333,16 @@ void CUploadDiskIOThread::StartCreateNextBlockPackage(UploadingToClient_Struct *
+@@ -254,11 +338,16 @@ void CUploadDiskIOThread::StartCreateNextBlockPackage(UploadingToClient_Struct *
  			}
  			++pFile->nInUse;
  			pOverlappedRead->pos = m_listPendingIO.AddTail(pOverlappedRead);
@@ -912,7 +1065,7 @@ index e6b3706..6984ea1 100644
  		}
  		return; //no errors
  	} catch (const CString &ex) {
-@@ -296,8 +368,15 @@ void CUploadDiskIOThread::ReadCompletionRoutine(DWORD dwRead, const OverlappedRe
+@@ -284,8 +373,15 @@ void CUploadDiskIOThread::ReadCompletionRoutine(DWORD dwRead, const OverlappedRe
  	if (m_Run) {
  		m_listPendingIO.RemoveAt(pOvRead->pos);
  		bool bReadError = !dwRead;
@@ -929,13 +1082,41 @@ index e6b3706..6984ea1 100644
  		else if (dwRead != pOvRead->uEndOffset - pOvRead->uStartOffset) {
  			theApp.QueueDebugLogLineEx(LOG_ERROR, _T("ReadCompletionRoutine: Didn't read requested data count - wanted: %lu, read: %lu")
  				, (DWORD)(pOvRead->uEndOffset - pOvRead->uStartOffset), dwRead);
+@@ -478,11 +574,16 @@ void CUploadDiskIOThread::CreatePackedPackets(const OverlappedRead_Struct &Overl
+ 	delete[] output;
+ }
+ 
+-void CUploadDiskIOThread::WakeUpCall()
++void CUploadDiskIOThread::WakeUpCall(int nDiagSrc)
+ {
++	if (nDiagSrc < 0 || nDiagSrc >= DIAGWAKE_COUNT) //UPDIAG
++		nDiagSrc = DIAGWAKE_NEWDATA;
++	::InterlockedIncrement(&m_anDiagWakeAsked[nDiagSrc]); //UPDIAG
+ 	//pending I/O makes posting unnecessary
+ 	if (m_Run == RUN_IDLE && m_listPendingIO.IsEmpty())
+-		PostQueuedCompletionStatus(m_hPort, 0, WAKEUP, NULL);
+-	else
++		PostQueuedCompletionStatus(m_hPort, 0, WAKEUP_SRC(nDiagSrc), NULL);
++	else {
++		::InterlockedIncrement(&m_anDiagWakeMerged[nDiagSrc]); //UPDIAG: folded into the flag below
+ 		InterlockedExchange8(&m_bNewData, 1);
++	}
+ }
+\ No newline at end of file
 diff --git a/srchybrid/UploadDiskIOThread.h b/srchybrid/UploadDiskIOThread.h
-index 710756c..2145cfd 100644
+index 710756c..949d2eb 100644
 --- a/srchybrid/UploadDiskIOThread.h
 +++ b/srchybrid/UploadDiskIOThread.h
-@@ -45,6 +45,10 @@ public:
+@@ -43,8 +43,16 @@ public:
+ 	CUploadDiskIOThread& operator=(const CUploadDiskIOThread&) = delete;
+ 
  	void		EndThread();	//completionkey == 0
- 	void		WakeUpCall();	//completionkey == WAKEUP
+-	void		WakeUpCall();	//completionkey == WAKEUP
++	// UPDIAG: the wakeup carries who asked for it in its completion key, so a pass that
++	// prepares nothing can be told apart from one that had nothing to prepare, per caller.
++	enum EDiagWakeSrc { DIAGWAKE_NEWDATA, DIAGWAKE_REQBLOCK, DIAGWAKE_NODATA, DIAGWAKE_NEEDMORE
++		, DIAGWAKE_COUNT };
++	void		WakeUpCall(int nDiagSrc = DIAGWAKE_NEWDATA);	//completionkey == WAKEUP
  	static void	DissociateFile(CKnownFile *pFile);
 +	// UPDIAG: temporary instrumentation. Called from the main thread, so that a
 +	// thread stuck in its wait is still reported; the counters it reads are not
@@ -944,7 +1125,7 @@ index 710756c..2145cfd 100644
  
  private:
  	static UINT AFX_CDECL RunProc(LPVOID pParam);
-@@ -68,4 +72,17 @@ private:
+@@ -68,4 +76,24 @@ private:
  	volatile char m_Run; //0 - not running; 1 - idle; 2 - processing
  	volatile char m_bNewData;
  	bool		m_bSignalThrottler;
@@ -960,7 +1141,14 @@ index 710756c..2145cfd 100644
 +	volatile LONG m_nDiagNoBlocks;
 +	volatile LONG m_nDiagNoSocket;
 +	volatile LONG m_nDiagBuffered;
-+	volatile LONG m_nDiagRescans;
++	// UPDIAG: per caller - how often it asked, how often the ask reached the port rather than
++	// being folded into m_bNewData, how many passes it actually caused, and in how many of
++	// those a read was started. A caller whose work count stays at zero wakes this thread for
++	// nothing, however large the other three are.
++	volatile LONG m_anDiagWakeAsked[DIAGWAKE_COUNT];
++	volatile LONG m_anDiagWakeMerged[DIAGWAKE_COUNT];
++	volatile LONG m_anDiagWakeTaken[DIAGWAKE_COUNT];
++	volatile LONG m_anDiagWakeWork[DIAGWAKE_COUNT];
  };
 \ No newline at end of file
 diff --git a/srchybrid/UploadQueue.cpp b/srchybrid/UploadQueue.cpp
