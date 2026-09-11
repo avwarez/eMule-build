@@ -1,0 +1,77 @@
+diff --git a/srchybrid/UploadQueue.cpp b/srchybrid/UploadQueue.cpp
+--- a/srchybrid/UploadQueue.cpp
++++ b/srchybrid/UploadQueue.cpp
+@@ -121,6 +121,18 @@
+ 	CUpDownClient *lowclient = NULL;
+ 	const DWORD curTick = ::GetTickCount();
+ 
++	// UPDIAG: which clients this list actually offered, and on what grounds. The order a
++	// waiting client is served in is decided by a score the program never shows anywhere,
++	// built on a clock that starts the first time the client is scored and is not reset when
++	// it is given a slot - so a client that has just been served can still outrank one that
++	// has only ever waited, and from outside the two look identical. Only the candidates the
++	// loop really evaluates are reported: asking a skipped client for its score would call
++	// GetWaitStartTime(), which writes the clock it is meant to observe.
++	struct { const CUpDownClient *pClient; uint32 uScore; DWORD dwWait; } aDiagTop[6];
++	int nDiagTop = 0;
++	int nDiagSeen = 0;
++	int nDiagStandDown = 0;
++
+ 	for (POSITION pos = waitinglist.GetHeadPosition(); pos != NULL;) {
+ 		POSITION pos2 = pos;
+ 		CUpDownClient *cur_client = waitinglist.GetNext(pos);
+@@ -139,10 +151,27 @@
+ 			//block request follows and the slot stays empty until the socket times out. The
+ 			//flag falls when the connection ends, and from then on this client asks for a slot
+ 			//the way every other client on this list did.
+-			if (cur_client->HasSentOutOfPartReqs())
++			if (cur_client->HasSentOutOfPartReqs()) {
++				++nDiagStandDown; //UPDIAG
+ 				continue;
++			}
+ 			uint32 cur_score = cur_client->GetScore(false);
+ 
++			//UPDIAG: keep the best few in score order, while the score is already at hand
++			++nDiagSeen;
++			for (int i = 0; i < (int)_countof(aDiagTop); ++i) {
++				if (i < nDiagTop && aDiagTop[i].uScore >= cur_score)
++					continue;
++				for (int j = min(nDiagTop, (int)_countof(aDiagTop) - 1); j > i; --j)
++					aDiagTop[j] = aDiagTop[j - 1];
++				aDiagTop[i].pClient = cur_client;
++				aDiagTop[i].uScore = cur_score;
++				aDiagTop[i].dwWait = curTick - cur_client->GetWaitStartTime();
++				if (nDiagTop < (int)_countof(aDiagTop))
++					++nDiagTop;
++				break;
++			}
++
+ 			if (cur_score > bestscore) {
+ 				// cur_client is more worthy than current best client that is ready to go (connected).
+ 				if (!cur_client->HasLowID() || (cur_client->socket && cur_client->socket->IsConnected())) {
+@@ -169,6 +198,25 @@
+ 	if (lowclient && bestlowscore > bestscore)
+ 		lowclient->m_bAddNextConnect = true;
+ 
++	// UPDIAG: one line per offer, and only when there is one to make - this runs on
++	// every pass that wants a slot, so reporting the empty answers would drown it.
++	if (newclient != NULL && thePrefs.GetVerbose()) {
++		CString strDiag;
++		for (int i = 0; i < nDiagTop; ++i)
++			strDiag.AppendFormat(_T("%s%s score=%u wait=%ums asked=%u lowid=%d conn=%d")
++				, (i ? _T(", ") : _T(""))
++				, (LPCTSTR)ipstr(aDiagTop[i].pClient->GetIP())
++				, aDiagTop[i].uScore, aDiagTop[i].dwWait
++				, aDiagTop[i].pClient->GetAskedCount()
++				, (int)aDiagTop[i].pClient->HasLowID()
++				, (int)(aDiagTop[i].pClient->socket && aDiagTop[i].pClient->socket->IsConnected()));
++		theApp.QueueDebugLogLineEx(LOG_INFO
++			, _T("UPDIAG|queue pick waiting=%d scored=%d standdown=%d chosen=%s score=%u wait=%ums | %s")
++			, (int)waitinglist.GetCount(), nDiagSeen, nDiagStandDown
++			, (LPCTSTR)ipstr(newclient->GetIP()), bestscore
++			, curTick - newclient->GetWaitStartTime(), (LPCTSTR)strDiag);
++	}
++
+ 	return newclient;
+ }
+ 

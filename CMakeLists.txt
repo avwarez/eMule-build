@@ -172,6 +172,25 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          last is the only way to see from outside that a socket which
 #          would have ended was given the smaller allowance to spend.
 #
+#          99c-diag-queue-score reports the one decision nothing in the
+#          program shows: which waiting client is offered the next free
+#          slot, and why it rather than the others. The order is set by a
+#          score built on a clock that starts the first time a client is
+#          scored and is never reset when it is given a slot, so the time a
+#          client spends uploading keeps counting as time waited, and a
+#          client that has just been served can outrank one that has only
+#          ever waited. From outside the two are indistinguishable: the log
+#          carries when a client enters and leaves the queue, which is a
+#          different and younger clock than the one the score uses. This
+#          patch prints, at each offer, the chosen client with its score and
+#          the age of that clock, the same for the best few it beat, how
+#          many candidates were scored, and how many were passed over as
+#          standing down - the only outward sign that the correction in 97g
+#          applied, which it needs and is therefore the second file here
+#          that does not apply on its own. Only clients the loop really
+#          scores are reported: reading the clock of a skipped one would
+#          write the very quantity being observed.
+#
 #          Vanilla reports none of this, so a slot that dies holding data
 #          looks the same whether the peer stopped asking, the request was
 #          dropped, the send never completed, or the timer simply ran out
