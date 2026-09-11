@@ -95,6 +95,28 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          ended as though it had gone silent. The socket can answer that
 #          question itself, so the patch asks it instead, bounded so that
 #          the whole allowance stays what the age test already allowed.
+#          97g corrects a second way an upload slot ends up doing nothing.
+#          When a session is ended from this side - the transfer cap in
+#          CheckForTimeOver() - the client is told to stand down and is put
+#          back on the waiting list on its behalf, without it having asked
+#          for anything. It is then the best candidate on that list almost
+#          at once, because the waiting time a score is built from keeps
+#          running through the whole upload session and is never reset, so
+#          the client comes back holding more of it than anyone who really
+#          waited. It is promoted again, on the same connection, one or two
+#          seconds after being removed - and then sends no block request at
+#          all, which is what the comment in the function doing the standing
+#          down warns about. The slot stays empty until the socket times out.
+#          Measured over three and a half hours: seven sessions ended this
+#          way, seven promoted the same client straight back, six of those
+#          delivered nothing and died at the timeout, together holding a slot
+#          for twelve minutes to move 370 KB. The seventh freed itself only
+#          because the client closed the connection on its own. The flag that
+#          marks this state is already kept, from the moment the packet is
+#          sent until the connection ends, and nothing reads it - here and in
+#          0.60d alike. The patch gives it a reader, in the two places that
+#          hand out a slot: such a client is passed over while it still has
+#          that connection, and asks again like everyone else once it is gone.
 #   98     corrections to the shipped language resources, from the fork's
 #          v0.72a-lang branch - source data for the `languages` target
 #          rather than code, so they change no binary.

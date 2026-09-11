@@ -1,0 +1,44 @@
+diff --git a/srchybrid/UpdownClient.h b/srchybrid/UpdownClient.h
+index f9b28d4..12a08ec 100644
+--- a/srchybrid/UpdownClient.h
++++ b/srchybrid/UpdownClient.h
+@@ -308,6 +308,10 @@ public:
+ 	void			ClearPendingBlockRequest(const Pending_Block_Struct *pending);
+ 	void			ClearDownloadBlockRequests();
+ 	void			SendOutOfPartReqsAndAddToWaitingQueue();
++	// True from the moment we told this client to stand down until the connection which
++	// carried that packet ends. The flag was already kept for exactly that span and had
++	// no reader; see CUploadQueue::FindBestClientInQueue().
++	bool			HasSentOutOfPartReqs() const					{ return m_fSentOutOfPartReqs != 0; }
+ 	UINT			CalculateDownloadRate();
+ 	uint16			GetAvailablePartCount() const;
+ 	bool			SwapToAnotherFile(LPCTSTR reason, bool bIgnoreNoNeeded, bool ignoreSuspensions, bool bRemoveCompletely, CPartFile *toFile = NULL, bool allowSame = true, bool isAboutToAsk = false, bool debug = false); // ZZ:DownloadManager
+diff --git a/srchybrid/UploadQueue.cpp b/srchybrid/UploadQueue.cpp
+index c6130f6..8f09d37 100644
+--- a/srchybrid/UploadQueue.cpp
++++ b/srchybrid/UploadQueue.cpp
+@@ -122,6 +122,15 @@ CUpDownClient* CUploadQueue::FindBestClientInQueue()
+ 			RemoveFromWaitingQueue(pos2, true);
+ 		} else {
+ 			// finished clearing
++			//A client whose session we ended ourselves is on this list on its behalf, without
++			//having asked for anything. Skip it while it still has the connection that carried
++			//OP_OUTOFPARTREQS: giving it a slot back on that connection is what the comment in
++			//SendOutOfPartReqsAndAddToWaitingQueue() warns about, and it does not work - no
++			//block request follows and the slot stays empty until the socket times out. The
++			//flag falls when the connection ends, and from then on this client asks for a slot
++			//the way every other client on this list did.
++			if (cur_client->HasSentOutOfPartReqs())
++				continue;
+ 			uint32 cur_score = cur_client->GetScore(false);
+ 
+ 			if (cur_score > bestscore) {
+@@ -640,7 +649,7 @@ void CUploadQueue::AddClientToQueue(CUpDownClient *client, bool bIgnoreTimelimit
+ 		client->SendPacket(packet);
+ 		return;
+ 	}
+-	if (waitinglist.IsEmpty() && ForceNewClient(true)) {
++	if (waitinglist.IsEmpty() && ForceNewClient(true) && !client->HasSentOutOfPartReqs()) { //see FindBestClientInQueue()
+ 		client->SetWaitStartTime();
+ 		AddUpNextClient(_T("Direct add with empty queue."), client);
+ 	} else {
