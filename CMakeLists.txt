@@ -148,6 +148,14 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          on its socket and nothing is in flight - and reports it the
 #          moment it appears rather than at the next tick.
 #
+#          Finally it names every way a client can ask for a slot and be
+#          turned away. Five of those paths simply return: three say nothing
+#          at all, and two carry a message wrapped in DEBUG_ONLY, which a
+#          release build compiles out. So in the builds anyone actually runs
+#          a refused client and a client that never asked leave the same
+#          trace, which is none, and a queue that stays empty cannot be told
+#          from a queue that is turning people away.
+#
 #          99b-diag-socket-and-timeout describes the socket underneath those
 #          slots and the decision that removes them, and it is the one file
 #          in the whole directory that does not apply on its own: it needs

@@ -628,7 +628,7 @@ index 710756c..949d2eb 100644
  };
 \ No newline at end of file
 diff --git a/srchybrid/UploadQueue.cpp b/srchybrid/UploadQueue.cpp
-index c6130f6..980008c 100644
+index c6130f6..9d09d5c 100644
 --- a/srchybrid/UploadQueue.cpp
 +++ b/srchybrid/UploadQueue.cpp
 @@ -44,6 +44,16 @@
@@ -714,7 +714,7 @@ index c6130f6..980008c 100644
  	// Save used bandwidth for speed calculations
  	(void)theApp.uploadBandwidthThrottler->GetNumberOfSentBytesOverheadSinceLastCallAndReset(); //reset only
  	uint64 sentBytes = theApp.uploadBandwidthThrottler->GetNumberOfSentBytesSinceLastCallAndReset();
-@@ -520,6 +570,8 @@ void CUploadQueue::AddClientToQueue(CUpDownClient *client, bool bIgnoreTimelimit
+@@ -520,14 +570,21 @@ void CUploadQueue::AddClientToQueue(CUpDownClient *client, bool bIgnoreTimelimit
  		&& !theApp.serverconnect->IsLocalServer(client->GetServerIP(), client->GetServerPort())
  		&& GetWaitingUserCount() > 50)
  	{
@@ -723,7 +723,41 @@ index c6130f6..980008c 100644
  		return;
  	}
  	client->IncrementAskedCount();
-@@ -629,6 +681,9 @@ void CUploadQueue::AddClientToQueue(CUpDownClient *client, bool bIgnoreTimelimit
+ 	client->SetLastUpRequest();
+ 	if (!bIgnoreTimelimit)
+ 		client->AddRequestCount(client->GetUploadFileID());
+-	if (client->IsBanned())
++	if (client->IsBanned()) {
++		// UPDIAG: a banned asker is dropped without a word, so from the outside it
++		// looks exactly like a client that never asked.
++		theApp.QueueDebugLogLineEx(LOG_INFO, _T("UPDIAG|queue refused (banned) client: %s")
++			, (LPCTSTR)client->DbgGetClientInfo());
+ 		return;
++	}
+ 	uint16 cSameIP = 0;
+ 	// check for duplicates
+ 	for (POSITION pos = waitinglist.GetHeadPosition(); pos != NULL;) {
+@@ -587,11 +644,19 @@ void CUploadQueue::AddClientToQueue(CUpDownClient *client, bool bIgnoreTimelimit
+ 		// do not accept more than 3 clients from the same IP
+ 		if (thePrefs.GetVerbose())
+ 			DEBUG_ONLY(AddDebugLogLine(false, _T("%s's (%s) request to enter the queue was rejected, because of too many clients with the same IP"), client->GetUserName(), (LPCTSTR)ipstr(client->GetConnectIP())));
++		// UPDIAG: the line above is wrapped in DEBUG_ONLY, so a release build says
++		// nothing here and the refusal is invisible in the logs we actually read.
++		theApp.QueueDebugLogLineEx(LOG_INFO, _T("UPDIAG|queue refused (same IP, %u already waiting) client: %s")
++			, cSameIP, (LPCTSTR)client->DbgGetClientInfo());
+ 		return;
+ 	}
+ 	if (theApp.clientlist->GetClientsFromIP(client->GetIP()) >= 3) {
+ 		if (thePrefs.GetVerbose())
+ 			DEBUG_ONLY(AddDebugLogLine(false, _T("%s's (%s) request to enter the queue was rejected, because of too many clients with the same IP (found in TrackedClientsList)"), client->GetUserName(), (LPCTSTR)ipstr(client->GetConnectIP())));
++		// UPDIAG: same as above - invisible outside a debug build. This one counts
++		// clients tracked from that address, not clients on the waiting list.
++		theApp.QueueDebugLogLineEx(LOG_INFO, _T("UPDIAG|queue refused (same IP, 3 or more tracked) client: %s")
++			, (LPCTSTR)client->DbgGetClientInfo());
+ 		return;
+ 	}
+ 	// done
+@@ -629,6 +694,9 @@ void CUploadQueue::AddClientToQueue(CUpDownClient *client, bool bIgnoreTimelimit
  	   )
  	{
  		// block client from getting on queue
@@ -733,7 +767,7 @@ index c6130f6..980008c 100644
  		return;
  	}
  	if (client->IsDownloading()) {
-@@ -646,6 +701,10 @@ void CUploadQueue::AddClientToQueue(CUpDownClient *client, bool bIgnoreTimelimit
+@@ -646,6 +714,10 @@ void CUploadQueue::AddClientToQueue(CUpDownClient *client, bool bIgnoreTimelimit
  	} else {
  		m_bStatisticsWaitingListDirty = true;
  		waitinglist.AddTail(client);
@@ -744,7 +778,7 @@ index c6130f6..980008c 100644
  		client->SetUploadState(US_ONUPLOADQUEUE);
  		theApp.emuledlg->transferwnd->GetQueueList().AddClient(client, true);
  		theApp.emuledlg->transferwnd->ShowQueueCount(waitinglist.GetCount());
-@@ -692,6 +751,21 @@ bool CUploadQueue::RemoveFromUploadQueue(CUpDownClient *client, LPCTSTR pszReaso
+@@ -692,6 +764,21 @@ bool CUploadQueue::RemoveFromUploadQueue(CUpDownClient *client, LPCTSTR pszReaso
  					, (LPCTSTR)CastItoXBytes(client->GetPayloadInBuffer()), curClientStruct->m_BlockRequests_queue.GetCount()
  					, theApp.sharedfiles->GetFileByID(client->GetUploadFileID()) ? (LPCTSTR)theApp.sharedfiles->GetFileByID(client->GetUploadFileID())->GetFileName() : _T(""));
  			}
@@ -766,7 +800,7 @@ index c6130f6..980008c 100644
  			client->m_bAddNextConnect = false;
  
  			m_csUploadListMainThrdWriteOtherThrdsRead.Lock();
-@@ -748,6 +822,11 @@ void CUploadQueue::RemoveFromWaitingQueue(POSITION pos, bool updatewindow)
+@@ -748,6 +835,11 @@ void CUploadQueue::RemoveFromWaitingQueue(POSITION pos, bool updatewindow)
  	m_bStatisticsWaitingListDirty = true;
  	CUpDownClient *todelete = waitinglist.GetAt(pos);
  	waitinglist.RemoveAt(pos);
@@ -778,7 +812,7 @@ index c6130f6..980008c 100644
  	if (updatewindow) {
  		theApp.emuledlg->transferwnd->GetQueueList().RemoveClient(todelete);
  		theApp.emuledlg->transferwnd->ShowQueueCount(waitinglist.GetCount());
-@@ -1091,6 +1170,7 @@ UploadingToClient_Struct::~UploadingToClient_Struct()
+@@ -1091,6 +1183,7 @@ UploadingToClient_Struct::~UploadingToClient_Struct()
  	m_csBlockListsLock.Lock();
  	while (!m_BlockRequests_queue.IsEmpty())
  		delete m_BlockRequests_queue.RemoveHead();
