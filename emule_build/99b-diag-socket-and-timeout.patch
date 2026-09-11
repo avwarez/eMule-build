@@ -1,0 +1,531 @@
+diff --git a/srchybrid/EMSocket.cpp b/srchybrid/EMSocket.cpp
+index 2898233..a1136b1 100644
+--- a/srchybrid/EMSocket.cpp
++++ b/srchybrid/EMSocket.cpp
+@@ -112,6 +112,15 @@ CEMSocket::CEMSocket()
+ 	, m_bUseOverlappedSend(true)
+ 	, m_bPendingSendOv()
+ 	, m_dwSendBlockedSince()
++	, m_nDiagRecvBytes() //UPDIAG
++	, m_dwDiagLastRecv() //UPDIAG
++	, m_nDiagSendOvBytes() //UPDIAG
++	, m_nDiagSendCalls() //UPDIAG
++	, m_nDiagSendZero() //UPDIAG
++	, m_dwDiagBusyLast() //UPDIAG
++	, m_dwDiagBusyTotal() //UPDIAG
++	, m_dwDiagBusyMax() //UPDIAG
++	, m_nDiagBusySpells() //UPDIAG
+ {
+ 	lastCalledSend = timeGetTime();
+ 	lastSent = lastCalledSend > SEC2MS(1) ? lastCalledSend - SEC2MS(1) : 0;
+@@ -509,9 +518,15 @@ SocketSentBytes CEMSocket::SendEM(uint32 maxNumberOfBytesToSend, uint32 minFragS
+ {
+ 	if (byConnected == EMS_DISCONNECTED)
+ 		return SocketSentBytes{};
+-	if (m_bUseOverlappedSend)
+-		return SendOv(maxNumberOfBytesToSend, minFragSize, onlyAllowedToSendControlPacket);
+-	return SendStd(maxNumberOfBytesToSend, minFragSize, onlyAllowedToSendControlPacket);
++	//UPDIAG: every request the throttler makes of this socket passes here, so this is where
++	//"was it even asked" is separated from "it was asked and had nothing to give".
++	::InterlockedIncrement(&m_nDiagSendCalls);
++	const SocketSentBytes ret = m_bUseOverlappedSend
++		? SendOv(maxNumberOfBytesToSend, minFragSize, onlyAllowedToSendControlPacket)
++		: SendStd(maxNumberOfBytesToSend, minFragSize, onlyAllowedToSendControlPacket);
++	if (ret.sentBytesStandardPackets + ret.sentBytesControlPackets == 0)
++		::InterlockedIncrement(&m_nDiagSendZero);
++	return ret;
+ }
+ 
+ /**
+@@ -698,6 +713,57 @@ SocketSentBytes CEMSocket::SendStd(uint32 maxNumberOfBytesToSend, uint32 minFrag
+ 	return ret;
+ }
+ 
++//UPDIAG: compare what the completed overlapped send actually wrote with what was submitted.
++void CEMSocket::DiagCheckOverlappedSend(LPCTSTR pszWhere)
++{
++	//UPDIAG: counted here, defined and reported by the upload queue half of the instrumentation.
++	extern volatile LONG g_nDiagShortSends, g_nDiagShortSendBytes, g_nDiagSendsChecked;
++	DWORD dwTransferred = 0, dwFlags = 0;
++	if (!::WSAGetOverlappedResult(GetSocketHandle(), &m_PendingSendOperation, &dwTransferred, FALSE, &dwFlags))
++		return;
++	ULONGLONG uSubmitted = 0;
++	for (INT_PTR i = m_aBufferSend.GetCount(); --i >= 0;)
++		uSubmitted += m_aBufferSend[i].len;
++	::InterlockedIncrement(&g_nDiagSendsChecked);
++	if (dwTransferred == uSubmitted)
++		return;
++	::InterlockedIncrement(&g_nDiagShortSends);
++	if (uSubmitted > dwTransferred)
++		::InterlockedExchangeAdd(&g_nDiagShortSendBytes, (LONG)(uSubmitted - dwTransferred));
++	theApp.QueueDebugLogLineEx(LOG_WARNING, _T("UPDIAG|overlapped send mismatch at %s, submitted=%I64u transferred=%u buffers=%d")
++		, pszWhere, uSubmitted, dwTransferred, (int)m_aBufferSend.GetCount());
++}
++
++//UPDIAG: the state of the send path, asked from the throttler's thread. The decisive field is
++//ovres: a pending send that the network has not finished reads WSA_IO_INCOMPLETE, while one that
++//finished and is still marked pending was never collected, and the socket will refuse every
++//further send for as long as that lasts.
++void CEMSocket::DbgGetDiagInfo(CString &rstrOut)
++{
++	CSingleLock lockSend(&sendLocker, TRUE);
++	int nOvRes;
++	DWORD dwTransferred = 0;
++	if (!m_bPendingSendOv)
++		nOvRes = 0;
++	else {
++		DWORD dwFlags = 0;
++		nOvRes = ::WSAGetOverlappedResult(GetSocketHandle(), &m_PendingSendOperation, &dwTransferred, FALSE, &dwFlags)
++			? 1 : -::WSAGetLastError();
++	}
++	rstrOut.Format(_T("pendov=%d ovage=%ums ovbytes=%u ovres=%d ovdone=%u std=%d ctrl=%d sendbuf=%u")
++		_T(" busyage=%ums busymax=%ums busytotal=%ums spells=%ld")
++		_T(" calls=%ld zero=%ld conn=%u recvbytes=%I64u quiet=%dms")
++		, (int)m_bPendingSendOv
++		, GetSendBlockedAge()
++		, m_nDiagSendOvBytes, nOvRes, dwTransferred
++		, (int)standardpacket_queue.GetCount(), (int)controlpacket_queue.GetCount()
++		, sendbuffer != NULL ? m_sendblen - m_sent : 0
++		, m_dwDiagBusyLast != 0 ? ::GetTickCount() - m_dwDiagBusyLast : 0
++		, m_dwDiagBusyMax, m_dwDiagBusyTotal, m_nDiagBusySpells
++		, (LONG)m_nDiagSendCalls, (LONG)m_nDiagSendZero, (unsigned)byConnected, m_nDiagRecvBytes
++		, m_dwDiagLastRecv != 0 ? (int)(::GetTickCount() - m_dwDiagLastRecv) : -1);
++}
++
+ /**
+  * Try to put queued up data on the socket with Overlapped methods.
+  *
+@@ -817,9 +883,14 @@ SocketSentBytes CEMSocket::SendOv(uint32 maxNumberOfBytesToSend, uint32 minFragS
+ 				m_PendingSendOperation.hEvent = theApp.uploadBandwidthThrottler->GetSocketAvailableEvent();
+ 				m_bPendingSendOv = true;
+ 				m_dwSendBlockedSince = ::GetTickCount();
+-				if (CEncryptedStreamSocket::SendOv(m_aBufferSend, &m_PendingSendOperation) == 0)
++				//UPDIAG: how much this send was given, so a short completion can be spotted.
++				m_nDiagSendOvBytes = 0;
++				for (INT_PTR iDiag = m_aBufferSend.GetCount(); --iDiag >= 0;)
++					m_nDiagSendOvBytes += m_aBufferSend[iDiag].len;
++				if (CEncryptedStreamSocket::SendOv(m_aBufferSend, &m_PendingSendOperation) == 0) {
++					DiagCheckOverlappedSend(_T("immediate")); //UPDIAG
+ 					CleanUpOverlappedSendOperation(false);
+-				else {
++				} else {
+ 					int nError = WSAGetLastError();
+ 					if (nError != WSA_IO_PENDING) {
+ 						ret.success = false;
+@@ -906,6 +977,13 @@ int CEMSocket::Receive(void *lpBuf, int nBufLen, int nFlags)
+ {
+ 	//EMTrace("CEMSocket::Receive on %u, maxSize=%d", (SOCKET)this, nBufLen);
+ 	int recvRetCode = CEncryptedStreamSocket::Receive(lpBuf, nBufLen, nFlags); // deadlake PROXYSUPPORT - changed to AsyncSocketEx
++	//UPDIAG: remember that the peer said something, and how much. Counted on the raw bytes
++	//so that traffic consumed entirely by the encryption layer still counts as the peer talking.
++	const int nDiagRawBytes = GetRealReceivedBytes();
++	if (nDiagRawBytes > 0) {
++		m_nDiagRecvBytes += (uint64)nDiagRawBytes;
++		m_dwDiagLastRecv = ::GetTickCount();
++	}
+ 	switch (recvRetCode) {
+ 	case 0:
+ 		if (GetRealReceivedBytes() <= 0) { // we received data but it was for the underlying encryption layer - all fine
+@@ -1114,23 +1192,24 @@ bool CEMSocket::UseBigSendBuffer()
+ bool CEMSocket::IsBusyExtensiveCheck()
+ {
+ 	if (!m_bUseOverlappedSend)
+-		return m_bBusy;
++		return DiagNoteBusy(m_bBusy); //UPDIAG
+ 
+ 	CSingleLock lockSend(&sendLocker, TRUE);
+ 	if (!m_bPendingSendOv)
+-		return false;
++		return DiagNoteBusy(false); //UPDIAG
+ 	DWORD dwTransferred, dwFlags;
+ 	if (WSAGetOverlappedResult(GetSocketHandle(), &m_PendingSendOperation, &dwTransferred, FALSE, &dwFlags)) {
++		DiagCheckOverlappedSend(_T("completion")); //UPDIAG
+ 		CleanUpOverlappedSendOperation(false);
+ 		OnSend(0);
+-		return false;
++		return DiagNoteBusy(false); //UPDIAG
+ 	}
+ 	int nError = WSAGetLastError();
+ 	if (nError == WSA_IO_INCOMPLETE)
+-		return true;
++		return DiagNoteBusy(true); //UPDIAG
+ 	CleanUpOverlappedSendOperation(true);
+ 	theApp.QueueDebugLogLineEx(LOG_ERROR, _T("WSAGetOverlappedResult return error: %s"), (LPCTSTR)GetErrorMessage(nError));
+-	return false;
++	return DiagNoteBusy(false); //UPDIAG
+ }
+ 
+ // won't always deliver the proper result (sometimes reports busy even if it isn't any more
+@@ -1140,6 +1219,30 @@ bool CEMSocket::IsBusyQuickCheck() const
+ 	return m_bUseOverlappedSend ? m_bPendingSendOv : m_bBusy;
+ }
+ 
++//UPDIAG: the blocked state is reported by the accessor below; this only accumulates the spells
++//that have ended, which is what separates a socket blocked in short bursts by ordinary flow
++//control from one held in a single spell by a peer that has stopped reading.
++bool CEMSocket::DiagNoteBusy(bool bBusy)
++{
++	if (!bBusy && m_dwDiagBusyLast != 0) {
++		const DWORD dwSpell = ::GetTickCount() - m_dwDiagBusyLast;
++		m_dwDiagBusyTotal += dwSpell;
++		if (dwSpell > m_dwDiagBusyMax)
++			m_dwDiagBusyMax = dwSpell;
++		m_dwDiagBusyLast = 0;
++	} else if (bBusy && m_dwDiagBusyLast == 0) {
++		m_dwDiagBusyLast = m_dwSendBlockedSince ? m_dwSendBlockedSince : ::GetTickCount();
++		++m_nDiagBusySpells;
++	}
++	return bBusy;
++}
++
++//UPDIAG: age of the outstanding send, for the throttler's read-only observation
++DWORD CEMSocket::DbgGetPendingSendAge() const
++{
++	return GetSendBlockedAge();
++}
++
+ // the same condition as above, plus how long it has lasted
+ DWORD CEMSocket::GetSendBlockedAge() const
+ {
+diff --git a/srchybrid/EMSocket.h b/srchybrid/EMSocket.h
+index 8fa966f..a6b8bc8 100644
+--- a/srchybrid/EMSocket.h
++++ b/srchybrid/EMSocket.h
+@@ -86,6 +86,15 @@ public:
+ 	// is the same unsynchronized read the quick busy check already makes of the flag itself.
+ 	DWORD GetSendBlockedAge() const;
+ 
++	//UPDIAG: was the peer still talking to us, and when did it last do so?
++	uint64 GetDiagRecvBytes() const							{ return m_nDiagRecvBytes; }
++	DWORD GetDiagLastRecvTick() const						{ return m_dwDiagLastRecv; }
++	void DiagCheckOverlappedSend(LPCTSTR pszWhere);
++	//UPDIAG: the blocked state above, summed over the spells that have ended
++	bool DiagNoteBusy(bool bBusy);
++	virtual void DbgGetDiagInfo(CString &rstrOut);
++	virtual DWORD DbgGetPendingSendAge() const;
++
+ 	virtual SocketSentBytes SendControlData(uint32 maxNumberOfBytesToSend, uint32 minFragSize)			{ return SendEM(maxNumberOfBytesToSend, minFragSize, true); }
+ 	virtual SocketSentBytes SendFileAndControlData(uint32 maxNumberOfBytesToSend, uint32 minFragSize)	{ return SendEM(maxNumberOfBytesToSend, minFragSize, false); }
+ 
+@@ -157,4 +166,13 @@ private:
+ 	bool	m_bUseOverlappedSend;
+ 	bool	m_bPendingSendOv;
+ 	DWORD	m_dwSendBlockedSince;
++	uint64	m_nDiagRecvBytes; //UPDIAG
++	DWORD	m_dwDiagLastRecv; //UPDIAG - 0 means the peer never sent us anything
++	uint32	m_nDiagSendOvBytes; //UPDIAG - how many bytes the pending send was given
++	volatile LONG m_nDiagSendCalls; //UPDIAG - times the throttler asked this socket to send
++	volatile LONG m_nDiagSendZero; //UPDIAG - times it answered with nothing
++	DWORD	m_dwDiagBusyLast;  //UPDIAG - start of the spell in progress, 0 when free
++	DWORD	m_dwDiagBusyTotal; //UPDIAG - summed over the finished spells
++	DWORD	m_dwDiagBusyMax;   //UPDIAG - the longest single spell
++	LONG	m_nDiagBusySpells; //UPDIAG
+ };
+\ No newline at end of file
+diff --git a/srchybrid/ListenSocket.cpp b/srchybrid/ListenSocket.cpp
+index e49fbc1..ae90054 100644
+--- a/srchybrid/ListenSocket.cpp
++++ b/srchybrid/ListenSocket.cpp
+@@ -53,15 +53,19 @@ static char THIS_FILE[] = __FILE__;
+ IMPLEMENT_DYNCREATE(CClientReqSocket, CEMSocket)
+ 
+ CClientReqSocket::CClientReqSocket(CUpDownClient *in_client)
+-	: m_uLastTimeOut()
++	: m_nDiagResetSrc() //UPDIAG - declared right after timeout_timer, so it is initialised here
++	, m_dwDiagStarvedSince() //UPDIAG
++	, m_bDiagDoomedLogged() //UPDIAG
++	, m_uLastTimeOut()
+ 	, deltimer()
+ 	, m_nOnConnect(SS_Other)
+ 	, deletethis()
+ 	, m_bPortTestCon()
+ {
++	memset(m_aDiagReset, 0, sizeof m_aDiagReset); //UPDIAG
+ 	SetClient(in_client);
+ 	theApp.listensocket->AddSocket(this);
+-	ResetTimeOutTimer();
++	ResetTimeOutTimer(DIAGRESET_OPEN);
+ }
+ 
+ void CClientReqSocket::SetConState(SocketState val)
+@@ -113,11 +117,25 @@ void CClientReqSocket::SetClient(CUpDownClient *pClient)
+ 		client->socket = this;
+ }
+ 
+-void CClientReqSocket::ResetTimeOutTimer()
++void CClientReqSocket::ResetTimeOutTimer(int nDiagSrc)
+ {
+ 	timeout_timer = ::GetTickCount();
++	//UPDIAG: the timer is what stands between an upload slot and its removal, and five different
++	//callers can push it forward. Remember which one did, so a slot that dies says why.
++	m_nDiagResetSrc = nDiagSrc;
++	if (nDiagSrc >= 0 && nDiagSrc < DIAGRESET_COUNT)
++		++m_aDiagReset[nDiagSrc];
++	m_bDiagDoomedLogged = false; //UPDIAG: the allowance starts again, so the verdict does too
+ }
+ 
++//UPDIAG: names for the counters above, in the order of the enum.
++static LPCTSTR const s_apszDiagResetSrc[] = { _T("open"), _T("onsend"), _T("onrecv")
++	, _T("ctrldata"), _T("filedata"), _T("packet") };
++
++//UPDIAG: at most one near-miss line a second across every socket, so a bad minute cannot
++//drown the log in lines about sockets that then went on living.
++static DWORD s_dwDiagLastNearMiss = 0;
++
+ bool CClientReqSocket::CheckTimeOut()
+ {
+ 	const DWORD curTick = ::GetTickCount();
+@@ -136,10 +154,12 @@ bool CClientReqSocket::CheckTimeOut()
+ 	}
+ 	DWORD uTimeout = GetTimeOut();
+ 	const DWORD uSendAge = GetSendBlockedAge();	//0 when the socket can still take data
++	LPCTSTR pszDiagExt = _T("none"); //UPDIAG - which branch below granted extra time
+ 	if (client)
+-		if (client->GetKadState() == KS_CONNECTED_BUDDY)
++		if (client->GetKadState() == KS_CONNECTED_BUDDY) {
+ 			uTimeout += MIN2MS(15);
+-		else if (client->IsDownloading() && uSendAge > 0 && uSendAge < 4 * CONNECTION_TIMEOUT)
++			pszDiagExt = _T("buddy"); //UPDIAG
++		} else if (client->IsDownloading() && uSendAge > 0 && uSendAge < 4 * CONNECTION_TIMEOUT) {
+ 			//TCP flow control might need more time to begin throttling for slow peers. That is
+ 			//this socket, and it can say so itself: while a send is still with the operating
+ 			//system the connection is not idle, however long nothing has moved on it. Asking
+@@ -147,21 +167,53 @@ bool CClientReqSocket::CheckTimeOut()
+ 			//held up at all and withholds it from the ones that are. The bound keeps the whole
+ 			//allowance at what the age of the slot already allowed.
+ 			uTimeout += 4 * CONNECTION_TIMEOUT; //2'30" or slightly more
+-		else if (client->GetChatState() != MS_NONE)
++			pszDiagExt = _T("blocked"); //UPDIAG
++		} else if (client->GetChatState() != MS_NONE) {
+ 			//We extend the timeout time here to avoid chatting people from disconnecting too fast.
+ 			uTimeout += CONNECTION_TIMEOUT;
++			pszDiagExt = _T("chat"); //UPDIAG
++		}
+ 
+ 	//The allowance is not a constant: an extension stops applying as soon as the condition that
+ 	//granted it stops being true, and the allowance then drops by that whole extension between
+ 	//one call and the next. The time already spent was spent against the larger allowance, so
+ 	//comparing it with the smaller one ends the connection in the same instant, without it ever
+ 	//having had the smaller allowance to spend. Start counting again from the moment it shrinks.
+-	if (uTimeout < m_uLastTimeOut && curTick - timeout_timer >= uTimeout)
++	if (uTimeout < m_uLastTimeOut && curTick - timeout_timer >= uTimeout) {
++		//UPDIAG: the correction above is invisible from outside, so say when it applies and how
++		//much silence it carried over. Without it this socket would have ended here.
++		if (client != NULL && client->IsDownloading())
++			DbgLogTimeoutState(_T("reprieve"), curTick - timeout_timer, uTimeout, pszDiagExt, LOG_WARNING);
+ 		timeout_timer = curTick;
++	}
+ 	m_uLastTimeOut = uTimeout;
+ 
+-	if (curTick < timeout_timer + uTimeout)
++	const DWORD dwDiagElapsed = curTick - timeout_timer; //UPDIAG - read before the reset below
++	//UPDIAG: a slot past its base allowance is alive only because the extension is carrying it.
++	//Report it once, while it is still alive, so what happens next can be read against it.
++	if (client != NULL && client->IsDownloading() && !m_bDiagDoomedLogged
++		&& uTimeout > GetTimeOut() && dwDiagElapsed >= GetTimeOut()
++		&& curTick < timeout_timer + uTimeout)
++	{
++		m_bDiagDoomedLogged = true;
++		DbgLogTimeoutState(_T("carried"), dwDiagElapsed, uTimeout, pszDiagExt, LOG_WARNING);
++	}
++	if (curTick < timeout_timer + uTimeout) {
++		//UPDIAG: a socket that gets close to the limit and then survives is the counter-example
++		//that separates a peer which came back from one which did not. Report it once it is past
++		//three quarters of its allowance, and only while a slot is actually on it.
++		if (client != NULL && client->IsDownloading() && dwDiagElapsed >= uTimeout - uTimeout / 4
++			&& curTick - s_dwDiagLastNearMiss >= 1000)
++		{
++			s_dwDiagLastNearMiss = curTick;
++			DbgLogTimeoutState(_T("near miss"), dwDiagElapsed, uTimeout, pszDiagExt, LOG_INFO);
++		}
+ 		return false;
++	}
++	//UPDIAG: the one place an upload slot dies of its own accord. Everything that decided it is
++	//here: the allowance that applied, how it was spent, and what had been feeding the timer.
++	if (client != NULL && client->IsDownloading())
++		DbgLogTimeoutState(_T("FIRED"), dwDiagElapsed, uTimeout, pszDiagExt, LOG_WARNING);
+ 	timeout_timer = curTick;
+ 	CString str;
+ 	str.Format(_T("Timeout: State:%u (0 = SS_Other, 1 = SS_Half, 2 = SS_Complete)"), m_nOnConnect);
+@@ -169,6 +221,63 @@ bool CClientReqSocket::CheckTimeOut()
+ 	return true;
+ }
+ 
++//UPDIAG: everything the base socket reports, plus the slot state around it. The throttler's
++//per-slot line goes through here, so a socket sitting still with block requests waiting - the
++//one state the bounded wait exists to prevent - is visible while it happens, not only at the end.
++void CClientReqSocket::DbgGetDiagInfo(CString &rstrOut)
++{
++	CEMSocket::DbgGetDiagInfo(rstrOut);
++	DbgAppendSlotInfo(rstrOut);
++}
++
++void CClientReqSocket::DbgAppendSlotInfo(CString &rstrOut)
++{
++	CString strAdd;
++	strAdd.Format(_T(" pending=%ld lastreset=%s resets=[open %u onsend %u onrecv %u ctrldata %u filedata %u packet %u]")
++		, client != NULL ? client->DbgGetPendingBlocks() : -1
++		, m_nDiagResetSrc >= 0 && m_nDiagResetSrc < DIAGRESET_COUNT
++			? s_apszDiagResetSrc[m_nDiagResetSrc] : _T("?")
++		, m_aDiagReset[DIAGRESET_OPEN], m_aDiagReset[DIAGRESET_ONSEND], m_aDiagReset[DIAGRESET_ONRECV]
++		, m_aDiagReset[DIAGRESET_CTRLDATA], m_aDiagReset[DIAGRESET_FILEDATA], m_aDiagReset[DIAGRESET_PACKET]);
++	rstrOut += strAdd;
++}
++
++//UPDIAG: the throttler reads this once a loop, so it must not touch the block list lock. The
++//disk I/O thread holds that lock while queueing on this very socket; taking it here in the other
++//order would cross the two. The client keeps a plain counter beside the list for exactly this.
++LONG CClientReqSocket::DbgGetPendingBlocks() const
++{
++	return client != NULL ? client->DbgGetPendingBlocks() : -1;
++}
++
++//UPDIAG: only the throttler thread calls this, so the timestamp needs no interlocking.
++DWORD CClientReqSocket::DbgTrackStarved(bool bStarved)
++{
++	if (!bStarved) {
++		m_dwDiagStarvedSince = 0;
++		return 0;
++	}
++	const DWORD dwNow = ::GetTickCount();
++	if (m_dwDiagStarvedSince == 0) {
++		m_dwDiagStarvedSince = dwNow;
++		return 1;
++	}
++	return max(dwNow - m_dwDiagStarvedSince, 1u);
++}
++
++//UPDIAG: one shape for both the near miss and the kill, so the two are directly comparable.
++void CClientReqSocket::DbgLogTimeoutState(LPCTSTR pszWhat, DWORD dwElapsed, DWORD uTimeout
++	, LPCTSTR pszExt, UINT uLevel)
++{
++	CString strSock;
++	DbgGetDiagInfo(strSock);
++	theApp.QueueDebugLogLineEx(uLevel
++		, _T("UPDIAG|timeout %s elapsed=%ums limit=%ums base=%ums ext=%s upage=%ums %s client: %s")
++		, pszWhat, dwElapsed, uTimeout, GetTimeOut(), pszExt
++		, client != NULL ? client->GetUpStartTimeDelay() : 0
++		, (LPCTSTR)strSock, (LPCTSTR)DbgGetClientInfo());
++}
++
+ void CClientReqSocket::OnClose(int nErrorCode)
+ {
+ 	ASSERT(theApp.listensocket->IsValidSocket(this));
+@@ -1708,12 +1817,12 @@ void CClientReqSocket::OnConnect(int nErrorCode)
+ 			Disconnect(_T(""));
+ 	} else
+ 		//This socket may have been delayed by SP2 protection, lets make sure it doesn't time out instantly.
+-		ResetTimeOutTimer();
++		ResetTimeOutTimer(DIAGRESET_OPEN);
+ }
+ 
+ void CClientReqSocket::OnSend(int nErrorCode)
+ {
+-	ResetTimeOutTimer();
++	ResetTimeOutTimer(DIAGRESET_ONSEND);
+ 	CEMSocket::OnSend(nErrorCode);
+ }
+ 
+@@ -1825,7 +1934,7 @@ bool CClientReqSocket::PacketReceived(Packet *packet)
+ 
+ void CClientReqSocket::OnReceive(int nErrorCode)
+ {
+-	ResetTimeOutTimer();
++	ResetTimeOutTimer(DIAGRESET_ONRECV);
+ 	CEMSocket::OnReceive(nErrorCode);
+ }
+ 
+@@ -1839,7 +1948,7 @@ SocketSentBytes CClientReqSocket::SendControlData(uint32 maxNumberOfBytesToSend,
+ {
+ 	SocketSentBytes returnStatus = CEMSocket::SendControlData(maxNumberOfBytesToSend, overchargeMaxBytesToSend);
+ 	if (returnStatus.success && (returnStatus.sentBytesControlPackets > 0 || returnStatus.sentBytesStandardPackets > 0))
+-		ResetTimeOutTimer();
++		ResetTimeOutTimer(DIAGRESET_CTRLDATA);
+ 	return returnStatus;
+ }
+ 
+@@ -1847,13 +1956,13 @@ SocketSentBytes CClientReqSocket::SendFileAndControlData(uint32 maxNumberOfBytes
+ {
+ 	SocketSentBytes returnStatus = CEMSocket::SendFileAndControlData(maxNumberOfBytesToSend, overchargeMaxBytesToSend);
+ 	if (returnStatus.success && (returnStatus.sentBytesControlPackets > 0 || returnStatus.sentBytesStandardPackets > 0))
+-		ResetTimeOutTimer();
++		ResetTimeOutTimer(DIAGRESET_FILEDATA);
+ 	return returnStatus;
+ }
+ 
+ void CClientReqSocket::SendPacket(Packet *packet, bool controlpacket, uint32 actualPayloadSize, bool bForceImmediateSend)
+ {
+-	ResetTimeOutTimer();
++	ResetTimeOutTimer(DIAGRESET_PACKET);
+ 	CEMSocket::SendPacket(packet, controlpacket, actualPayloadSize, bForceImmediateSend);
+ }
+ 
+@@ -1969,6 +2078,9 @@ bool CListenSocket::StartListening()
+ 
+ void CListenSocket::ReStartListening()
+ {
++	if (!bListening) //UPDIAG
++		theApp.QueueDebugLogLineEx(LOG_INFO, _T("UPDIAG|listen resumed, sockets=%u max=%u")
++			, GetOpenSockets(), thePrefs.GetMaxConnections());
+ 	bListening = true;
+ 
+ 	ASSERT(m_nPendingConnections >= 0);
+@@ -1980,6 +2092,13 @@ void CListenSocket::ReStartListening()
+ 
+ void CListenSocket::StopListening()
+ {
++	// UPDIAG: from here until ReStartListening() no incoming connection is taken,
++	// so no peer can reach us to ask for an upload and the queue cannot grow.
++	if (bListening)
++		theApp.QueueDebugLogLineEx(LOG_WARNING
++			, _T("UPDIAG|listen STOPPED, sockets=%u max=%u half=%u maxhalf=%u")
++			, GetOpenSockets(), thePrefs.GetMaxConnections()
++			, GetTotalHalfCon(), thePrefs.GetMaxHalfConnections());
+ 	bListening = false;
+ 	++maxconnectionreached;
+ }
+diff --git a/srchybrid/ListenSocket.h b/srchybrid/ListenSocket.h
+index ab5a702..4125fcc 100644
+--- a/srchybrid/ListenSocket.h
++++ b/srchybrid/ListenSocket.h
+@@ -40,8 +40,20 @@ public:
+ 	void	SetClient(CUpDownClient *pClient);
+ 	void	Disconnect(LPCTSTR pszReason);
+ 	void	WaitForOnConnect();
+-	void	ResetTimeOutTimer();
++	//UPDIAG: nDiagSrc records which of the callers kept the socket alive, so a socket that dies
++	//can be told apart by what stopped feeding it rather than by the timeout alone.
++	void	ResetTimeOutTimer(int nDiagSrc = 0);
++	enum EDiagResetSrc { DIAGRESET_OPEN, DIAGRESET_ONSEND, DIAGRESET_ONRECV
++		, DIAGRESET_CTRLDATA, DIAGRESET_FILEDATA, DIAGRESET_PACKET, DIAGRESET_COUNT };
+ 	bool	CheckTimeOut();
++	void	DbgLogTimeoutState(LPCTSTR pszWhat, DWORD dwElapsed, DWORD uTimeout
++				, LPCTSTR pszExt, UINT uLevel); //UPDIAG
++	//UPDIAG: the socket alone cannot say why it was left alone. Append what the slot around it
++	//looks like: how many block requests are waiting, and which caller last fed the timer.
++	virtual void DbgGetDiagInfo(CString &rstrOut);
++	void	DbgAppendSlotInfo(CString &rstrOut); //UPDIAG
++	virtual LONG DbgGetPendingBlocks() const; //UPDIAG
++	virtual DWORD DbgTrackStarved(bool bStarved); //UPDIAG
+ 	virtual void Safe_Delete();
+ 	//virtual void Close()						{ CAsyncSocketEx::Close(); }
+ 
+@@ -73,6 +85,10 @@ protected:
+ 	void	SetConState(SocketState val);
+ 
+ 	DWORD	timeout_timer;
++	int		m_nDiagResetSrc;					//UPDIAG - who reset it last
++	DWORD	m_aDiagReset[DIAGRESET_COUNT];		//UPDIAG - how often each one did
++	DWORD	m_dwDiagStarvedSince;				//UPDIAG - 0 when the slot is not starving
++	bool	m_bDiagDoomedLogged;				//UPDIAG - the extension is all that holds it up
+ 	DWORD	m_uLastTimeOut;
+ 	DWORD	deltimer;
+ 	uint32	m_nOnConnect;
+@@ -115,6 +131,7 @@ public:
+ 	uint32	GetActiveConnections() const		{ return activeconnections; }
+ 	uint16	GetConnectedPort() const			{ return m_port; }
+ 	uint32	GetTotalHalfCon() const				{ return m_nHalfOpen; }
++	bool	IsListening() const					{ return bListening; } //UPDIAG
+ 	uint32	GetTotalComp() const				{ return m_nComp; }
+ 
+ private:

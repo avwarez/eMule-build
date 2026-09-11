@@ -98,66 +98,62 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #   98     corrections to the shipped language resources, from the fork's
 #          v0.72a-lang branch - source data for the `languages` target
 #          rather than code, so they change no binary.
-#   99     reserved for temporary diagnostics - a patch that makes a build
-#          report something rather than fix it, and that is deleted once it
-#          has been read. In use: 99-diag-upload-queue-and-io. It corrects
-#          nothing on purpose, so a build carrying it still reproduces the
-#          fault it is there to describe, and it takes care to stay out of
-#          the way: where the state it wants to report could only be read by
-#          calling something that also changes it, it reads what it can
-#          without calling, and says so at the call site.
+#   99     reserved for temporary diagnostics - patches that make a build
+#          report something rather than fix it, and that are deleted once
+#          they have been read. Nothing in this band changes behaviour, and
+#          nothing outside it writes a log line, so a corrective patch can
+#          be reviewed, kept or sent upstream without carrying any of this.
+#          Every line the band writes goes through QueueDebugLogLineEx,
+#          which returns at once unless the verbose preference is set, so
+#          the whole band can also be silenced at run time without a build.
 #
-#          What it reports, from the outside in. The waiting queue and the
-#          upload list, every ten seconds, with the block requests peers
-#          have sent, how many were queued, how many were dropped as already
-#          served or already pending, and how many sockets are open. The
-#          bandwidth throttler, on the same period: what it was allowed to
-#          spend and what it did spend, how many of its loops found every
-#          socket holding data blocked, how far down its slot list the busy
-#          scan actually looks - which is not the whole list - and one line
-#          per upload slot describing the socket the throttler decided not
-#          to send to.
+#          99a-diag-upload-path stands on its own: it touches no file any
+#          corrective patch touches, so it applies to an unmodified tree and
+#          is how the behaviour of a build without those patches is measured.
+#          It reports the waiting queue and the upload list every ten
+#          seconds, the block requests peers send and how many were queued
+#          or dropped as already served, the disk I/O thread - including,
+#          per caller that wakes it, how often it asked, how often the ask
+#          reached the completion port rather than being folded into a flag,
+#          how many passes it caused and in how many of those a read was
+#          actually started, which is the only number that says a wakeup was
+#          worth posting - and the bandwidth throttler: what it was allowed
+#          to spend against what it did spend, how many of its loops found
+#          every socket holding data blocked, and how far down its slot list
+#          the busy scan actually looks, which is not the whole list. It
+#          also watches for the one state that would say a slot is starved
+#          rather than slow - block requests waiting while nothing is queued
+#          on its socket and nothing is in flight - and reports it the
+#          moment it appears rather than at the next tick.
 #
-#          Each of those socket lines carries whether a send is outstanding
-#          and for how long, what the completion port says about it, how
-#          much is queued behind it, how long the socket has been refusing
-#          sends without interruption and how long the longest such spell
-#          has been - which is how a peer that has stopped reading its own
-#          socket becomes visible from inside the application, since nothing
-#          else in it can see that - how often the socket was asked to send
-#          and how often it answered with nothing, how many block requests
-#          are still waiting on the slot, and which of the six callers last
-#          pushed the socket timeout forward, with a count for each.
-#
-#          Two states get a line of their own the moment they appear rather
-#          than at the next ten-second tick. The first is a slot with block
-#          requests waiting while nothing is queued on its socket and
-#          nothing is in flight: work to do, a free socket, and nobody
-#          preparing it. The second is the socket timeout, which is where an
-#          upload slot is actually removed: a line when it fires, one when a
-#          socket passes three quarters of its allowance and then survives,
-#          one when a slot is past its base allowance and is alive only
-#          because an extension is carrying it, and one whenever the
-#          correction in 97f applies - that last is the only way to see from
-#          outside that a socket which would have ended was given the
-#          smaller allowance to spend instead.
-#
-#          It also attributes the wakeups of the upload disk I/O thread. The
-#          thread sleeps on a completion port, and three different callers
-#          post to it; the key each one posts says who it was, so the log
-#          separates, per caller, how often it asked, how often the ask
-#          reached the port rather than being folded into a flag, how many
-#          passes it caused, and in how many of those a read was actually
-#          started. A caller whose last number stays at zero is waking the
-#          thread for nothing, however large the first three are - which is
-#          the question any change to this path has to answer before it can
-#          be kept.
+#          99b-diag-socket-and-timeout describes the socket underneath those
+#          slots and the decision that removes them, and it is the one file
+#          in the whole directory that does not apply on its own: it needs
+#          97f. That is not an accident of patching. Both express the same
+#          decision in the same thirty lines of the timeout check, and the
+#          quantity the log reports - how long this socket has been unable
+#          to take more data - is the quantity 97f introduced to decide on.
+#          Splitting them further would mean keeping two clocks for one
+#          event, which is worth less than the independence it would buy.
+#          It adds, to every line describing a socket, whether a send is
+#          outstanding and for how long, what the completion port says about
+#          it, how much is queued behind it, how long the socket has been
+#          refusing sends without interruption and how long the longest such
+#          spell has been - which is how a peer that has stopped reading its
+#          own socket becomes visible from inside the application, since
+#          nothing else in it can see that - and which of the six callers
+#          last pushed the timeout forward, with a count for each. On the
+#          timeout itself it reports when it fires, when a socket passes
+#          three quarters of its allowance and then survives, when a slot is
+#          past its base allowance and alive only because an extension is
+#          carrying it, and whenever the correction in 97f applies - that
+#          last is the only way to see from outside that a socket which
+#          would have ended was given the smaller allowance to spend.
 #
 #          Vanilla reports none of this, so a slot that dies holding data
 #          looks the same whether the peer stopped asking, the request was
-#          dropped, the send never completed, the send completed and nobody
-#          collected it, or the timer simply ran out because nothing was
-#          left to reset it.
+#          dropped, the send never completed, or the timer simply ran out
+#          because nothing was left to reset it.
 # ---------------------------------------------------------------------------
 find_package(Git REQUIRED)
 
