@@ -1,0 +1,154 @@
+diff --git a/srchybrid/EMSocket.cpp b/srchybrid/EMSocket.cpp
+index cd8e44c..2898233 100644
+--- a/srchybrid/EMSocket.cpp
++++ b/srchybrid/EMSocket.cpp
+@@ -111,6 +111,7 @@ CEMSocket::CEMSocket()
+ 	, m_bUseBigSendBuffers()
+ 	, m_bUseOverlappedSend(true)
+ 	, m_bPendingSendOv()
++	, m_dwSendBlockedSince()
+ {
+ 	lastCalledSend = timeGetTime();
+ 	lastSent = lastCalledSend > SEC2MS(1) ? lastCalledSend - SEC2MS(1) : 0;
+@@ -485,6 +486,8 @@ void CEMSocket::OnSend(int nErrorCode)
+ 	CEncryptedStreamSocket::OnSend(0);
+ 
+ 	m_bBusy = false;
++	if (!m_bUseOverlappedSend)	// in the other mode the flag beside it still stands
++		m_dwSendBlockedSince = 0;
+ 
+ 	// stopped sending here.
+ 	//StoppedSendSoUpdateStats();
+@@ -627,6 +630,8 @@ SocketSentBytes CEMSocket::SendStd(uint32 maxNumberOfBytesToSend, uint32 minFrag
+ 				if (result == (uint32)SOCKET_ERROR) {
+ 					uint32 error = (uint32)CAsyncSocket::GetLastError();
+ 					if (error == WSAEWOULDBLOCK) {
++						if (!m_bBusy)	// keep the age of the state, not of the last attempt
++							m_dwSendBlockedSince = ::GetTickCount();
+ 						m_bBusy = true;
+ 
+ 						//m_wasBlocked = true;
+@@ -641,6 +646,7 @@ SocketSentBytes CEMSocket::SendStd(uint32 maxNumberOfBytesToSend, uint32 minFrag
+ 				} else {
+ 					// we managed to send some bytes. Perform bookkeeping.
+ 					m_bBusy = false;
++					m_dwSendBlockedSince = 0;
+ 					m_hasSent = true;
+ 
+ 					m_sent += result;
+@@ -810,6 +816,7 @@ SocketSentBytes CEMSocket::SendOv(uint32 maxNumberOfBytesToSend, uint32 minFragS
+ 				memset(&m_PendingSendOperation, 0, sizeof WSAOVERLAPPED);
+ 				m_PendingSendOperation.hEvent = theApp.uploadBandwidthThrottler->GetSocketAvailableEvent();
+ 				m_bPendingSendOv = true;
++				m_dwSendBlockedSince = ::GetTickCount();
+ 				if (CEncryptedStreamSocket::SendOv(m_aBufferSend, &m_PendingSendOperation) == 0)
+ 					CleanUpOverlappedSendOperation(false);
+ 				else {
+@@ -1133,11 +1140,21 @@ bool CEMSocket::IsBusyQuickCheck() const
+ 	return m_bUseOverlappedSend ? m_bPendingSendOv : m_bBusy;
+ }
+ 
++// the same condition as above, plus how long it has lasted
++DWORD CEMSocket::GetSendBlockedAge() const
++{
++	if (m_dwSendBlockedSince == 0 || !IsBusyQuickCheck())
++		return 0;
++	// never report 0 while the state holds, so the caller can read the value as a flag as well
++	return max(::GetTickCount() - m_dwSendBlockedSince, 1ul);
++}
++
+ //sendLock must be locked by the caller!
+ void CEMSocket::CleanUpOverlappedSendOperation(bool bCancel)
+ {
+ 	if (m_bPendingSendOv) {
+ 		m_bPendingSendOv = false;
++		m_dwSendBlockedSince = 0;
+ 		if (bCancel && CancelIo((HANDLE)GetSocketHandle()))
+ 			for (int i = 5; --i >= 0;) { //use counter and sleep(), because this may loop forever
+ 				DWORD dwTransferred, dwFlags;
+diff --git a/srchybrid/EMSocket.h b/srchybrid/EMSocket.h
+index 3875a13..8fa966f 100644
+--- a/srchybrid/EMSocket.h
++++ b/srchybrid/EMSocket.h
+@@ -78,6 +78,14 @@ public:
+ 	uint32 GetSentPayloadSinceLastCall(bool bReset);
+ 	void TruncateQueues();
+ 
++	// How long this socket has been unable to take more data, in milliseconds, and 0 when it
++	// can. It answers for the same condition the quick busy check reports, in both send modes,
++	// and adds only how long it has lasted. A socket in that state is not an idle socket: the
++	// data is queued and the send completes as soon as the peer makes room for it. The value is
++	// written on the transitions into and out of the state, so reading it without the send lock
++	// is the same unsynchronized read the quick busy check already makes of the flag itself.
++	DWORD GetSendBlockedAge() const;
++
+ 	virtual SocketSentBytes SendControlData(uint32 maxNumberOfBytesToSend, uint32 minFragSize)			{ return SendEM(maxNumberOfBytesToSend, minFragSize, true); }
+ 	virtual SocketSentBytes SendFileAndControlData(uint32 maxNumberOfBytesToSend, uint32 minFragSize)	{ return SendEM(maxNumberOfBytesToSend, minFragSize, false); }
+ 
+@@ -148,4 +156,5 @@ private:
+ 	bool	m_bUseBigSendBuffers;
+ 	bool	m_bUseOverlappedSend;
+ 	bool	m_bPendingSendOv;
++	DWORD	m_dwSendBlockedSince;
+ };
+\ No newline at end of file
+diff --git a/srchybrid/ListenSocket.cpp b/srchybrid/ListenSocket.cpp
+index 15674a1..e49fbc1 100644
+--- a/srchybrid/ListenSocket.cpp
++++ b/srchybrid/ListenSocket.cpp
+@@ -53,7 +53,8 @@ static char THIS_FILE[] = __FILE__;
+ IMPLEMENT_DYNCREATE(CClientReqSocket, CEMSocket)
+ 
+ CClientReqSocket::CClientReqSocket(CUpDownClient *in_client)
+-	: deltimer()
++	: m_uLastTimeOut()
++	, deltimer()
+ 	, m_nOnConnect(SS_Other)
+ 	, deletethis()
+ 	, m_bPortTestCon()
+@@ -134,16 +135,31 @@ bool CClientReqSocket::CheckTimeOut()
+ 		return true;
+ 	}
+ 	DWORD uTimeout = GetTimeOut();
++	const DWORD uSendAge = GetSendBlockedAge();	//0 when the socket can still take data
+ 	if (client)
+ 		if (client->GetKadState() == KS_CONNECTED_BUDDY)
+ 			uTimeout += MIN2MS(15);
+-		else if (client->IsDownloading() && curTick < client->GetUpStartTime() + 4 * CONNECTION_TIMEOUT)
+-			//TCP flow control might need more time to begin throttling for slow peers
++		else if (client->IsDownloading() && uSendAge > 0 && uSendAge < 4 * CONNECTION_TIMEOUT)
++			//TCP flow control might need more time to begin throttling for slow peers. That is
++			//this socket, and it can say so itself: while a send is still with the operating
++			//system the connection is not idle, however long nothing has moved on it. Asking
++			//instead how old the upload slot is grants the extra time to slots that are not
++			//held up at all and withholds it from the ones that are. The bound keeps the whole
++			//allowance at what the age of the slot already allowed.
+ 			uTimeout += 4 * CONNECTION_TIMEOUT; //2'30" or slightly more
+ 		else if (client->GetChatState() != MS_NONE)
+ 			//We extend the timeout time here to avoid chatting people from disconnecting too fast.
+ 			uTimeout += CONNECTION_TIMEOUT;
+ 
++	//The allowance is not a constant: an extension stops applying as soon as the condition that
++	//granted it stops being true, and the allowance then drops by that whole extension between
++	//one call and the next. The time already spent was spent against the larger allowance, so
++	//comparing it with the smaller one ends the connection in the same instant, without it ever
++	//having had the smaller allowance to spend. Start counting again from the moment it shrinks.
++	if (uTimeout < m_uLastTimeOut && curTick - timeout_timer >= uTimeout)
++		timeout_timer = curTick;
++	m_uLastTimeOut = uTimeout;
++
+ 	if (curTick < timeout_timer + uTimeout)
+ 		return false;
+ 	timeout_timer = curTick;
+diff --git a/srchybrid/ListenSocket.h b/srchybrid/ListenSocket.h
+index 7a0311d..ab5a702 100644
+--- a/srchybrid/ListenSocket.h
++++ b/srchybrid/ListenSocket.h
+@@ -73,6 +73,7 @@ protected:
+ 	void	SetConState(SocketState val);
+ 
+ 	DWORD	timeout_timer;
++	DWORD	m_uLastTimeOut;
+ 	DWORD	deltimer;
+ 	uint32	m_nOnConnect;
+ 	bool	deletethis;

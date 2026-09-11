@@ -76,9 +76,25 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          collected. Both are gone: measurement showed one of them waking
 #          the thread hundreds of times a second for passes that prepared
 #          nothing, and with it in place the other could not be measured at
-#          all. The upload path is deliberately back to what upstream ships,
-#          so that the 99- band below describes the fault rather than a
-#          build that has already been changed underneath it.
+#          all. What the measurement did find is 97f, which belongs to no
+#          branch yet and corrects the two faults that actually end upload
+#          slots. The allowance a socket gets before it is timed out is not
+#          constant: an extension stops applying the moment the condition
+#          that granted it stops being true, and the allowance then drops by
+#          that whole extension between one call of the check and the next.
+#          The time already spent was spent against the larger allowance, so
+#          comparing it with the smaller one ends the connection in the same
+#          instant, without it ever having had the smaller allowance to
+#          spend; the patch starts the count again from the moment it
+#          shrinks. And the extension an upload slot gets is granted by the
+#          age of the slot, while the comment beside it says it is there for
+#          a peer whose flow control is holding the send up. Those are not
+#          the same set: it is given to slots that are not held up at all,
+#          and withheld from the ones that are, so a socket with a full
+#          queue and a send still in the hands of the operating system is
+#          ended as though it had gone silent. The socket can answer that
+#          question itself, so the patch asks it instead, bounded so that
+#          the whole allowance stays what the age test already allowed.
 #   98     corrections to the shipped language resources, from the fork's
 #          v0.72a-lang branch - source data for the `languages` target
 #          rather than code, so they change no binary.
@@ -117,16 +133,14 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          than at the next ten-second tick. The first is a slot with block
 #          requests waiting while nothing is queued on its socket and
 #          nothing is in flight: work to do, a free socket, and nobody
-#          preparing it. That is the shape of the fault, so it is reported
-#          with how long it has lasted. The second is the socket timeout.
-#          The allowance a slot gets is extended for the first minutes of
-#          its life, and that extension is a window on the age of the slot,
-#          not a grace period counted from the last sign of life - so a slot
-#          that went quiet early is not killed when it goes quiet but in the
-#          instant the window closes, however much silence it has already
-#          accumulated. The patch says so while the slot is still alive, and
-#          reports again when the timeout fires and when a socket passes
-#          three quarters of its allowance and then survives.
+#          preparing it. The second is the socket timeout, which is where an
+#          upload slot is actually removed: a line when it fires, one when a
+#          socket passes three quarters of its allowance and then survives,
+#          one when a slot is past its base allowance and is alive only
+#          because an extension is carrying it, and one whenever the
+#          correction in 97f applies - that last is the only way to see from
+#          outside that a socket which would have ended was given the
+#          smaller allowance to spend instead.
 #
 #          It also attributes the wakeups of the upload disk I/O thread. The
 #          thread sleeps on a completion port, and three different callers

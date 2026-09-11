@@ -11,7 +11,7 @@ index 5bcda5b..0dd9fda 100644
  	if (socket) {
  		SOCKADDR_IN sockAddr = {};
 diff --git a/srchybrid/EMSocket.cpp b/srchybrid/EMSocket.cpp
-index cd8e44c..9fb1dba 100644
+index 2898233..74b2a91 100644
 --- a/srchybrid/EMSocket.cpp
 +++ b/srchybrid/EMSocket.cpp
 @@ -34,6 +34,14 @@
@@ -29,24 +29,23 @@ index cd8e44c..9fb1dba 100644
  namespace
  {
  	inline void EMTrace(const char *fmt, ...)
-@@ -111,6 +119,16 @@ CEMSocket::CEMSocket()
- 	, m_bUseBigSendBuffers()
+@@ -112,6 +120,15 @@ CEMSocket::CEMSocket()
  	, m_bUseOverlappedSend(true)
  	, m_bPendingSendOv()
+ 	, m_dwSendBlockedSince()
 +	, m_nDiagRecvBytes() //UPDIAG
 +	, m_dwDiagLastRecv() //UPDIAG
-+	, m_dwDiagSendOvStart() //UPDIAG
 +	, m_nDiagSendOvBytes() //UPDIAG
 +	, m_nDiagSendCalls() //UPDIAG
 +	, m_nDiagSendZero() //UPDIAG
-+	, m_dwDiagBusySince() //UPDIAG
++	, m_dwDiagBusyLast() //UPDIAG
 +	, m_dwDiagBusyTotal() //UPDIAG
 +	, m_dwDiagBusyMax() //UPDIAG
 +	, m_nDiagBusySpells() //UPDIAG
  {
  	lastCalledSend = timeGetTime();
  	lastSent = lastCalledSend > SEC2MS(1) ? lastCalledSend - SEC2MS(1) : 0;
-@@ -506,9 +524,15 @@ SocketSentBytes CEMSocket::SendEM(uint32 maxNumberOfBytesToSend, uint32 minFragS
+@@ -509,9 +526,15 @@ SocketSentBytes CEMSocket::SendEM(uint32 maxNumberOfBytesToSend, uint32 minFragS
  {
  	if (byConnected == EMS_DISCONNECTED)
  		return SocketSentBytes{};
@@ -65,7 +64,7 @@ index cd8e44c..9fb1dba 100644
  }
  
  /**
-@@ -692,6 +716,62 @@ SocketSentBytes CEMSocket::SendStd(uint32 maxNumberOfBytesToSend, uint32 minFrag
+@@ -698,6 +721,55 @@ SocketSentBytes CEMSocket::SendStd(uint32 maxNumberOfBytesToSend, uint32 minFrag
  	return ret;
  }
  
@@ -88,13 +87,6 @@ index cd8e44c..9fb1dba 100644
 +		, pszWhere, uSubmitted, dwTransferred, (int)m_aBufferSend.GetCount());
 +}
 +
-+//UPDIAG: age of the outstanding send, 0 when there is none. A pending send whose age keeps
-+//growing while the socket holds no queue is one nothing but the new collection can reach.
-+DWORD CEMSocket::DbgGetPendingSendAge() const
-+{
-+	return (m_bUseOverlappedSend && m_bPendingSendOv) ? max(::GetTickCount() - m_dwDiagSendOvStart, 1u) : 0;
-+}
-+
 +//UPDIAG: the state of the send path, asked from the throttler's thread. The decisive field is
 +//ovres: a pending send that the network has not finished reads WSA_IO_INCOMPLETE, while one that
 +//finished and is still marked pending was never collected, and the socket will refuse every
@@ -115,11 +107,11 @@ index cd8e44c..9fb1dba 100644
 +		_T(" busyage=%ums busymax=%ums busytotal=%ums spells=%ld")
 +		_T(" calls=%ld zero=%ld conn=%u recvbytes=%I64u quiet=%dms")
 +		, (int)m_bPendingSendOv
-+		, m_bPendingSendOv ? ::GetTickCount() - m_dwDiagSendOvStart : 0
++		, GetSendBlockedAge()
 +		, m_nDiagSendOvBytes, nOvRes, dwTransferred
 +		, (int)standardpacket_queue.GetCount(), (int)controlpacket_queue.GetCount()
 +		, sendbuffer != NULL ? m_sendblen - m_sent : 0
-+		, m_dwDiagBusySince != 0 ? ::GetTickCount() - m_dwDiagBusySince : 0
++		, m_dwDiagBusyLast != 0 ? ::GetTickCount() - m_dwDiagBusyLast : 0
 +		, m_dwDiagBusyMax, m_dwDiagBusyTotal, m_nDiagBusySpells
 +		, (LONG)m_nDiagSendCalls, (LONG)m_nDiagSendZero, (unsigned)byConnected, m_nDiagRecvBytes
 +		, m_dwDiagLastRecv != 0 ? (int)(::GetTickCount() - m_dwDiagLastRecv) : -1);
@@ -128,14 +120,12 @@ index cd8e44c..9fb1dba 100644
  /**
   * Try to put queued up data on the socket with Overlapped methods.
   *
-@@ -810,9 +890,16 @@ SocketSentBytes CEMSocket::SendOv(uint32 maxNumberOfBytesToSend, uint32 minFragS
- 				memset(&m_PendingSendOperation, 0, sizeof WSAOVERLAPPED);
+@@ -817,9 +889,14 @@ SocketSentBytes CEMSocket::SendOv(uint32 maxNumberOfBytesToSend, uint32 minFragS
  				m_PendingSendOperation.hEvent = theApp.uploadBandwidthThrottler->GetSocketAvailableEvent();
  				m_bPendingSendOv = true;
+ 				m_dwSendBlockedSince = ::GetTickCount();
 -				if (CEncryptedStreamSocket::SendOv(m_aBufferSend, &m_PendingSendOperation) == 0)
-+				//UPDIAG: remember when this send was handed over and how much it was given,
-+				//so a send that never completes can be told from one that was never issued.
-+				m_dwDiagSendOvStart = ::GetTickCount();
++				//UPDIAG: how much this send was given, so a short completion can be spotted.
 +				m_nDiagSendOvBytes = 0;
 +				for (INT_PTR iDiag = m_aBufferSend.GetCount(); --iDiag >= 0;)
 +					m_nDiagSendOvBytes += m_aBufferSend[iDiag].len;
@@ -147,7 +137,7 @@ index cd8e44c..9fb1dba 100644
  					int nError = WSAGetLastError();
  					if (nError != WSA_IO_PENDING) {
  						ret.success = false;
-@@ -899,6 +986,13 @@ int CEMSocket::Receive(void *lpBuf, int nBufLen, int nFlags)
+@@ -906,6 +983,13 @@ int CEMSocket::Receive(void *lpBuf, int nBufLen, int nFlags)
  {
  	//EMTrace("CEMSocket::Receive on %u, maxSize=%d", (SOCKET)this, nBufLen);
  	int recvRetCode = CEncryptedStreamSocket::Receive(lpBuf, nBufLen, nFlags); // deadlake PROXYSUPPORT - changed to AsyncSocketEx
@@ -161,29 +151,7 @@ index cd8e44c..9fb1dba 100644
  	switch (recvRetCode) {
  	case 0:
  		if (GetRealReceivedBytes() <= 0) { // we received data but it was for the underlying encryption layer - all fine
-@@ -1104,26 +1198,46 @@ bool CEMSocket::UseBigSendBuffer()
- 	return m_bUseBigSendBuffers;
- }
- 
-+//UPDIAG: called from the throttler thread only, so the timestamps below need no interlocking.
-+bool CEMSocket::DiagNoteBusy(bool bBusy)
-+{
-+	const DWORD dwNow = ::GetTickCount();
-+	if (bBusy) {
-+		if (m_dwDiagBusySince == 0) {
-+			m_dwDiagBusySince = dwNow;
-+			++m_nDiagBusySpells;
-+		}
-+	} else if (m_dwDiagBusySince != 0) {
-+		const DWORD dwSpell = dwNow - m_dwDiagBusySince;
-+		m_dwDiagBusyTotal += dwSpell;
-+		if (dwSpell > m_dwDiagBusyMax)
-+			m_dwDiagBusyMax = dwSpell;
-+		m_dwDiagBusySince = 0;
-+	}
-+	return bBusy;
-+}
-+
+@@ -1114,23 +1198,24 @@ bool CEMSocket::UseBigSendBuffer()
  bool CEMSocket::IsBusyExtensiveCheck()
  {
  	if (!m_bUseOverlappedSend)
@@ -213,21 +181,50 @@ index cd8e44c..9fb1dba 100644
  }
  
  // won't always deliver the proper result (sometimes reports busy even if it isn't any more
+@@ -1140,6 +1225,30 @@ bool CEMSocket::IsBusyQuickCheck() const
+ 	return m_bUseOverlappedSend ? m_bPendingSendOv : m_bBusy;
+ }
+ 
++//UPDIAG: the blocked state is reported by the accessor below; this only accumulates the spells
++//that have ended, which is what separates a socket blocked in short bursts by ordinary flow
++//control from one held in a single spell by a peer that has stopped reading.
++bool CEMSocket::DiagNoteBusy(bool bBusy)
++{
++	if (!bBusy && m_dwDiagBusyLast != 0) {
++		const DWORD dwSpell = ::GetTickCount() - m_dwDiagBusyLast;
++		m_dwDiagBusyTotal += dwSpell;
++		if (dwSpell > m_dwDiagBusyMax)
++			m_dwDiagBusyMax = dwSpell;
++		m_dwDiagBusyLast = 0;
++	} else if (bBusy && m_dwDiagBusyLast == 0) {
++		m_dwDiagBusyLast = m_dwSendBlockedSince ? m_dwSendBlockedSince : ::GetTickCount();
++		++m_nDiagBusySpells;
++	}
++	return bBusy;
++}
++
++//UPDIAG: age of the outstanding send, for the throttler's read-only observation
++DWORD CEMSocket::DbgGetPendingSendAge() const
++{
++	return GetSendBlockedAge();
++}
++
+ // the same condition as above, plus how long it has lasted
+ DWORD CEMSocket::GetSendBlockedAge() const
+ {
 diff --git a/srchybrid/EMSocket.h b/srchybrid/EMSocket.h
-index 3875a13..ffe8967 100644
+index 8fa966f..a6b8bc8 100644
 --- a/srchybrid/EMSocket.h
 +++ b/srchybrid/EMSocket.h
-@@ -78,6 +78,17 @@ public:
- 	uint32 GetSentPayloadSinceLastCall(bool bReset);
- 	void TruncateQueues();
+@@ -86,6 +86,15 @@ public:
+ 	// is the same unsynchronized read the quick busy check already makes of the flag itself.
+ 	DWORD GetSendBlockedAge() const;
  
 +	//UPDIAG: was the peer still talking to us, and when did it last do so?
 +	uint64 GetDiagRecvBytes() const							{ return m_nDiagRecvBytes; }
 +	DWORD GetDiagLastRecvTick() const						{ return m_dwDiagLastRecv; }
 +	void DiagCheckOverlappedSend(LPCTSTR pszWhere);
-+	//UPDIAG: how long this socket has been unable to accept a send, without interruption. A peer
-+	//that stops reading its own socket shows up here and nowhere else inside the application: the
-+	//send buffer fills, every send is refused, and the only symptom is that this keeps growing.
++	//UPDIAG: the blocked state above, summed over the spells that have ended
 +	bool DiagNoteBusy(bool bBusy);
 +	virtual void DbgGetDiagInfo(CString &rstrOut);
 +	virtual DWORD DbgGetPendingSendAge() const;
@@ -235,35 +232,35 @@ index 3875a13..ffe8967 100644
  	virtual SocketSentBytes SendControlData(uint32 maxNumberOfBytesToSend, uint32 minFragSize)			{ return SendEM(maxNumberOfBytesToSend, minFragSize, true); }
  	virtual SocketSentBytes SendFileAndControlData(uint32 maxNumberOfBytesToSend, uint32 minFragSize)	{ return SendEM(maxNumberOfBytesToSend, minFragSize, false); }
  
-@@ -148,4 +159,14 @@ private:
- 	bool	m_bUseBigSendBuffers;
+@@ -157,4 +166,13 @@ private:
  	bool	m_bUseOverlappedSend;
  	bool	m_bPendingSendOv;
+ 	DWORD	m_dwSendBlockedSince;
 +	uint64	m_nDiagRecvBytes; //UPDIAG
 +	DWORD	m_dwDiagLastRecv; //UPDIAG - 0 means the peer never sent us anything
-+	DWORD	m_dwDiagSendOvStart; //UPDIAG - when the pending overlapped send was submitted
-+	uint32	m_nDiagSendOvBytes; //UPDIAG - how many bytes that send was given
++	uint32	m_nDiagSendOvBytes; //UPDIAG - how many bytes the pending send was given
 +	volatile LONG m_nDiagSendCalls; //UPDIAG - times the throttler asked this socket to send
 +	volatile LONG m_nDiagSendZero; //UPDIAG - times it answered with nothing
-+	DWORD	m_dwDiagBusySince; //UPDIAG - 0 when the socket is not busy
++	DWORD	m_dwDiagBusyLast;  //UPDIAG - start of the spell in progress, 0 when free
 +	DWORD	m_dwDiagBusyTotal; //UPDIAG - summed over the finished spells
 +	DWORD	m_dwDiagBusyMax;   //UPDIAG - the longest single spell
 +	LONG	m_nDiagBusySpells; //UPDIAG
  };
 \ No newline at end of file
 diff --git a/srchybrid/ListenSocket.cpp b/srchybrid/ListenSocket.cpp
-index 15674a1..a0048f4 100644
+index e49fbc1..ae90054 100644
 --- a/srchybrid/ListenSocket.cpp
 +++ b/srchybrid/ListenSocket.cpp
-@@ -53,14 +53,18 @@ static char THIS_FILE[] = __FILE__;
+@@ -53,15 +53,19 @@ static char THIS_FILE[] = __FILE__;
  IMPLEMENT_DYNCREATE(CClientReqSocket, CEMSocket)
  
  CClientReqSocket::CClientReqSocket(CUpDownClient *in_client)
--	: deltimer()
+-	: m_uLastTimeOut()
 +	: m_nDiagResetSrc() //UPDIAG - declared right after timeout_timer, so it is initialised here
 +	, m_dwDiagStarvedSince() //UPDIAG
 +	, m_bDiagDoomedLogged() //UPDIAG
-+	, deltimer()
++	, m_uLastTimeOut()
+ 	, deltimer()
  	, m_nOnConnect(SS_Other)
  	, deletethis()
  	, m_bPortTestCon()
@@ -276,7 +273,7 @@ index 15674a1..a0048f4 100644
  }
  
  void CClientReqSocket::SetConState(SocketState val)
-@@ -112,11 +116,25 @@ void CClientReqSocket::SetClient(CUpDownClient *pClient)
+@@ -113,11 +117,25 @@ void CClientReqSocket::SetClient(CUpDownClient *pClient)
  		client->socket = this;
  }
  
@@ -303,42 +300,58 @@ index 15674a1..a0048f4 100644
  bool CClientReqSocket::CheckTimeOut()
  {
  	const DWORD curTick = ::GetTickCount();
-@@ -134,18 +152,51 @@ bool CClientReqSocket::CheckTimeOut()
- 		return true;
+@@ -136,10 +154,12 @@ bool CClientReqSocket::CheckTimeOut()
  	}
  	DWORD uTimeout = GetTimeOut();
+ 	const DWORD uSendAge = GetSendBlockedAge();	//0 when the socket can still take data
 +	LPCTSTR pszDiagExt = _T("none"); //UPDIAG - which branch below granted extra time
-+	bool bDiagAgeBound = false; //UPDIAG - the extension is a window on the age of the slot
  	if (client)
 -		if (client->GetKadState() == KS_CONNECTED_BUDDY)
 +		if (client->GetKadState() == KS_CONNECTED_BUDDY) {
  			uTimeout += MIN2MS(15);
--		else if (client->IsDownloading() && curTick < client->GetUpStartTime() + 4 * CONNECTION_TIMEOUT)
+-		else if (client->IsDownloading() && uSendAge > 0 && uSendAge < 4 * CONNECTION_TIMEOUT)
 +			pszDiagExt = _T("buddy"); //UPDIAG
-+		} else if (client->IsDownloading() && curTick < client->GetUpStartTime() + 4 * CONNECTION_TIMEOUT) {
- 			//TCP flow control might need more time to begin throttling for slow peers
++		} else if (client->IsDownloading() && uSendAge > 0 && uSendAge < 4 * CONNECTION_TIMEOUT) {
+ 			//TCP flow control might need more time to begin throttling for slow peers. That is
+ 			//this socket, and it can say so itself: while a send is still with the operating
+ 			//system the connection is not idle, however long nothing has moved on it. Asking
+@@ -147,21 +167,53 @@ bool CClientReqSocket::CheckTimeOut()
+ 			//held up at all and withholds it from the ones that are. The bound keeps the whole
+ 			//allowance at what the age of the slot already allowed.
  			uTimeout += 4 * CONNECTION_TIMEOUT; //2'30" or slightly more
 -		else if (client->GetChatState() != MS_NONE)
-+			pszDiagExt = _T("upstart"); //UPDIAG
-+			bDiagAgeBound = true; //UPDIAG
++			pszDiagExt = _T("blocked"); //UPDIAG
 +		} else if (client->GetChatState() != MS_NONE) {
  			//We extend the timeout time here to avoid chatting people from disconnecting too fast.
  			uTimeout += CONNECTION_TIMEOUT;
 +			pszDiagExt = _T("chat"); //UPDIAG
 +		}
  
+ 	//The allowance is not a constant: an extension stops applying as soon as the condition that
+ 	//granted it stops being true, and the allowance then drops by that whole extension between
+ 	//one call and the next. The time already spent was spent against the larger allowance, so
+ 	//comparing it with the smaller one ends the connection in the same instant, without it ever
+ 	//having had the smaller allowance to spend. Start counting again from the moment it shrinks.
+-	if (uTimeout < m_uLastTimeOut && curTick - timeout_timer >= uTimeout)
++	if (uTimeout < m_uLastTimeOut && curTick - timeout_timer >= uTimeout) {
++		//UPDIAG: the correction above is invisible from outside, so say when it applies and how
++		//much silence it carried over. Without it this socket would have ended here.
++		if (client != NULL && client->IsDownloading())
++			DbgLogTimeoutState(_T("reprieve"), curTick - timeout_timer, uTimeout, pszDiagExt, LOG_WARNING);
+ 		timeout_timer = curTick;
++	}
+ 	m_uLastTimeOut = uTimeout;
+ 
 -	if (curTick < timeout_timer + uTimeout)
 +	const DWORD dwDiagElapsed = curTick - timeout_timer; //UPDIAG - read before the reset below
-+	//UPDIAG: this one extension is not a grace period counted from the last sign of life, it is
-+	//an absolute window on the age of the slot - unlike the buddy and chat ones, which are flat
-+	//additions that every reset renews. A slot already past its base allowance is therefore not
-+	//going to recover by being quick: it dies the instant the window closes, however long that
-+	//still is. Say so while it is still alive, once per socket.
-+	if (bDiagAgeBound && !m_bDiagDoomedLogged && dwDiagElapsed >= GetTimeOut()
++	//UPDIAG: a slot past its base allowance is alive only because the extension is carrying it.
++	//Report it once, while it is still alive, so what happens next can be read against it.
++	if (client != NULL && client->IsDownloading() && !m_bDiagDoomedLogged
++		&& uTimeout > GetTimeOut() && dwDiagElapsed >= GetTimeOut()
 +		&& curTick < timeout_timer + uTimeout)
 +	{
 +		m_bDiagDoomedLogged = true;
-+		DbgLogTimeoutState(_T("doomed"), dwDiagElapsed, uTimeout, pszDiagExt, LOG_WARNING);
++		DbgLogTimeoutState(_T("carried"), dwDiagElapsed, uTimeout, pszDiagExt, LOG_WARNING);
 +	}
 +	if (curTick < timeout_timer + uTimeout) {
 +		//UPDIAG: a socket that gets close to the limit and then survives is the counter-example
@@ -359,7 +372,7 @@ index 15674a1..a0048f4 100644
  	timeout_timer = curTick;
  	CString str;
  	str.Format(_T("Timeout: State:%u (0 = SS_Other, 1 = SS_Half, 2 = SS_Complete)"), m_nOnConnect);
-@@ -153,6 +204,63 @@ bool CClientReqSocket::CheckTimeOut()
+@@ -169,6 +221,63 @@ bool CClientReqSocket::CheckTimeOut()
  	return true;
  }
  
@@ -423,7 +436,7 @@ index 15674a1..a0048f4 100644
  void CClientReqSocket::OnClose(int nErrorCode)
  {
  	ASSERT(theApp.listensocket->IsValidSocket(this));
-@@ -1692,12 +1800,12 @@ void CClientReqSocket::OnConnect(int nErrorCode)
+@@ -1708,12 +1817,12 @@ void CClientReqSocket::OnConnect(int nErrorCode)
  			Disconnect(_T(""));
  	} else
  		//This socket may have been delayed by SP2 protection, lets make sure it doesn't time out instantly.
@@ -438,7 +451,7 @@ index 15674a1..a0048f4 100644
  	CEMSocket::OnSend(nErrorCode);
  }
  
-@@ -1809,7 +1917,7 @@ bool CClientReqSocket::PacketReceived(Packet *packet)
+@@ -1825,7 +1934,7 @@ bool CClientReqSocket::PacketReceived(Packet *packet)
  
  void CClientReqSocket::OnReceive(int nErrorCode)
  {
@@ -447,7 +460,7 @@ index 15674a1..a0048f4 100644
  	CEMSocket::OnReceive(nErrorCode);
  }
  
-@@ -1823,7 +1931,7 @@ SocketSentBytes CClientReqSocket::SendControlData(uint32 maxNumberOfBytesToSend,
+@@ -1839,7 +1948,7 @@ SocketSentBytes CClientReqSocket::SendControlData(uint32 maxNumberOfBytesToSend,
  {
  	SocketSentBytes returnStatus = CEMSocket::SendControlData(maxNumberOfBytesToSend, overchargeMaxBytesToSend);
  	if (returnStatus.success && (returnStatus.sentBytesControlPackets > 0 || returnStatus.sentBytesStandardPackets > 0))
@@ -456,7 +469,7 @@ index 15674a1..a0048f4 100644
  	return returnStatus;
  }
  
-@@ -1831,13 +1939,13 @@ SocketSentBytes CClientReqSocket::SendFileAndControlData(uint32 maxNumberOfBytes
+@@ -1847,13 +1956,13 @@ SocketSentBytes CClientReqSocket::SendFileAndControlData(uint32 maxNumberOfBytes
  {
  	SocketSentBytes returnStatus = CEMSocket::SendFileAndControlData(maxNumberOfBytesToSend, overchargeMaxBytesToSend);
  	if (returnStatus.success && (returnStatus.sentBytesControlPackets > 0 || returnStatus.sentBytesStandardPackets > 0))
@@ -472,7 +485,7 @@ index 15674a1..a0048f4 100644
  	CEMSocket::SendPacket(packet, controlpacket, actualPayloadSize, bForceImmediateSend);
  }
  
-@@ -1953,6 +2061,9 @@ bool CListenSocket::StartListening()
+@@ -1969,6 +2078,9 @@ bool CListenSocket::StartListening()
  
  void CListenSocket::ReStartListening()
  {
@@ -482,7 +495,7 @@ index 15674a1..a0048f4 100644
  	bListening = true;
  
  	ASSERT(m_nPendingConnections >= 0);
-@@ -1964,6 +2075,13 @@ void CListenSocket::ReStartListening()
+@@ -1980,6 +2092,13 @@ void CListenSocket::ReStartListening()
  
  void CListenSocket::StopListening()
  {
@@ -497,7 +510,7 @@ index 15674a1..a0048f4 100644
  	++maxconnectionreached;
  }
 diff --git a/srchybrid/ListenSocket.h b/srchybrid/ListenSocket.h
-index 7a0311d..2c3237d 100644
+index ab5a702..4125fcc 100644
 --- a/srchybrid/ListenSocket.h
 +++ b/srchybrid/ListenSocket.h
 @@ -40,8 +40,20 @@ public:
@@ -530,10 +543,10 @@ index 7a0311d..2c3237d 100644
 +	DWORD	m_aDiagReset[DIAGRESET_COUNT];		//UPDIAG - how often each one did
 +	DWORD	m_dwDiagStarvedSince;				//UPDIAG - 0 when the slot is not starving
 +	bool	m_bDiagDoomedLogged;				//UPDIAG - the extension is all that holds it up
+ 	DWORD	m_uLastTimeOut;
  	DWORD	deltimer;
  	uint32	m_nOnConnect;
- 	bool	deletethis;
-@@ -114,6 +130,7 @@ public:
+@@ -115,6 +131,7 @@ public:
  	uint32	GetActiveConnections() const		{ return activeconnections; }
  	uint16	GetConnectedPort() const			{ return m_port; }
  	uint32	GetTotalHalfCon() const				{ return m_nHalfOpen; }
