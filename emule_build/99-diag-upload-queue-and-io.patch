@@ -252,7 +252,7 @@ index 3875a13..ffe8967 100644
  };
 \ No newline at end of file
 diff --git a/srchybrid/ListenSocket.cpp b/srchybrid/ListenSocket.cpp
-index 15674a1..bdf9760 100644
+index 15674a1..a0048f4 100644
 --- a/srchybrid/ListenSocket.cpp
 +++ b/srchybrid/ListenSocket.cpp
 @@ -53,14 +53,18 @@ static char THIS_FILE[] = __FILE__;
@@ -303,11 +303,12 @@ index 15674a1..bdf9760 100644
  bool CClientReqSocket::CheckTimeOut()
  {
  	const DWORD curTick = ::GetTickCount();
-@@ -134,18 +152,48 @@ bool CClientReqSocket::CheckTimeOut()
+@@ -134,18 +152,51 @@ bool CClientReqSocket::CheckTimeOut()
  		return true;
  	}
  	DWORD uTimeout = GetTimeOut();
 +	LPCTSTR pszDiagExt = _T("none"); //UPDIAG - which branch below granted extra time
++	bool bDiagAgeBound = false; //UPDIAG - the extension is a window on the age of the slot
  	if (client)
 -		if (client->GetKadState() == KS_CONNECTED_BUDDY)
 +		if (client->GetKadState() == KS_CONNECTED_BUDDY) {
@@ -319,6 +320,7 @@ index 15674a1..bdf9760 100644
  			uTimeout += 4 * CONNECTION_TIMEOUT; //2'30" or slightly more
 -		else if (client->GetChatState() != MS_NONE)
 +			pszDiagExt = _T("upstart"); //UPDIAG
++			bDiagAgeBound = true; //UPDIAG
 +		} else if (client->GetChatState() != MS_NONE) {
  			//We extend the timeout time here to avoid chatting people from disconnecting too fast.
  			uTimeout += CONNECTION_TIMEOUT;
@@ -327,12 +329,13 @@ index 15674a1..bdf9760 100644
  
 -	if (curTick < timeout_timer + uTimeout)
 +	const DWORD dwDiagElapsed = curTick - timeout_timer; //UPDIAG - read before the reset below
-+	//UPDIAG: the extension is not a grace period counted from the last sign of life, it is an
-+	//absolute window on the age of the slot. A socket that is already past its base allowance is
-+	//therefore not going to recover by being quick: it dies the instant the window closes,
-+	//however long that still is. Say so while it is still alive, once per socket.
-+	if (client != NULL && !m_bDiagDoomedLogged && dwDiagElapsed >= GetTimeOut()
-+		&& uTimeout > GetTimeOut() && curTick < timeout_timer + uTimeout)
++	//UPDIAG: this one extension is not a grace period counted from the last sign of life, it is
++	//an absolute window on the age of the slot - unlike the buddy and chat ones, which are flat
++	//additions that every reset renews. A slot already past its base allowance is therefore not
++	//going to recover by being quick: it dies the instant the window closes, however long that
++	//still is. Say so while it is still alive, once per socket.
++	if (bDiagAgeBound && !m_bDiagDoomedLogged && dwDiagElapsed >= GetTimeOut()
++		&& curTick < timeout_timer + uTimeout)
 +	{
 +		m_bDiagDoomedLogged = true;
 +		DbgLogTimeoutState(_T("doomed"), dwDiagElapsed, uTimeout, pszDiagExt, LOG_WARNING);
@@ -356,7 +359,7 @@ index 15674a1..bdf9760 100644
  	timeout_timer = curTick;
  	CString str;
  	str.Format(_T("Timeout: State:%u (0 = SS_Other, 1 = SS_Half, 2 = SS_Complete)"), m_nOnConnect);
-@@ -153,6 +201,63 @@ bool CClientReqSocket::CheckTimeOut()
+@@ -153,6 +204,63 @@ bool CClientReqSocket::CheckTimeOut()
  	return true;
  }
  
@@ -420,7 +423,7 @@ index 15674a1..bdf9760 100644
  void CClientReqSocket::OnClose(int nErrorCode)
  {
  	ASSERT(theApp.listensocket->IsValidSocket(this));
-@@ -1692,12 +1797,12 @@ void CClientReqSocket::OnConnect(int nErrorCode)
+@@ -1692,12 +1800,12 @@ void CClientReqSocket::OnConnect(int nErrorCode)
  			Disconnect(_T(""));
  	} else
  		//This socket may have been delayed by SP2 protection, lets make sure it doesn't time out instantly.
@@ -435,7 +438,7 @@ index 15674a1..bdf9760 100644
  	CEMSocket::OnSend(nErrorCode);
  }
  
-@@ -1809,7 +1914,7 @@ bool CClientReqSocket::PacketReceived(Packet *packet)
+@@ -1809,7 +1917,7 @@ bool CClientReqSocket::PacketReceived(Packet *packet)
  
  void CClientReqSocket::OnReceive(int nErrorCode)
  {
@@ -444,7 +447,7 @@ index 15674a1..bdf9760 100644
  	CEMSocket::OnReceive(nErrorCode);
  }
  
-@@ -1823,7 +1928,7 @@ SocketSentBytes CClientReqSocket::SendControlData(uint32 maxNumberOfBytesToSend,
+@@ -1823,7 +1931,7 @@ SocketSentBytes CClientReqSocket::SendControlData(uint32 maxNumberOfBytesToSend,
  {
  	SocketSentBytes returnStatus = CEMSocket::SendControlData(maxNumberOfBytesToSend, overchargeMaxBytesToSend);
  	if (returnStatus.success && (returnStatus.sentBytesControlPackets > 0 || returnStatus.sentBytesStandardPackets > 0))
@@ -453,7 +456,7 @@ index 15674a1..bdf9760 100644
  	return returnStatus;
  }
  
-@@ -1831,13 +1936,13 @@ SocketSentBytes CClientReqSocket::SendFileAndControlData(uint32 maxNumberOfBytes
+@@ -1831,13 +1939,13 @@ SocketSentBytes CClientReqSocket::SendFileAndControlData(uint32 maxNumberOfBytes
  {
  	SocketSentBytes returnStatus = CEMSocket::SendFileAndControlData(maxNumberOfBytesToSend, overchargeMaxBytesToSend);
  	if (returnStatus.success && (returnStatus.sentBytesControlPackets > 0 || returnStatus.sentBytesStandardPackets > 0))
@@ -469,7 +472,7 @@ index 15674a1..bdf9760 100644
  	CEMSocket::SendPacket(packet, controlpacket, actualPayloadSize, bForceImmediateSend);
  }
  
-@@ -1953,6 +2058,9 @@ bool CListenSocket::StartListening()
+@@ -1953,6 +2061,9 @@ bool CListenSocket::StartListening()
  
  void CListenSocket::ReStartListening()
  {
@@ -479,7 +482,7 @@ index 15674a1..bdf9760 100644
  	bListening = true;
  
  	ASSERT(m_nPendingConnections >= 0);
-@@ -1964,6 +2072,13 @@ void CListenSocket::ReStartListening()
+@@ -1964,6 +2075,13 @@ void CListenSocket::ReStartListening()
  
  void CListenSocket::StopListening()
  {
@@ -580,7 +583,7 @@ index f9b28d4..a6e3eff 100644
  	void			SetUpStartTime()								{ m_dwUploadTime = ::GetTickCount(); }
  	void			SendHashsetPacket(const uchar *pData, uint32 nSize, bool bFileIdentifiers);
 diff --git a/srchybrid/UploadBandwidthThrottler.cpp b/srchybrid/UploadBandwidthThrottler.cpp
-index d9a8e54..a5b62e7 100644
+index d9a8e54..436fdd5 100644
 --- a/srchybrid/UploadBandwidthThrottler.cpp
 +++ b/srchybrid/UploadBandwidthThrottler.cpp
 @@ -25,6 +25,7 @@
@@ -632,7 +635,7 @@ index d9a8e54..a5b62e7 100644
  
  		// check busy level for all the slots (WSAEWOULDBLOCK status)
  		uint32 nBusy = 0;
-@@ -330,11 +358,41 @@ UINT UploadBandwidthThrottler::RunInternal()
+@@ -330,14 +358,45 @@ UINT UploadBandwidthThrottler::RunInternal()
  		queueLocker.Lock();
  		m_eventDataAvailable.ResetEvent();
  		m_eventSocketAvailable.ResetEvent();
@@ -676,7 +679,11 @@ index d9a8e54..a5b62e7 100644
  			}
  		}
  		queueLocker.Unlock();
-@@ -434,6 +492,42 @@ UINT UploadBandwidthThrottler::RunInternal()
++		nDiagLoopsNoSend += (LONG)(nCanSend == 0); //UPDIAG
+ 
+ 		// if this is kept, the loop above can be optimized a little (don't count nCanSend,
+ 		// just use nCanSend = GetSlotLimit(theApp.uploadqueue->GetDatarate())
+@@ -434,6 +493,42 @@ UINT UploadBandwidthThrottler::RunInternal()
  			}
  		}
  
@@ -719,7 +726,7 @@ index d9a8e54..a5b62e7 100644
  		uint32 minFragSize, doubleSendSize;
  		if (allowedDataRate < 6 * 1024)
  			doubleSendSize = minFragSize = 536; // send one packet at a time at very low speeds for smoother upload
-@@ -459,12 +553,15 @@ UINT UploadBandwidthThrottler::RunInternal()
+@@ -459,12 +554,15 @@ UINT UploadBandwidthThrottler::RunInternal()
  		if (timeSinceLastLoop < sleepTime) {
  			DWORD dwSleep = sleepTime - timeSinceLastLoop;
  			if (nCanSend == 0) {
@@ -739,7 +746,7 @@ index d9a8e54..a5b62e7 100644
  				::Sleep(dwSleep);
  		}
  		if (!m_bRun)
-@@ -584,15 +681,22 @@ UINT UploadBandwidthThrottler::RunInternal()
+@@ -584,15 +682,22 @@ UINT UploadBandwidthThrottler::RunInternal()
  				++rememberedSlotCounter;
  			}
  
@@ -763,7 +770,7 @@ index d9a8e54..a5b62e7 100644
  					spentBytes += lastSpentBytes;
  					spentOverhead += socketSentBytes.sentBytesControlPackets;
  					if (!bNeedMoreData && socketSentBytes.sentBytesStandardPackets > 0)
-@@ -624,8 +728,10 @@ UINT UploadBandwidthThrottler::RunInternal()
+@@ -624,8 +729,10 @@ UINT UploadBandwidthThrottler::RunInternal()
  			InterlockedAdd64((LONG64*)&m_SentBytesSinceLastCall, (LONG64)spentBytes);
  			InterlockedAdd64((LONG64*)&m_SentBytesSinceLastCallOverhead, (LONG64)spentOverhead);
  
