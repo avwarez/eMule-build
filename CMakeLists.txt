@@ -114,9 +114,15 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          because the client closed the connection on its own. The flag that
 #          marks this state is already kept, from the moment the packet is
 #          sent until the connection ends, and nothing reads it - here and in
-#          0.60d alike. The patch gives it a reader, in the two places that
-#          hand out a slot: such a client is passed over while it still has
-#          that connection, and asks again like everyone else once it is gone.
+#          0.60d alike. The patch gives it a reader, in each of the three
+#          places that hand out a slot: the offer made from the waiting list,
+#          the direct add when that list is empty, and the priority slot a
+#          collection bypasses the queue with. Such a client is passed over
+#          while it still has that connection, and asks again like everyone
+#          else once it is gone. The fourth way in, the one kept for a lowID
+#          client that missed its slot, needs a flag which is cleared when a
+#          slot is given and which this client cannot get back while it is
+#          being passed over, so it is closed by the first reader already.
 #   98     corrections to the shipped language resources, from the fork's
 #          v0.72a-lang branch - source data for the `languages` target
 #          rather than code, so they change no binary.

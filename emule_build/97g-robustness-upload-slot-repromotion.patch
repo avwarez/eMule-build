@@ -14,7 +14,7 @@ index f9b28d4..12a08ec 100644
  	uint16			GetAvailablePartCount() const;
  	bool			SwapToAnotherFile(LPCTSTR reason, bool bIgnoreNoNeeded, bool ignoreSuspensions, bool bRemoveCompletely, CPartFile *toFile = NULL, bool allowSame = true, bool isAboutToAsk = false, bool debug = false); // ZZ:DownloadManager
 diff --git a/srchybrid/UploadQueue.cpp b/srchybrid/UploadQueue.cpp
-index c6130f6..8f09d37 100644
+index c6130f6..489091a 100644
 --- a/srchybrid/UploadQueue.cpp
 +++ b/srchybrid/UploadQueue.cpp
 @@ -122,6 +122,15 @@ CUpDownClient* CUploadQueue::FindBestClientInQueue()
@@ -33,7 +33,17 @@ index c6130f6..8f09d37 100644
  			uint32 cur_score = cur_client->GetScore(false);
  
  			if (cur_score > bestscore) {
-@@ -640,7 +649,7 @@ void CUploadQueue::AddClientToQueue(CUpDownClient *client, bool bIgnoreTimelimit
+@@ -604,7 +613,8 @@ void CUploadQueue::AddClientToQueue(CUpDownClient *client, bool bIgnoreTimelimit
+ 
+ 	// emule collection will bypass the queue
+ 	if (reqfile != NULL && CCollection::HasCollectionExtention(reqfile->GetFileName()) && reqfile->GetFileSize() < (uint64)MAXPRIORITYCOLL_SIZE
+-		&& !client->IsDownloading() && client->socket != NULL && client->socket->IsConnected())
++		&& !client->IsDownloading() && !client->HasSentOutOfPartReqs() //see FindBestClientInQueue()
++		&& client->socket != NULL && client->socket->IsConnected())
+ 	{
+ 		client->SetCollectionUploadSlot(true);
+ 		RemoveFromWaitingQueue(client, true);
+@@ -640,7 +650,7 @@ void CUploadQueue::AddClientToQueue(CUpDownClient *client, bool bIgnoreTimelimit
  		client->SendPacket(packet);
  		return;
  	}
