@@ -234,6 +234,30 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          request sends to that GUI thread - each of which stops the web
 #          thread until the GUI answers, and is timed here for exactly that
 #          reason.
+#
+#          99e-diag-overlapped-collection measures the one state the per-slot
+#          line can only catch by sampling: a send the operating system has
+#          already finished on a socket that is still marked as making it.
+#          Only one function in the program collects such a completion, and
+#          the flag it clears is the same flag that keeps the socket from
+#          being offered another send, so the state ends nowhere on its own.
+#          The sweep added here asks every slot, once a millisecond at most,
+#          and asks nothing else: not whether the slot is within the scan
+#          window the collector uses, and not whether anything is queued on
+#          it, because those two conditions are precisely what keeps the
+#          collector away, and a measurement sharing them would be blind to
+#          the same sockets. Nothing is collected - the call that would is
+#          the correction this measures the need for, and a build carrying
+#          this patch behaves like one without it. Each episode is reported
+#          where it begins, carrying both conditions as they stood, and where
+#          it ends, carrying how long it lasted and whether the socket had
+#          anything queued at that moment: the collector reachable today
+#          needs a queue, so an episode ending without one was ended by
+#          something else. Counting episodes rather than samples is the point.
+#          Periodic sampling weights a state by how long it lasts, so the same
+#          reading cannot say whether a correction shortened the episodes or
+#          merely pushed them below the sampling interval, which is the one
+#          question a before and after comparison has to answer.
 # ---------------------------------------------------------------------------
 find_package(Git REQUIRED)
 

@@ -1,0 +1,230 @@
+diff --git a/srchybrid/EMSocket.cpp b/srchybrid/EMSocket.cpp
+index a1136b1..e910e46 100644
+--- a/srchybrid/EMSocket.cpp
++++ b/srchybrid/EMSocket.cpp
+@@ -121,6 +121,7 @@ CEMSocket::CEMSocket()
+ 	, m_dwDiagBusyTotal() //UPDIAG
+ 	, m_dwDiagBusyMax() //UPDIAG
+ 	, m_nDiagBusySpells() //UPDIAG
++	, m_dwDiagOvReadySince() //UPDIAG
+ {
+ 	lastCalledSend = timeGetTime();
+ 	lastSent = lastCalledSend > SEC2MS(1) ? lastCalledSend - SEC2MS(1) : 0;
+@@ -1243,6 +1244,72 @@ DWORD CEMSocket::DbgGetPendingSendAge() const
+ 	return GetSendBlockedAge();
+ }
+ 
++//UPDIAG: the collectability probe. A pending send whose completion the operating system already
++//holds is collectable this instant, and nothing in the program is looking for that state: the
++//only collector sits behind the very flag that stays raised while it lasts. WSAGetOverlappedResult
++//is asked not to wait and nothing is cleaned up, so a build carrying this patch still behaves
++//exactly like one without it. The episode is reported once when it begins, with the two conditions
++//that would have kept the collector away from this socket, and once when it ends.
++DWORD CEMSocket::DbgProbeUncollectedSend(bool bInWindow, bool bHasQueues)
++{
++	if (!m_bUseOverlappedSend)
++		return 0;
++	CSingleLock lockSend(&sendLocker, TRUE);
++	if (!m_bPendingSendOv) {
++		m_dwDiagOvReadySince = 0;
++		return 0;
++	}
++	DWORD dwTransferred = 0, dwFlags = 0;
++	if (!::WSAGetOverlappedResult(GetSocketHandle(), &m_PendingSendOperation, &dwTransferred, FALSE, &dwFlags)) {
++		if (::WSAGetLastError() == WSA_IO_INCOMPLETE)
++			m_dwDiagOvReadySince = 0;	//still with the network, which is the ordinary case
++		return 0;
++	}
++	const DWORD dwNow = ::GetTickCount();
++	if (m_dwDiagOvReadySince != 0)
++		return max(dwNow - m_dwDiagOvReadySince, 1ul);
++
++	extern volatile LONG g_nDiagOvStuckBegun, g_nDiagOvStuckOpen; //defined in UploadBandwidthThrottler.cpp
++	m_dwDiagOvReadySince = dwNow;
++	::InterlockedIncrement(&g_nDiagOvStuckBegun);
++	::InterlockedIncrement(&g_nDiagOvStuckOpen);
++	theApp.QueueDebugLogLineEx(LOG_WARNING
++		, _T("UPDIAG|ovstuck begin inwindow=%d hasqueues=%d ovbytes=%u ovdone=%u ovage=%ums client: %s")
++		, (int)bInWindow, (int)bHasQueues, m_nDiagSendOvBytes, dwTransferred
++		, GetSendBlockedAge(), (LPCTSTR)DbgGetPeerInfo());
++	return 1;
++}
++
++//UPDIAG: the other end of the episode. Which path did the collecting is not asked here, because
++//the answer that matters is readable from the state instead: the only collector a build without
++//a correction has is reached through the socket's own queues, so an episode that ends with
++//nothing queued can only have been ended by something that stopped asking that question.
++void CEMSocket::DbgNoteUncollectedEnd(bool bCancelled)
++{
++	if (m_dwDiagOvReadySince == 0)
++		return;
++	extern volatile LONG g_nDiagOvStuckOpen, g_nDiagOvStuckEnded, g_nDiagOvStuckNoQueues
++		, g_nDiagOvStuckMaxMs, g_nDiagOvStuckTotalMs; //defined in UploadBandwidthThrottler.cpp
++	const DWORD dwLasted = max(::GetTickCount() - m_dwDiagOvReadySince, 1ul);
++	const bool bHadQueues = HasQueues();
++	m_dwDiagOvReadySince = 0;
++	::InterlockedDecrement(&g_nDiagOvStuckOpen);
++	::InterlockedIncrement(&g_nDiagOvStuckEnded);
++	if (!bHadQueues)
++		::InterlockedIncrement(&g_nDiagOvStuckNoQueues);
++	::InterlockedExchangeAdd(&g_nDiagOvStuckTotalMs, (LONG)dwLasted);
++	for (LONG lOld = g_nDiagOvStuckMaxMs; (LONG)dwLasted > lOld;) {
++		const LONG lPrev = ::InterlockedCompareExchange(&g_nDiagOvStuckMaxMs, (LONG)dwLasted, lOld);
++		if (lPrev == lOld)
++			break;
++		lOld = lPrev;
++	}
++	theApp.QueueDebugLogLineEx(LOG_WARNING
++		, _T("UPDIAG|ovstuck end after %ums, %s, hasqueues=%d ovbytes=%u client: %s")
++		, dwLasted, bCancelled ? _T("cancelled") : _T("collected"), (int)bHadQueues
++		, m_nDiagSendOvBytes, (LPCTSTR)DbgGetPeerInfo());
++}
++
+ // the same condition as above, plus how long it has lasted
+ DWORD CEMSocket::GetSendBlockedAge() const
+ {
+@@ -1256,6 +1323,7 @@ DWORD CEMSocket::GetSendBlockedAge() const
+ void CEMSocket::CleanUpOverlappedSendOperation(bool bCancel)
+ {
+ 	if (m_bPendingSendOv) {
++		DbgNoteUncollectedEnd(bCancel); //UPDIAG - closes an open episode, if there is one
+ 		m_bPendingSendOv = false;
+ 		m_dwSendBlockedSince = 0;
+ 		if (bCancel && CancelIo((HANDLE)GetSocketHandle()))
+diff --git a/srchybrid/EMSocket.h b/srchybrid/EMSocket.h
+index a6b8bc8..af99fca 100644
+--- a/srchybrid/EMSocket.h
++++ b/srchybrid/EMSocket.h
+@@ -94,6 +94,13 @@ public:
+ 	bool DiagNoteBusy(bool bBusy);
+ 	virtual void DbgGetDiagInfo(CString &rstrOut);
+ 	virtual DWORD DbgGetPendingSendAge() const;
++	virtual DWORD DbgProbeUncollectedSend(bool bInWindow, bool bHasQueues); //UPDIAG
++	//UPDIAG: an open "finished but still marked pending" episode ends here, wherever the
++	//collection actually happened. Called with the send lock held.
++	void DbgNoteUncollectedEnd(bool bCancelled);
++	//UPDIAG: the base socket has no peer to name; the client socket overrides this so the
++	//episode lines can say which client they belong to.
++	virtual CString DbgGetPeerInfo()						{ return CString(); }
+ 
+ 	virtual SocketSentBytes SendControlData(uint32 maxNumberOfBytesToSend, uint32 minFragSize)			{ return SendEM(maxNumberOfBytesToSend, minFragSize, true); }
+ 	virtual SocketSentBytes SendFileAndControlData(uint32 maxNumberOfBytesToSend, uint32 minFragSize)	{ return SendEM(maxNumberOfBytesToSend, minFragSize, false); }
+@@ -175,4 +182,5 @@ private:
+ 	DWORD	m_dwDiagBusyTotal; //UPDIAG - summed over the finished spells
+ 	DWORD	m_dwDiagBusyMax;   //UPDIAG - the longest single spell
+ 	LONG	m_nDiagBusySpells; //UPDIAG
++	DWORD	m_dwDiagOvReadySince; //UPDIAG - first sighting of a completed but still pending send
+ };
+\ No newline at end of file
+diff --git a/srchybrid/ListenSocket.h b/srchybrid/ListenSocket.h
+index 4125fcc..3b5e80b 100644
+--- a/srchybrid/ListenSocket.h
++++ b/srchybrid/ListenSocket.h
+@@ -54,6 +54,7 @@ public:
+ 	void	DbgAppendSlotInfo(CString &rstrOut); //UPDIAG
+ 	virtual LONG DbgGetPendingBlocks() const; //UPDIAG
+ 	virtual DWORD DbgTrackStarved(bool bStarved); //UPDIAG
++	virtual CString DbgGetPeerInfo()				{ return DbgGetClientInfo(); } //UPDIAG
+ 	virtual void Safe_Delete();
+ 	//virtual void Close()						{ CAsyncSocketEx::Close(); }
+ 
+diff --git a/srchybrid/ThrottledSocket.h b/srchybrid/ThrottledSocket.h
+index ac46cb8..c3838ac 100644
+--- a/srchybrid/ThrottledSocket.h
++++ b/srchybrid/ThrottledSocket.h
+@@ -40,6 +40,12 @@ public:
+ 	//UPDIAG: told once a loop whether this socket is starving right now; answers with how long it
+ 	//has been. Only the throttler thread calls it, so the timestamp behind it needs no lock.
+ 	virtual DWORD DbgTrackStarved(bool /*bStarved*/)	{ return 0; }
++	//UPDIAG: read-only. Asks the operating system whether the send this socket is still marked
++	//as making has in fact already finished - the one state the sampled slot line cannot catch
++	//at the moment it begins. Nothing is collected here: collecting is what a correction would
++	//do, and this only measures how often and for how long one would be needed. Returns 0 when
++	//no send is outstanding or the send is genuinely still in flight.
++	virtual DWORD DbgProbeUncollectedSend(bool /*bInWindow*/, bool /*bHasQueues*/)	{ return 0; }
+ };
+ 
+ // <-- ZZ:UploadBandWithThrottler (UDP)
+\ No newline at end of file
+diff --git a/srchybrid/UploadBandwidthThrottler.cpp b/srchybrid/UploadBandwidthThrottler.cpp
+index 436fdd5..a3b7f72 100644
+--- a/srchybrid/UploadBandwidthThrottler.cpp
++++ b/srchybrid/UploadBandwidthThrottler.cpp
+@@ -27,6 +27,20 @@
+ #include "UploadDiskIOThread.h"
+ #include "Log.h" //UPDIAG
+ 
++// UPDIAG: the collectability census. An overlapped send whose completion the operating system
++// already holds, on a socket still marked as sending, is collectable this instant and nothing
++// is collecting it. These count the episodes rather than the samples, so a shorter episode is
++// not worth less than a long one, and they are defined here because the sweep that feeds them
++// lives in this file; the socket declares them extern and does the counting.
++volatile LONG g_nDiagOvStuckBegun = 0;		// episodes seen beginning
++volatile LONG g_nDiagOvStuckOpen = 0;		// open at this moment
++volatile LONG g_nDiagOvStuckEnded = 0;		// episodes that ended
++volatile LONG g_nDiagOvStuckNoQueues = 0;	// ...on a socket with nothing queued, which no
++											// collector reachable today can have ended
++volatile LONG g_nDiagOvStuckMaxMs = 0;		// the longest single episode
++volatile LONG g_nDiagOvStuckTotalMs = 0;	// summed over the episodes that ended
++volatile LONG g_nDiagOvProbes = 0;			// sockets actually asked, the cost of the sweep
++
+ #ifdef _DEBUG
+ #define new DEBUG_NEW
+ #undef THIS_FILE
+@@ -339,6 +353,8 @@ UINT UploadBandwidthThrottler::RunInternal()
+ 	LONG nDiagStarvedSeen = 0;
+ 	DWORD dwDiagStarvedMaxAge = 0;
+ 	DWORD dwDiagStarvedLastLog = 0;
++	// The collectability sweep below is worth running once per millisecond at most.
++	DWORD dwDiagLastProbeTick = 0;
+ 
+ 	lastTickReachedBandwidth = lastLoopTick = timeGetTime();
+ 	while (m_bRun) {
+@@ -503,11 +519,15 @@ UINT UploadBandwidthThrottler::RunInternal()
+ 					_T(" | loops=%ld nosend=%ld allbusy=%ld wake_nodata=%ld wake_needmore=%ld")
+ 					_T(" | maxslot=%d tospend=%I64d restcalls=%ld restbusy=%ld restzero=%ld")
+ 					_T(" | orphans=%ld orphanage=%ums starved=%ld starvedage=%ums")
++					_T(" | ovstuck=%ld ovopen=%ld ovended=%ld ovnoqueues=%ld ovmax=%ldms ovtotal=%ldms ovprobes=%ld")
+ 					, allowedDataRate, nDiagRawAllowed, nEstiminatedDataRate, nCanSend, nBusy
+ 					, (int)GetStandardListSize(), (int)nDiagWindow, nSlotsBusyLevel, (LONGLONG)spendingRate
+ 					, nDiagLoops, nDiagLoopsNoSend, nDiagLoopsAllBusy, nDiagWakeNoData, nDiagWakeNeedMore
+ 					, (int)nDiagMaxSlot, (LONGLONG)nDiagBytesToSpend, nDiagRestCalls, nDiagRestBusy, nDiagRestZero
+-					, nDiagOrphanSeen, dwDiagOrphanMaxAge, nDiagStarvedSeen, dwDiagStarvedMaxAge);
++					, nDiagOrphanSeen, dwDiagOrphanMaxAge, nDiagStarvedSeen, dwDiagStarvedMaxAge
++					, (LONG)g_nDiagOvStuckBegun, (LONG)g_nDiagOvStuckOpen, (LONG)g_nDiagOvStuckEnded
++					, (LONG)g_nDiagOvStuckNoQueues, (LONG)g_nDiagOvStuckMaxMs, (LONG)g_nDiagOvStuckTotalMs
++					, (LONG)g_nDiagOvProbes);
+ 
+ 				// One line per slot. The counters above say that nothing moved; these say which
+ 				// socket was asked and what it answered, which is the only way to tell a socket
+@@ -734,6 +754,30 @@ UINT UploadBandwidthThrottler::RunInternal()
+ 				theApp.m_pUploadDiskIOThread->WakeUpCall(CUploadDiskIOThread::DIAGWAKE_NEEDMORE);
+ 			}
+ 		}
++
++		//UPDIAG: the collectability sweep, read-only. It walks the whole slot list and it does not
++		//ask whether anything is queued, on purpose: the scan above does both, and those are exactly
++		//the two conditions that keep the only collector in the program from ever reaching a socket
++		//whose send has finished. A measurement sharing them would be blind to the same sockets.
++		//Placed at the end of the loop so the bandwidth accounting at the top reads a clock this
++		//has not touched. The lock-free busy check costs a flag read, so a socket with nothing
++		//outstanding is never asked anything further.
++		{
++			const DWORD dwDiagProbeTick = timeGetTime();
++			if (dwDiagProbeTick != dwDiagLastProbeTick) {
++				dwDiagLastProbeTick = dwDiagProbeTick;
++				queueLocker.Lock();
++				const INT_PTR nDiagProbeWindow = mini(GetStandardListSize(), (INT_PTR)max(GetSlotLimit(theApp.uploadqueue->GetDatarate()), 3u));
++				for (INT_PTR i = GetStandardListSize(); --i >= 0;) {
++					ThrottledFileSocket *pSocket = m_StandardOrder_list[i];
++					if (pSocket != NULL && pSocket->IsBusyQuickCheck()) {
++						::InterlockedIncrement(&g_nDiagOvProbes);
++						(void)pSocket->DbgProbeUncollectedSend(i < nDiagProbeWindow, pSocket->HasQueues());
++					}
++				}
++				queueLocker.Unlock();
++			}
++		}
+ 	}
+ 
+ 	queueLocker.Lock();
