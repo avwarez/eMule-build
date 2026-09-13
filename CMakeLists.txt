@@ -258,6 +258,26 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          reading cannot say whether a correction shortened the episodes or
 #          merely pushed them below the sampling interval, which is the one
 #          question a before and after comparison has to answer.
+#
+#          99f-diag-gui-timer-stall reports the instrument failing. Everything
+#          periodic in eMule hangs off one Win32 timer callback, and the only
+#          call that drains the queued debug log in normal operation is inside
+#          it. That callback is a WM_TIMER, which the system produces only
+#          when the thread has no other message waiting, and the sockets post
+#          one message per event to a window on that same thread. Under steady
+#          network pressure the timer can stop being delivered for hours while
+#          every other thread keeps running: the program works, the log goes
+#          quiet, and the backlog is finally written carrying the timestamps
+#          of the moment it recovered rather than of when it happened. A window
+#          like that cannot be read as a timeline at all, and nothing in the
+#          log says which windows they are. The throttler thread keeps running
+#          throughout, so it is the one place that can see it and say so. It
+#          watches the timer's own heartbeat, reports the stall as it begins
+#          and again when it ends with how long it lasted and how many ticks
+#          were missed, and carries the backlog depth on its periodic line.
+#          Every duration is measured on the thread that is still running, so
+#          it survives being written out long afterwards - which is the whole
+#          point, because the timestamp cannot.
 # ---------------------------------------------------------------------------
 find_package(Git REQUIRED)
 

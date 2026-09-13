@@ -1,0 +1,149 @@
+diff --git a/srchybrid/Emule.cpp b/srchybrid/Emule.cpp
+index e5deb51..738e566 100644
+--- a/srchybrid/Emule.cpp
++++ b/srchybrid/Emule.cpp
+@@ -1385,6 +1385,16 @@ void CemuleApp::HandleDebugLogQueue()
+ 	m_queueLock.Unlock();
+ }
+ 
++//UPDIAG: the backlog itself. It only grows while the drain above is not being called, so it
++//measures the stall directly rather than by the density of what comes out at the end of one.
++INT_PTR CemuleApp::DbgGetDebugLogQueueCount()
++{
++	m_queueLock.Lock();
++	const INT_PTR nCount = m_QueueDebugLog.GetCount();
++	m_queueLock.Unlock();
++	return nCount;
++}
++
+ void CemuleApp::HandleLogQueue()
+ {
+ 	m_queueLock.Lock();
+diff --git a/srchybrid/Emule.h b/srchybrid/Emule.h
+index 0e7a14c..8abf1e4 100644
+--- a/srchybrid/Emule.h
++++ b/srchybrid/Emule.h
+@@ -185,6 +185,8 @@ public:
+ 	void		QueueDebugLogLine(bool bAddToStatusBar, LPCTSTR line, ...);
+ 	void		QueueDebugLogLineEx(UINT uFlags, LPCTSTR line, ...);
+ 	void		HandleDebugLogQueue();
++	//UPDIAG: how many debug lines are waiting to be written. Read from other threads.
++	INT_PTR		DbgGetDebugLogQueueCount();
+ 	void		ClearDebugLogQueue(bool bDebugPendingMsgs = false);
+ 
+ 	void		QueueLogLine(bool bAddToStatusBar, LPCTSTR line, ...);
+diff --git a/srchybrid/UploadBandwidthThrottler.cpp b/srchybrid/UploadBandwidthThrottler.cpp
+index a3b7f72..8b79042 100644
+--- a/srchybrid/UploadBandwidthThrottler.cpp
++++ b/srchybrid/UploadBandwidthThrottler.cpp
+@@ -355,6 +355,14 @@ UINT UploadBandwidthThrottler::RunInternal()
+ 	DWORD dwDiagStarvedLastLog = 0;
+ 	// The collectability sweep below is worth running once per millisecond at most.
+ 	DWORD dwDiagLastProbeTick = 0;
++	// The GUI timer drives everything periodic, including the drain of the log these lines go
++	// through. This thread is the only one that can report it stopping, because it is the only
++	// one that keeps running when it does. The ages below are measured here, so they survive
++	// being written out long after the fact.
++	LONG nDiagGuiTicksSeen = 0;
++	DWORD dwDiagGuiStallSince = 0;	// 0 when the timer is running
++	DWORD dwDiagGuiStallMax = 0;
++	LONG nDiagGuiStalls = 0;
+ 
+ 	lastTickReachedBandwidth = lastLoopTick = timeGetTime();
+ 	while (m_bRun) {
+@@ -514,12 +522,14 @@ UINT UploadBandwidthThrottler::RunInternal()
+ 			const DWORD dwDiagNow = timeGetTime();
+ 			if (dwDiagNow >= dwDiagLastTick + 10000) {
+ 				dwDiagLastTick = dwDiagNow;
++				extern volatile LONG g_nDiagGuiTicks, g_dwDiagGuiLastTick; //UPDIAG - defined in UploadQueue.cpp
+ 				theApp.QueueDebugLogLineEx(LOG_INFO
+ 					, _T("UPDIAG|throttler allowed=%u raw=%u est=%u cansend=%u busy=%u slots=%d window=%d busylevel=%d spend=%I64d")
+ 					_T(" | loops=%ld nosend=%ld allbusy=%ld wake_nodata=%ld wake_needmore=%ld")
+ 					_T(" | maxslot=%d tospend=%I64d restcalls=%ld restbusy=%ld restzero=%ld")
+ 					_T(" | orphans=%ld orphanage=%ums starved=%ld starvedage=%ums")
+ 					_T(" | ovstuck=%ld ovopen=%ld ovended=%ld ovnoqueues=%ld ovmax=%ldms ovtotal=%ldms ovprobes=%ld")
++					_T(" | guiticks=%ld guiage=%ums guistalls=%ld guistallmax=%ums backlog=%d")
+ 					, allowedDataRate, nDiagRawAllowed, nEstiminatedDataRate, nCanSend, nBusy
+ 					, (int)GetStandardListSize(), (int)nDiagWindow, nSlotsBusyLevel, (LONGLONG)spendingRate
+ 					, nDiagLoops, nDiagLoopsNoSend, nDiagLoopsAllBusy, nDiagWakeNoData, nDiagWakeNeedMore
+@@ -527,7 +537,10 @@ UINT UploadBandwidthThrottler::RunInternal()
+ 					, nDiagOrphanSeen, dwDiagOrphanMaxAge, nDiagStarvedSeen, dwDiagStarvedMaxAge
+ 					, (LONG)g_nDiagOvStuckBegun, (LONG)g_nDiagOvStuckOpen, (LONG)g_nDiagOvStuckEnded
+ 					, (LONG)g_nDiagOvStuckNoQueues, (LONG)g_nDiagOvStuckMaxMs, (LONG)g_nDiagOvStuckTotalMs
+-					, (LONG)g_nDiagOvProbes);
++					, (LONG)g_nDiagOvProbes
++					, (LONG)g_nDiagGuiTicks
++					, (DWORD)(g_dwDiagGuiLastTick ? ::GetTickCount() - (DWORD)g_dwDiagGuiLastTick : 0)
++					, nDiagGuiStalls, dwDiagGuiStallMax, (int)theApp.DbgGetDebugLogQueueCount());
+ 
+ 				// One line per slot. The counters above say that nothing moved; these say which
+ 				// socket was asked and what it answered, which is the only way to tell a socket
+@@ -755,6 +768,37 @@ UINT UploadBandwidthThrottler::RunInternal()
+ 			}
+ 		}
+ 
++		//UPDIAG: the GUI timer watchdog. UploadTimer() runs every 100ms and is the only thing
++		//that drains the queued debug log; when it stops being delivered the program carries on
++		//and the log goes quiet, then writes the backlog under the timestamps of the moment it
++		//recovers. A window like that cannot be read as a timeline, so it has to declare itself.
++		//The age is taken here, on a thread that is still running, and travels inside the text.
++		{
++			extern volatile LONG g_nDiagGuiTicks, g_dwDiagGuiLastTick; //defined in UploadQueue.cpp
++			const DWORD dwLastTick = (DWORD)g_dwDiagGuiLastTick;
++			const DWORD dwNow = ::GetTickCount(); //the timer stamps with GetTickCount, so compare on that clock
++			const DWORD dwAge = (dwLastTick == 0 || dwNow < dwLastTick) ? 0 : dwNow - dwLastTick;
++			if (dwAge >= SEC2MS(3)) {
++				if (dwDiagGuiStallSince == 0) {
++					dwDiagGuiStallSince = dwLastTick;
++					nDiagGuiTicksSeen = g_nDiagGuiTicks;
++					++nDiagGuiStalls;
++					theApp.QueueDebugLogLineEx(LOG_ERROR
++						, _T("UPDIAG|guistall begin, the GUI timer has not run for %ums, backlog=%d")
++						, dwAge, (int)theApp.DbgGetDebugLogQueueCount());
++				}
++			} else if (dwDiagGuiStallSince != 0) {
++				const DWORD dwLasted = dwNow - dwDiagGuiStallSince;
++				if (dwLasted > dwDiagGuiStallMax)
++					dwDiagGuiStallMax = dwLasted;
++				theApp.QueueDebugLogLineEx(LOG_ERROR
++					, _T("UPDIAG|guistall end after %ums, ticks missed ~%ld, backlog=%d")
++					, dwLasted, (LONG)(dwLasted / 100) - (g_nDiagGuiTicks - nDiagGuiTicksSeen)
++					, (int)theApp.DbgGetDebugLogQueueCount());
++				dwDiagGuiStallSince = 0;
++			}
++		}
++
+ 		//UPDIAG: the collectability sweep, read-only. It walks the whole slot list and it does not
+ 		//ask whether anything is queued, on purpose: the scan above does both, and those are exactly
+ 		//the two conditions that keep the only collector in the program from ever reaching a socket
+diff --git a/srchybrid/UploadQueue.cpp b/srchybrid/UploadQueue.cpp
+index d2bac2b..1dc27be 100644
+--- a/srchybrid/UploadQueue.cpp
++++ b/srchybrid/UploadQueue.cpp
+@@ -55,6 +55,14 @@ volatile LONG g_nDiagShortSends = 0;
+ volatile LONG g_nDiagShortSendBytes = 0;
+ volatile LONG g_nDiagSendsChecked = 0;
+ 
++// UPDIAG: the heartbeat of the GUI timer. Everything periodic in eMule hangs off UploadTimer
++// below, including the one call that drains the queued debug log, so when that timer stops
++// being delivered the program keeps working and the log simply stops - and starts again later
++// with the backlog written under the wrong timestamps. The throttler runs on its own thread and
++// can see it happen; these two let it say so, with a duration it measures itself.
++volatile LONG g_nDiagGuiTicks = 0;		// UploadTimer entries
++volatile LONG g_dwDiagGuiLastTick = 0;	// tick count of the last one
++
+ #ifdef _DEBUG
+ #define new DEBUG_NEW
+ #undef THIS_FILE
+@@ -997,6 +1005,11 @@ VOID CALLBACK CUploadQueue::UploadTimer(HWND /*hwnd*/, UINT /*uMsg*/, UINT_PTR /
+ 		if (theApp.IsClosing())
+ 			return;
+ 
++		//UPDIAG: proof of life for this timer, read from the throttler thread. Written before the
++		//drain below, so a tick counted is a tick that reached the drain.
++		::InterlockedIncrement(&g_nDiagGuiTicks);
++		::InterlockedExchange(&g_dwDiagGuiLastTick, (LONG)::GetTickCount());
++
+ 		// Elandal:ThreadSafeLogging -->
+ 		// other threads may have queued up log lines. This prints them.
+ 		theApp.HandleDebugLogQueue();
