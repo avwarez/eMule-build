@@ -156,6 +156,39 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          client that missed its slot, needs a flag which is cleared when a
 #          slot is given and which this client cannot get back while it is
 #          being passed over, so it is closed by the first reader already.
+#          97h corrects where a finished send is collected. Each upload
+#          socket keeps one overlapped send outstanding, and its completion
+#          is taken in a single place - CEMSocket::IsBusyExtensiveCheck() -
+#          which the throttler reaches for the sockets inside the scan
+#          window that still have something queued. The event those sends
+#          carry is shared by every socket, so one wake-up stands for a
+#          completion on any of them while those two conditions answer for
+#          one. A send that finishes with its queue empty, or on a slot past
+#          the end of the window, is then never collected: every sending
+#          path uses the cheap busy check, which reads the flag that is
+#          still raised and skips the socket, so nothing sends on it,
+#          nothing queues more data behind it, and neither condition can
+#          become true again. The flag that hides the completion is the flag
+#          that keeps the collector away, and the slot does nothing for the
+#          rest of its life. The patch sweeps the whole list under the same
+#          lock, collecting from every socket that has a send outstanding
+#          wherever it sits and whatever it has queued. The cheap check is a
+#          plain flag read, so a slot with nothing outstanding costs nothing
+#          here, and one the scan above has just collected has had the flag
+#          lowered already.
+#
+#          The shape is measured rather than proposed. ovrepro/ reproduces
+#          the two gates around a real overlapped send, with its own
+#          workflow and README. Eight slots and a window of three leave five
+#          slots dead - slots 3 to 7, every one outside the window - on
+#          Windows x64, on Windows Win32 and under Wine alike, which is what
+#          places the fault in this arrangement rather than in anything
+#          underneath it; the same harness sweeping the whole list leaves
+#          none dead on any of the three. Wine completes no overlapped send
+#          synchronously where Windows completes 96% of them that way, so
+#          the condition arises there far more often - 1,277 episodes
+#          against 12 - which decides how often it is met, not whether it is
+#          there.
 #   98     corrections to the shipped language resources, from the fork's
 #          v0.72a-lang branch - source data for the `languages` target
 #          rather than code, so they change no binary.
@@ -168,9 +201,17 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          which returns at once unless the verbose preference is set, so
 #          the whole band can also be silenced at run time without a build.
 #
-#          99a-diag-upload-path stands on its own: it touches no file any
-#          corrective patch touches, so it applies to an unmodified tree and
-#          is how the behaviour of a build without those patches is measured.
+#          99a-diag-upload-path used to stand on its own: it touched no file
+#          any corrective patch touched, so it applied to an unmodified tree
+#          and was how the behaviour of a build without those patches was
+#          measured. It no longer does. 97h inserts its sweep between the
+#          busy scan and the unlock, which is the middle of the hunk this
+#          patch rewrites, and patch context cannot separate the two; this
+#          file was rebased onto it and now needs it, the way 99b needs 97f
+#          and 99c needs 97g. What the property existed for has been spent:
+#          the last log written before the change is the before side, and it
+#          reads orphans=43310 orphanage=34333ms, ovstuck=4877 ovmax=21114ms
+#          ovtotal=54680ms over 10,365,293 probes.
 #          It reports the waiting queue and the upload list every ten
 #          seconds, the block requests peers send and how many were queued
 #          or dropped as already served, the disk I/O thread - including,

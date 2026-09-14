@@ -1,0 +1,28 @@
+diff --git a/srchybrid/UploadBandwidthThrottler.cpp b/srchybrid/UploadBandwidthThrottler.cpp
+index d9a8e54..606a354 100644
+--- a/srchybrid/UploadBandwidthThrottler.cpp
++++ b/srchybrid/UploadBandwidthThrottler.cpp
+@@ -337,6 +337,23 @@ UINT UploadBandwidthThrottler::RunInternal()
+ 				nBusy += static_cast<uint32>(pSocket->IsBusyExtensiveCheck());
+ 			}
+ 		}
++		// The completion of a send is collected in one place only, CEMSocket::IsBusyExtensiveCheck(),
++		// and the loop above reaches it for the sockets inside the scan window that still have
++		// something queued. The event those sends carry is shared by every socket - SendOv() takes it
++		// from GetSocketAvailableEvent() - so one wake-up stands for a completion on any of them,
++		// while the two conditions above answer for one. A send that finishes with its queue empty,
++		// or on a slot past the end of the window, is then never collected: the quick check every
++		// sending path below uses reads the flag that is still raised and skips the socket, so
++		// nothing sends on it, nothing queues more data behind it, and neither condition above can
++		// become true again. The flag that hides the completion is the flag that keeps the collector
++		// away. Sweep the whole list, so what is collected matches what is notified. The quick check
++		// is a plain read of that flag: a slot with no send outstanding costs nothing here, and one
++		// the loop above has just collected has had it lowered already.
++		for (INT_PTR i = GetStandardListSize(); --i >= 0;) {
++			ThrottledFileSocket *pSocket = m_StandardOrder_list[i];
++			if (pSocket != NULL && pSocket->IsBusyQuickCheck())
++				pSocket->IsBusyExtensiveCheck();
++		}
+ 		queueLocker.Unlock();
+ 
+ 		// if this is kept, the loop above can be optimized a little (don't count nCanSend,
