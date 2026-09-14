@@ -90,6 +90,18 @@ The `Build wsrepro (listener reproducer)` workflow does exactly that for
 ARM64, x64 and Win32 on every push that touches this directory, and leaves the
 exe as a run artifact.
 
+## The bench
+
+Two halves, and until 2026-09-14 only one of them existed. The workflow builds
+the exe on a Windows runner and runs it there; a second job then downloads
+**that same binary** and runs it under Wine on Linux, with the architecture
+held constant. Before that, every comparison was x64-on-Windows against
+ARM64-on-Wine, which varies the operating system and the architecture at once -
+so a disagreement could always have been the architecture. Now it cannot be.
+
+The Wine on the Linux runner is 9.0 (whatever the image ships); the machine the
+fault was found on runs 11.0. That is a second axis, and a useful one.
+
 ## What it found (2026-09-14)
 
 Same source, same compiler, same static MFC. One machine runs Windows (the CI
@@ -117,6 +129,23 @@ command line on both sides:
 | Windows runner, x64 | `emule` | 3 | 0 | 11,906 | 2,882 |
 | Windows runner, Win32 | `emule` | 3 | 0 | 11,979 | 2,823 |
 | Windows runner, x64 | `asyncselect` | 3 | 0 | 11,943 | 3,105 |
+
+And the decisive one - one binary, one CI run, two operating systems:
+
+| same x64 binary, run 34834... | mode | trials | froze |
+|---|---|---|---|
+| Windows runner | `emule` | 3 | 0 (11,827 cycles, 3,137 empty drains) |
+| Wine 9.0 on Linux x86_64 | `emule` | 3 | **3** (after 8, 212 and 468 connections) |
+| Windows runner | `asyncselect` | 3 | 0 |
+| Wine 9.0 on Linux x86_64 | `asyncselect` | 3 | **3** |
+| Windows runner | `poll` | 3 | 0 |
+| Wine 9.0 on Linux x86_64 | `poll` | 3 | 0 (15,814 accepted, 0 missed readiness) |
+
+So the fault is not specific to the ARM64 port of Wine, and not specific to
+Wine 11: the same loop dies on Wine 9.0 on x86_64 with the same autopsy - the
+thread parked, the backlog full, one `SetEvent` emptying it. The architecture
+is out of the picture entirely, since both sides of that table are the same
+x64 executable.
 | Windows runner, Win32 | `asyncselect` | 3 | 0 | 11,798 | 2,743 |
 
 The empty-drain column matters: it counts the wakeups where `accept()` found
