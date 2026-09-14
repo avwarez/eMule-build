@@ -1,0 +1,162 @@
+name: Build timerepro (timer specimen)
+
+# The fifth specimen of the dual bench. Everything eMule does is driven by a
+# timer, and its upload throttler asks for a loop period of ONE millisecond
+# (TIME_BETWEEN_UPLOAD_LOOPS, UploadBandwidthThrottler.cpp:573) from a clock
+# that nothing has sharpened, because the HighresTimer preference that would
+# call timeBeginPeriod defaults to false.
+#
+# So this measures what a one-millisecond wait really costs, and how many turns
+# a second eMule's loop really gets, on both implementations - with and without
+# the timer raised. Its "contract" mode prints timestamp-free PROBE lines, in
+# buckets coarse enough that two correct runs of the same platform land in the
+# same one, and this workflow DIFFS the two tables. A red cross on the compare
+# step means the bench found something, not that the bench is broken.
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'timerepro/**'
+      - '.github/workflows/build-timerepro.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [ARM64, x64, Win32]
+
+    steps:
+      - name: Pin deterministic line endings before checkout
+        run: git config --global core.autocrlf false
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure (CMake)
+        run: cmake -S timerepro -B build-timerepro -A ${{ matrix.platform }}
+
+      - name: Build
+        run: cmake --build build-timerepro --config Release
+
+      - name: Run the specimen on the runner
+        # The control experiment: this IS Windows, so whatever the API does
+        # here is by definition what eMule was written against.
+        #
+        # ARM64 is skipped because an x64 runner cannot execute it - that build
+        # exists to be carried to the machine under study.
+        if: matrix.platform != 'ARM64'
+        shell: bash
+        run: |
+          set +e
+          ./build-timerepro/Release/timerepro.exe --mode contract > out-contract.txt 2>&1
+          echo "contract exit=$?"
+          ./build-timerepro/Release/timerepro.exe --mode throttle > out-throttle.txt 2>&1
+          echo "throttle exit=$?"
+          set -e
+          cat out-contract.txt
+          echo "=============== throttle ==============="
+          cat out-throttle.txt
+          # Both tables are compared: the throttle numbers are bucketed too.
+          # Line endings are stripped, the Windows run writing CRLF and the
+          # Wine run LF.
+          grep -h '^PROBE ' out-contract.txt out-throttle.txt | sed 's/\r$//' > probes-windows.txt
+
+      - name: Upload timerepro.exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: timerepro-${{ matrix.platform }}
+          path: build-timerepro/Release/timerepro.exe
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload the Windows probe table
+        if: matrix.platform == 'x64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: probes-windows
+          path: probes-windows.txt
+          if-no-files-found: error
+          retention-days: 14
+
+  wine:
+    name: Run under Wine (Linux)
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download the Windows build
+        uses: actions/download-artifact@v4
+        with:
+          name: timerepro-x64
+          path: bin
+
+      - name: Download the Windows probe table
+        uses: actions/download-artifact@v4
+        with:
+          name: probes-windows
+          path: ref
+
+      - name: Install Wine
+        run: |
+          sudo apt-get update -qq
+          # The wine metapackage is what registers /usr/bin/wine through the
+          # alternatives system; wine64 alone ships the binary somewhere else
+          # on this image, so ask for both and then go looking rather than
+          # assuming a name.
+          sudo apt-get install -y --no-install-recommends wine wine64 xvfb || \
+            sudo apt-get install -y --no-install-recommends wine64 xvfb
+          WINE=$(command -v wine || command -v wine64 || true)
+          if [ -z "$WINE" ]; then
+            for c in /usr/lib/wine/wine64 /usr/lib/wine/wine /usr/lib/x86_64-linux-gnu/wine/wine64; do
+              [ -x "$c" ] && WINE=$c && break
+            done
+          fi
+          if [ -z "$WINE" ]; then
+            echo "no wine binary found; what the packages installed:"
+            dpkg -L wine64 2>/dev/null | grep -E 'bin/|wine64$' | head -20
+            exit 1
+          fi
+          echo "WINE=$WINE" >> "$GITHUB_ENV"
+          "$WINE" --version
+
+      - name: Create the prefix
+        env:
+          WINEDEBUG: -all
+        run: xvfb-run -a "$WINE" bin/timerepro.exe --help > /dev/null 2>&1 || true
+
+      - name: Run the specimen
+        env:
+          WINEDEBUG: -all
+        run: |
+          set +e
+          xvfb-run -a "$WINE" bin/timerepro.exe --mode contract > out-contract.txt 2>&1
+          echo "contract exit=$?"
+          xvfb-run -a "$WINE" bin/timerepro.exe --mode throttle > out-throttle.txt 2>&1
+          echo "throttle exit=$?"
+          set -e
+          cat out-contract.txt
+          echo "=============== throttle ==============="
+          cat out-throttle.txt
+          grep -h '^PROBE ' out-contract.txt out-throttle.txt | sed 's/\r$//' > probes-wine.txt
+
+      - name: Compare the two tables
+        # Windows is the oracle. Nothing here encodes what the right answer is;
+        # it only has to notice that the two implementations gave different
+        # ones.
+        run: |
+          if diff -u ref/probes-windows.txt probes-wine.txt > probes.diff; then
+            echo "The two implementations answered every probe identically."
+          else
+            echo "############################################################"
+            echo "# DIFFERENCE FOUND - this is the result, not a broken build #"
+            echo "############################################################"
+            cat probes.diff
+            exit 1
+          fi
