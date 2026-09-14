@@ -71,9 +71,10 @@ struct SOptions
 	int   nStallMs;      // no accept for this long, with clients waiting -> freeze
 	int   nDurationS;    // give up looking for the freeze after this long
 	int   nClientWaitMs; // how long a client waits for its reply before giving up
+	bool  bOneShot;      // accept ONE connection per notification, never a failing accept()
 };
 
-static SOptions s_opt = { MODE_EMULE, 4711, 16, 0, 5000, 300, 3000 };
+static SOptions s_opt = { MODE_EMULE, 4711, 16, 0, 5000, 300, 3000, false };
 
 /////////////////////////////////////////////////////////////////////////////
 // Shared state
@@ -235,6 +236,17 @@ static int DrainAccepts(SOCKET hSocket)
 			delete pAcceptThread;
 			closesocket(hAccepted);
 		}
+
+		// --one-shot: leave now, on a SUCCESSFUL accept, so that no failing
+		// accept() is ever issued in this round. This is not an invented
+		// variant - it is what CListenSocket::OnAccept does in eMule: it takes
+		// exactly as many connections as it was notified about (its
+		// m_nPendingConnections counter) and never drains to WSAEWOULDBLOCK.
+		// The web listener in WebSocket.cpp is the one that drains. Running
+		// both tells us which of the two calls is the one that loses the
+		// notification.
+		if (s_opt.bOneShot)
+			break;
 	}
 	if (!nThisRound)
 		::InterlockedIncrement(&s_nDrainEmpty);
@@ -566,6 +578,7 @@ static void Usage()
 		"  --stall-ms <n>      no accept for this long, with clients waiting -> freeze (default 5000)\n"
 		"  --duration-s <n>    stop looking for the freeze after this long (default 300)\n"
 		"  --client-wait-ms <n>  how long a client waits for its reply (default 3000)\n"
+		"  --one-shot          accept one connection per notification, never a failing accept()\n"
 		"\n"
 		"Exit code: 0 = no freeze observed, 1 = freeze observed, 2 = could not start\n");
 }
@@ -601,6 +614,8 @@ static bool ParseArgs(int argc, char *argv[])
 			s_opt.nStallMs = atoi(argv[++i]);
 		else if (!strcmp(p, "--duration-s") && bHasVal)
 			s_opt.nDurationS = atoi(argv[++i]);
+		else if (!strcmp(p, "--one-shot"))
+			s_opt.bOneShot = true;
 		else if (!strcmp(p, "--client-wait-ms") && bHasVal)
 			s_opt.nClientWaitMs = atoi(argv[++i]);
 		else {
@@ -629,8 +644,9 @@ int main(int argc, char *argv[])
 		return 2;
 	}
 
-	Log("start: mode=%s port=%u hammers=%d delay=%dms stall=%dms duration=%ds"
-		, s_pszModeNames[s_opt.nMode], s_opt.nPort, s_opt.nHammers
+	Log("start: mode=%s%s port=%u hammers=%d delay=%dms stall=%dms duration=%ds"
+		, s_pszModeNames[s_opt.nMode], s_opt.bOneShot ? " one-shot" : ""
+		, s_opt.nPort, s_opt.nHammers
 		, s_opt.nDelayMs, s_opt.nStallMs, s_opt.nDurationS);
 
 	s_hTerminate = CreateEvent(NULL, TRUE, FALSE, NULL);   // manual reset, as eMule's
