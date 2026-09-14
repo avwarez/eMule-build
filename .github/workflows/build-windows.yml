@@ -14,7 +14,7 @@ on:
       # absent from AUTO_PUBLISH_BRANCHES below: it builds and leaves the
       # per-platform zips as run artifacts, and never cuts a release.
       - v0.72a-uploadio
-    # The specimens in wsrepro/ and iocprepro/ are standalone CMake projects,
+    # The specimens in wsrepro/, iocprepro/ and ovrepro/ are standalone CMake projects,
     # each with its own workflow. They share no source, no dependency and no
     # build step with eMule, so a commit that only touches one of them has
     # nothing to verify here and would otherwise cost six full matrix builds.
@@ -23,6 +23,8 @@ on:
       - '.github/workflows/build-wsrepro.yml'
       - 'iocprepro/**'
       - '.github/workflows/build-iocprepro.yml'
+      - 'ovrepro/**'
+      - '.github/workflows/build-ovrepro.yml'
 
 # Branches whose pushes publish a public pre-release on their own. There is one
 # line of development: v0.72a-cpp23 and v0.72a-cpp23-fix were folded into
