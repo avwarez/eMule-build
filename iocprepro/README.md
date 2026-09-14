@@ -97,6 +97,64 @@ that cannot happen on a correct implementation. `.github/workflows/build-iocprep
 builds ARM64/x64/Win32, runs all four modes on the Windows runner, then runs the
 same x64 binary under Wine on Linux and diffs the two probe tables.
 
-## Results
+## Results — 14 September 2026, run 34847674228
 
-Not yet run.
+One x64 binary, built once on the Windows runner and run on both sides of the
+bench in the same CI run.
+
+**The probe table: 25 answers out of 25 identical.** Windows and Wine 9.0 on
+Linux x86_64 agree on every one — association and double association, the
+out-parameters of a timed-out `GetQueuedCompletionStatus`, verbatim delivery and
+FIFO order of posted packets, the four edges around end-of-file, `CancelIo`,
+`CloseHandle` with I/O in flight, and every 64-bit offset including the one that
+straddles 4 GB.
+
+Under load, nothing lost anywhere:
+
+| | reads completed | packets posted | lost | ledger |
+|---|---|---|---|---|
+| Windows x64, `strict` | 160,750 | 162,600 | 0 | all zero |
+| Windows x64, `emule` | 154,569 | 85,415 | 0 | all zero |
+| Windows Win32, `strict` | 130,668 | 132,399 | 0 | all zero |
+| Windows Win32, `emule` | 129,781 | 94,872 | 0 | all zero |
+| Wine 9.0 x86_64, `strict` | 379,372 | 391,225 | 0 | all zero |
+| Wine 9.0 x86_64, `emule` | 451,585 | 18,060 | 0 | all zero |
+
+Roughly 1.4 million completions and 890,000 hand-posted packets, and not one
+went missing, arrived twice, carried the wrong completion key, returned the
+wrong byte count or returned the wrong bytes. **No difference found.** Which is
+a result: the completion port is not where the remaining upload defect lives,
+and the shape that was fatal on the listening socket is not fatal here.
+
+Two things worth keeping from the run:
+
+- `read-past-eof` answers a question about eMule rather than about Wine. A
+  failing overlapped read **does** queue a completion packet, on both
+  implementations: `GetQueuedCompletionStatus` returns FALSE with `lpOverlapped`
+  pointing at the request and `GetLastError()` 38 (`ERROR_HANDLE_EOF`). That is
+  exactly the packet eMule's inner drain loop drops - its `do..while` ends on
+  the first failed dequeue and never processes what it just took off the port,
+  leaving the request on `m_listPendingIO` forever. The hazard the `UPDIAG`
+  comment in `UploadDiskIOThread.cpp` describes is real, it is eMule's, and it
+  is the same on both platforms.
+- Wine is the faster of the two here (380-450k reads against 130-160k), which is
+  the Linux page cache against the runner's disk, not a property of the port.
+
+### What the first two runs cost, and why they are worth recording
+
+Both earlier runs reported a stall in `strict` mode - on **Windows**, with
+`posted == taken`. Neither was a finding; both were this harness parking its own
+thread, and the books are what said so:
+
+1. The pool of overlapped slots is something eMule does not have, so a cycle
+   could run out of slots and leave requests behind. Fixed by capping the
+   producers on queued + outstanding, and counted from then on (`leftover=`).
+2. The drain loop swallows wakeups. A packet posted while a cycle is past its
+   `StartReads()` and still draining is taken, counted, and does nothing. eMule
+   is immune because its work source is the upload list itself - every cycle
+   walks all of it - while this harness reads from a queue, where the same
+   swallow loses the work.
+
+The second one is why the autopsy was rewritten to weigh the ledger before the
+kick: a hand-posted packet resumes a parked thread in *every* one of these
+cases, so "the kick helped" can never be the evidence for "a packet was lost".
