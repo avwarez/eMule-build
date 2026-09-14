@@ -66,7 +66,40 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #   90-94  the code compiles but /Wall flags it; these bring the warning
 #          count back to zero.
 #   95-96  the code compiles and is warning-clean but is not correct on
-#          every target we build (see each patch's own subject).
+#          every target we build, or in every environment we run it in
+#          (see each patch's own subject). 95 and 96 are the first kind:
+#          constructs that hold on x86 and not on ARM64. 96b is the second,
+#          and the distinction it rests on is the whole reason this band is
+#          separate from 97 below: the code it changes is correct on
+#          Windows - measured, not assumed - and only fails elsewhere.
+#
+#          96b-webserver-accept-readiness changes how the web interface's
+#          listening thread learns that a connection is waiting. It used to
+#          arm the socket with WSAEventSelect(FD_ACCEPT), wait on the event
+#          with no timeout, and then accept() in a loop until accept()
+#          failed. FD_ACCEPT is an edge: delivery disables it and only
+#          accept() enables it again, so a single missed delivery leaves the
+#          thread in a wait nothing can end - there is no timeout to expire
+#          and accept(), the one call that would re-arm it, is never
+#          reached. Nothing creates that thread a second time, so the web
+#          interface then stays silent for the rest of the run while
+#          connections collect in the backlog; on the machine this was found
+#          on, seventeen of them were still sitting there two days later.
+#          The patch watches the socket with select() instead, which reports
+#          the socket's present state rather than a transition, and takes
+#          one connection per report instead of draining: there is no edge
+#          to miss, nothing to re-arm, and accept() is no longer called with
+#          nothing waiting. The select() timeout exists only so the thread
+#          notices the terminate event without a second object to wait on;
+#          it is not what makes the loop correct.
+#
+#          A standalone reproducer of the original loop - same constructs,
+#          same MFC threading, built by the same compiler - is in wsrepro/
+#          with its own workflow and its own README. It is what the words
+#          above rest on: the original shape stops accepting after six to
+#          194 connections in that environment and never once in eighteen
+#          control runs on Windows, and the shape this patch installs ran
+#          145,575 connections without a miss.
 #   97     the code is wrong on every target, on input or on timing a peer
 #          or a web client controls. 97a-c are the commits on the fork's
 #          v0.72a-secfix branch, offered upstream as irwir/eMule#7; a file
@@ -209,31 +242,6 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          looks the same whether the peer stopped asking, the request was
 #          dropped, the send never completed, or the timer simply ran out
 #          because nothing was left to reset it.
-#
-#          99d-diag-webserver covers the web interface, which is the quietest
-#          part of the program: eighteen log calls in four thousand lines,
-#          none of them on the path a request takes. When it stops answering
-#          there is nothing in the log at all, not even a record that the
-#          request arrived. This patch gives that path a voice at every step
-#          it can stop on. The listening thread says when it starts, on which
-#          port, and whether the socket, the bind, the listen, the event and
-#          the event selection succeeded - in vanilla each of those failures
-#          simply leaves the interface silent - and it says when its accept
-#          loop ends, with the reason, which matters because nothing creates
-#          that thread a second time. Each connection gets its own thread,
-#          so the birth and death of every one is reported together with how
-#          many are alive: a connection whose start line has no end line is
-#          a thread still parked in a wait with no timeout, and counting
-#          them is the only way to see that from outside. Each request is
-#          bracketed from the parsed URL to the answer, with the page it
-#          chose, the length it built, whether it was compressed and how
-#          long each of those took, so a request that never finishes says
-#          how far it got. Two things are reported because they are shared
-#          without a lock: the session list, which the GUI thread edits on
-#          its own timer while every request walks it, and every message a
-#          request sends to that GUI thread - each of which stops the web
-#          thread until the GUI answers, and is timed here for exactly that
-#          reason.
 #
 #          99e-diag-overlapped-collection measures the one state the per-slot
 #          line can only catch by sampling: a send the operating system has
