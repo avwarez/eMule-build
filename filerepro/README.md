@@ -55,6 +55,74 @@ Exit code 1 means something was found. `.github/workflows/build-filerepro.yml`
 builds ARM64/x64/Win32, runs both modes on the Windows runner, then runs the
 same x64 binary under Wine on Linux and diffs the two probe tables.
 
-## Results
+## Results — 14 September 2026, run 34859897602
 
-Not yet run.
+One x64 binary, built once on the Windows runner and run on both sides of the
+bench in the same CI run; Win32 ran on the Windows runner as a third leg.
+
+**The `lifecycle` mode is clean everywhere**: 20 part files per leg, created,
+given their final length, filled out of order, flushed, moved and read back byte
+for byte — `create=0 size=0 write=0 flush=0 ondisk=0 move=0 length=0 verify=0
+delete=0` on Windows x64, Windows Win32 and Wine 9.0 alike. Nothing eMule does
+to the *contents* of a part file comes out differently.
+
+**The probe table: 12 of 17 identical, 5 different.** Four of them are about the
+same thing — sparse files — and one is an error number.
+
+| probe | Windows | Wine 9.0 |
+|---|---|---|
+| `volume-info` | `sparse=1` | `sparse=0` |
+| `attributes-sparse` | `sparse-flag=1` | `sparse-flag=0` |
+| `disksize-sparse` | `just-the-written-part` | `full-length` |
+| `filetime-creation` | `kept=1` | `kept=0` |
+| `long-path` | `err=3` | `err=2` |
+
+### Sparse files: eMule is told the opposite of the truth
+
+`FSCTL_SET_SPARSE` **succeeds** under Wine, and the file really is sparse — the
+`sparse-costs-disk` probe asks the disk itself and both platforms answer
+`no-just-the-blocks`, so a 4 GB part file with 4 KB in it costs 4 KB on either.
+But everything eMule can *ask* about it says otherwise:
+
+- `GetVolumeInformation` does not report `FILE_SUPPORTS_SPARSE_FILES`;
+- `GetFileAttributes` never returns `FILE_ATTRIBUTE_SPARSE_FILE`;
+- `GetCompressedFileSize` returns the length, not the room taken.
+
+Which lands in three places in eMule:
+
+- `CPartFile::IsNormalFile()` (`PartFile.h:149`) reads exactly that attribute, so
+  under Wine it is always true. At `PartFile.cpp:4028` it is one of the
+  conditions for allocating a part file to its full length, and at
+  `DownloadQueue.cpp:1031` it decides which side of a disk-space check a file
+  falls on.
+- `GetDiskFileSize` (`OtherFunctions.cpp:2620`) over-reports, and
+  `PartFileConvert.cpp:291` uses it as `spaceneeded` — so importing a sparse
+  part file asks for its whole length in free space rather than what it occupies.
+
+No data is at risk and no disk is eaten. What is wrong is eMule's picture of its
+own files.
+
+### The creation time that is accepted and dropped
+
+`SetFileTime` returns success under Wine and the creation time does not change.
+eMule writes one back at `PartFile.cpp:427` when it detects NTFS time
+tunnelling, inside a `VERIFY(...)` — which passes, because the call did return
+success. So the correction silently does nothing, and the `if (m_tLastModified -
+m_tCreated > 1) //tunnelling!` branch fires again on every open, forever.
+
+### What the first two runs cost
+
+The first run reported `move-open` as a difference: Windows refusing to move a
+file that is open, Wine allowing it. That was **not** a platform difference — the
+probe before it had deleted the same file through a live handle, which on
+Windows leaves the name in a delete-pending state, so the move failed for a
+reason that had nothing to do with the question. Given a file of its own, both
+platforms move an open file happily, because eMule opens part files with
+`FILE_SHARE_DELETE`. eMule's `ERROR_SHARING_VIOLATION` retry at
+`PartFile.cpp:2862` is about *other* processes holding the file, not about the
+platform.
+
+The first run also read `disksize-sparse` before flushing, and NTFS allocates a
+cached write when it reaches the disk — so Windows answered `0` for a file that
+had 4 KB in it. Both probes now stand on their own, and the error numbers are
+reported as numbers rather than as names I chose for them.
