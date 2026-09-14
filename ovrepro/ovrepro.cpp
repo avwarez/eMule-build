@@ -521,6 +521,12 @@ static bool MakePair(PairSockets &r, u_short nPort)
 	stAddr.sin_family = AF_INET;
 	stAddr.sin_port = htons(nPort);
 	stAddr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	// On the LISTENING socket, so the accepted one inherits them: set after
+	// accept() the receive size can arrive too late to hold down the window,
+	// and then the peer quietly swallows megabytes it was never meant to take.
+	const int nInherit = s_opt.nSndBufKB * 1024;
+	setsockopt(r.hListen, SOL_SOCKET, SO_RCVBUF, (const char*)&nInherit, sizeof nInherit);
+	setsockopt(r.hListen, SOL_SOCKET, SO_SNDBUF, (const char*)&nInherit, sizeof nInherit);
 	if (bind(r.hListen, (LPSOCKADDR)&stAddr, sizeof stAddr) || listen(r.hListen, 4))
 		return false;
 
@@ -588,23 +594,33 @@ static UINT AFX_CDECL CancelFromAnotherThread(LPVOID)
 	return 0;
 }
 
-// Issues a send big enough that it cannot possibly complete while the peer is
-// not reading, and reports whether it went pending as expected.
-static bool IssuePendingSend(SOCKET hSender, WSAOVERLAPPED &rOv, HANDLE hEvent, BYTE *pBuf, DWORD dwLen)
+// Leaves an outstanding send on the socket, and says how much it took to get
+// one. How much is not a constant: a peer that has stopped reading still has a
+// receive window, and the sending stack still has a buffer, so the first sends
+// are simply swallowed and complete at once. This keeps sending until one of
+// them cannot be, which is the state every probe below is about.
+//
+// Returns the number of attempts, 0 if none of them went pending, -1 on error.
+// The same WSAOVERLAPPED is reused for each attempt: only the last one is still
+// owned by the system when this returns.
+static int IssuePendingSend(SOCKET hSender, WSAOVERLAPPED &rOv, HANDLE hEvent, BYTE *pBuf, DWORD dwLen)
 {
-	::memset(&rOv, 0, sizeof(WSAOVERLAPPED));
-	rOv.hEvent = hEvent;
-	WSABUF stBuf;
-	stBuf.buf = (CHAR*)pBuf;
-	stBuf.len = dwLen;
-	if (::WSASend(hSender, &stBuf, 1, NULL, 0, &rOv, NULL) == 0)
-		return false;                                   // completed at once: not what we wanted
-	return ::WSAGetLastError() == WSA_IO_PENDING;
+	for (int i = 1; i <= 16; ++i) {
+		::memset(&rOv, 0, sizeof(WSAOVERLAPPED));
+		rOv.hEvent = hEvent;
+		WSABUF stBuf;
+		stBuf.buf = (CHAR*)pBuf;
+		stBuf.len = dwLen;
+		if (::WSASend(hSender, &stBuf, 1, NULL, 0, &rOv, NULL) != 0)
+			return (::WSAGetLastError() == WSA_IO_PENDING) ? i : -1;
+		// Completed at once: the data is gone from our hands, so go again.
+	}
+	return 0;
 }
 
 static int RunContract()
 {
-	const DWORD dwBig = 8 * 1024 * 1024;   // far past any send and receive buffer
+	const DWORD dwBig = 4 * 1024 * 1024;   // far past any send and receive buffer
 	BYTE *pBig = new BYTE[dwBig];
 	::memset(pBig, 0x5A, dwBig);
 	HANDLE hEvent = ::CreateEvent(NULL, FALSE, FALSE, NULL);   // auto-reset, as eMule's
@@ -645,25 +661,31 @@ static int RunContract()
 		if (MakePair(stPair, s_opt.nPort)) {
 			WSAOVERLAPPED stOv;
 			::ResetEvent(hEvent);
-			const bool bPending = IssuePendingSend(stPair.hSender, stOv, hEvent, pBig, dwBig);
-			DWORD dwTransferred = 0, dwFlags = 0;
-			const BOOL bEarly = ::WSAGetOverlappedResult(stPair.hSender, &stOv, &dwTransferred, FALSE, &dwFlags);
-			const int nEarlyErr = ::WSAGetLastError();
-			const bool bEarlySignal = ::WaitForSingleObject(hEvent, 200) == WAIT_OBJECT_0;
-			Probe("send-blocked", "pending=%d result=%s err=%u event=%s"
-				, bPending, bEarly ? "TRUE" : "FALSE", bEarly ? 0 : nEarlyErr
-				, bEarlySignal ? "SIGNALLED-EARLY" : "quiet");
+			const int nAttempts = IssuePendingSend(stPair.hSender, stOv, hEvent, pBig, dwBig);
+			Log("note: send-blocked needed %d sends of %uKB to leave one outstanding", nAttempts, dwBig / 1024);
+			if (nAttempts <= 0) {
+				Probe("send-blocked", "pending=0 attempts=exhausted");
+				Probe("send-completes", "skipped");
+			} else {
+				DWORD dwTransferred = 0, dwFlags = 0;
+				const BOOL bEarly = ::WSAGetOverlappedResult(stPair.hSender, &stOv, &dwTransferred, FALSE, &dwFlags);
+				const int nEarlyErr = ::WSAGetLastError();
+				const bool bEarlySignal = ::WaitForSingleObject(hEvent, 200) == WAIT_OBJECT_0;
+				Probe("send-blocked", "pending=1 result=%s err=%u event=%s"
+					, bEarly ? "TRUE" : "FALSE", bEarly ? 0 : nEarlyErr
+					, bEarlySignal ? "SIGNALLED-EARLY" : "quiet");
 
-			const ULONGLONG uRead = DrainPeer(stPair.hPeer, 5000);
-			const bool bSignalled = ::WaitForSingleObject(hEvent, 2000) == WAIT_OBJECT_0;
-			const BOOL bRes = ::WSAGetOverlappedResult(stPair.hSender, &stOv, &dwTransferred, FALSE, &dwFlags);
-			Probe("send-completes", "event=%s result=%s bytes=%s peer=%s"
-				, bSignalled ? "signalled" : "NOT-SIGNALLED"
-				, bRes ? "TRUE" : "FALSE"
-				, dwTransferred == dwBig ? "full" : "WRONG"
-				, uRead == dwBig ? "all" : "partial");
-			if (!bRes || dwTransferred != dwBig)
-				nExit = 1;
+				const ULONGLONG uRead = DrainPeer(stPair.hPeer, 5000);
+				const bool bSignalled = ::WaitForSingleObject(hEvent, 2000) == WAIT_OBJECT_0;
+				const BOOL bRes = ::WSAGetOverlappedResult(stPair.hSender, &stOv, &dwTransferred, FALSE, &dwFlags);
+				Probe("send-completes", "event=%s result=%s bytes=%s peer=%s"
+					, bSignalled ? "signalled" : "NOT-SIGNALLED"
+					, bRes ? "TRUE" : "FALSE"
+					, dwTransferred == dwBig ? "full" : "WRONG"
+					, uRead >= dwBig ? "all" : "partial");
+				if (!bRes || dwTransferred != dwBig)
+					nExit = 1;
+			}
 			ClosePair(stPair);
 		} else
 			Probe("send-blocked", "skipped");
@@ -678,12 +700,14 @@ static int RunContract()
 		if (MakePair(stPair, s_opt.nPort)) {
 			WSAOVERLAPPED stOv;
 			::ResetEvent(hEvent);
-			const bool bPending = IssuePendingSend(stPair.hSender, stOv, hEvent, pBig, dwBig);
+			const int nAttempts = IssuePendingSend(stPair.hSender, stOv, hEvent, pBig, dwBig);
 			s_hCancelTarget = stPair.hSender;
 			s_bCancelResult = -1;
 			CWinThread *pT = new CWinThread(CancelFromAnotherThread, NULL);
 			pT->m_bAutoDelete = FALSE;
-			if (pT->CreateThread()) {
+			if (nAttempts <= 0) {
+				Probe("cancelio-other-thread", "no-pending-send");
+			} else if (pT->CreateThread()) {
 				::WaitForSingleObject(pT->m_hThread, 2000);
 				::Sleep(100);
 				DWORD dwTransferred = 0, dwFlags = 0;
@@ -697,7 +721,6 @@ static int RunContract()
 			delete pT;
 			DrainPeer(stPair.hPeer, 2000);
 			ClosePair(stPair);
-			(void)bPending;
 		} else
 			Probe("cancelio-other-thread", "skipped");
 	}
@@ -708,15 +731,18 @@ static int RunContract()
 		if (MakePair(stPair, s_opt.nPort)) {
 			WSAOVERLAPPED stOv;
 			::ResetEvent(hEvent);
-			IssuePendingSend(stPair.hSender, stOv, hEvent, pBig, dwBig);
-			const BOOL bCancel = ::CancelIo((HANDLE)stPair.hSender);
-			::Sleep(100);
-			DWORD dwTransferred = 0, dwFlags = 0;
-			const BOOL bRes = ::WSAGetOverlappedResult(stPair.hSender, &stOv, &dwTransferred, FALSE, &dwFlags);
-			const int nErr = ::WSAGetLastError();
-			Probe("cancelio-same-thread", "returned=%d cancelled=%s"
-				, bCancel != 0
-				, bRes ? "no-completed" : (nErr == WSA_OPERATION_ABORTED ? "YES" : (nErr == WSA_IO_INCOMPLETE ? "no-still-pending" : "other")));
+			if (IssuePendingSend(stPair.hSender, stOv, hEvent, pBig, dwBig) <= 0)
+				Probe("cancelio-same-thread", "no-pending-send");
+			else {
+				const BOOL bCancel = ::CancelIo((HANDLE)stPair.hSender);
+				::Sleep(100);
+				DWORD dwTransferred = 0, dwFlags = 0;
+				const BOOL bRes = ::WSAGetOverlappedResult(stPair.hSender, &stOv, &dwTransferred, FALSE, &dwFlags);
+				const int nErr = ::WSAGetLastError();
+				Probe("cancelio-same-thread", "returned=%d cancelled=%s"
+					, bCancel != 0
+					, bRes ? "no-completed" : (nErr == WSA_OPERATION_ABORTED ? "YES" : (nErr == WSA_IO_INCOMPLETE ? "no-still-pending" : "other")));
+			}
 			DrainPeer(stPair.hPeer, 2000);
 			ClosePair(stPair);
 		} else
@@ -732,8 +758,10 @@ static int RunContract()
 		if (MakePair(stA, s_opt.nPort) && MakePair(stB, (u_short)(s_opt.nPort + 1))) {
 			WSAOVERLAPPED stOvA, stOvB;
 			::ResetEvent(hEvent);
-			IssuePendingSend(stA.hSender, stOvA, hEvent, pBig, dwBig);
-			IssuePendingSend(stB.hSender, stOvB, hEvent, pBig, dwBig);
+			const int nA = IssuePendingSend(stA.hSender, stOvA, hEvent, pBig, dwBig);
+			const int nB = IssuePendingSend(stB.hSender, stOvB, hEvent, pBig, dwBig);
+			if (nA <= 0 || nB <= 0)
+				Log("note: shared-event could not leave both sends outstanding (%d, %d)", nA, nB);
 			DrainPeer(stA.hPeer, 3000);
 			DrainPeer(stB.hPeer, 3000);
 			int nSatisfied = 0;
@@ -757,7 +785,9 @@ static int RunContract()
 		if (MakePair(stPair, s_opt.nPort)) {
 			WSAOVERLAPPED stOv;
 			::ResetEvent(hEvent);
-			IssuePendingSend(stPair.hSender, stOv, hEvent, pBig, dwBig);
+			const int nAttempts = IssuePendingSend(stPair.hSender, stOv, hEvent, pBig, dwBig);
+			if (nAttempts <= 0)
+				Log("note: getov-wait has no outstanding send to wait for");
 			CWinThread *pT = new CWinThread(DrainPeerThreadFunc, (LPVOID)(UINT_PTR)stPair.hPeer);
 			pT->CreateThread();
 			DWORD dwTransferred = 0, dwFlags = 0;
@@ -781,7 +811,8 @@ static int RunContract()
 		if (MakePair(stPair, s_opt.nPort)) {
 			WSAOVERLAPPED stOv;
 			::ResetEvent(hEvent);
-			IssuePendingSend(stPair.hSender, stOv, hEvent, pBig, dwBig);
+			if (IssuePendingSend(stPair.hSender, stOv, hEvent, pBig, dwBig) <= 0)
+				Log("note: closed-under-send has no outstanding send to close under");
 			const SOCKET hClosed = stPair.hSender;
 			closesocket(hClosed);
 			stPair.hSender = INVALID_SOCKET;
