@@ -77,6 +77,60 @@ Exit code 1 means something was found. `.github/workflows/build-ovrepro.yml`
 builds ARM64/x64/Win32, runs all three modes on the Windows runner, then runs
 the same x64 binary under Wine on Linux and diffs the two probe tables.
 
-## Results
+## Results — 14 September 2026, run 34857127764
 
-Not yet run.
+One x64 binary, built once on the Windows runner and run on both sides of the
+bench in the same CI run; the Win32 build ran on the Windows runner as a third
+leg.
+
+**The probe table: 9 answers out of 9 identical** on Windows x64, Windows Win32
+and Wine 9.0 on Linux x86_64.
+
+Under load, with 8 slots and a collector window of 3:
+
+| | dead slots | episodes | worst spell | short sends | errors |
+|---|---|---|---|---|---|
+| Windows x64, `emule` | **5 of 8** | 12 | 58,640 ms | 0 | 0 |
+| Windows Win32, `emule` | **5 of 8** | 17 | 58,610 ms | 0 | 0 |
+| Wine 9.0 x86_64, `emule` | **5 of 8** | 1,277 | 59,976 ms | 0 | 0 |
+| Windows x64, `poll` | 0 | 0 | 0 ms | 0 | 0 |
+| Windows Win32, `poll` | 0 | 1 | 0 ms | 0 | 0 |
+| Wine 9.0 x86_64, `poll` | 0 | 9 | 0 ms | 0 | 0 |
+
+The five dead slots are slots 3 to 7 — every one outside the collector's window
+— on all three legs, killed within seconds of the start and never collected
+again. The three inside the window recover every time.
+
+**The defect is eMule's.** The same arrangement kills the same slots on real
+Windows as under Wine, and the correction that `poll` stands for — collect every
+socket that has an outstanding send, whatever its queue and wherever it sits —
+leaves none dead anywhere. Nothing in the implementation underneath is involved.
+
+### Two things the run says beyond that
+
+**`CancelIo` from another thread cancels nothing** — `cancelled=no-still-pending`
+on both implementations, against `cancelled=YES` from the issuing thread. That is
+the documented rule, and `CEMSocket::CleanUpOverlappedSendOperation(true)` is
+called from `CEMSocket::~CEMSocket`, while the send it is trying to cancel was
+issued by the throttler thread. So the cancel does not take, the loop that
+follows spins its five turns of twenty milliseconds, gives up - and the code then
+runs `delete[] m_aBufferSend[i].buf` on buffers the system is still sending from.
+
+**Wine never completes an overlapped send synchronously.** On Windows 96% of the
+sends completed immediately (`immediate=8021` of 8369); under Wine not one did -
+every single send went pending. eMule handles both, so this is not a defect. But
+it decides how often the defect above can fire: 1,277 uncollected-completion
+episodes under Wine against 12 on Windows, a hundredfold, because a send that
+completes synchronously is never left for anyone to collect. It is also why the
+cancel-that-does-not-cancel has a window open all the time here and almost never
+on Windows.
+
+### What the first run cost
+
+The first attempt reported four differences between Windows and Wine. None was
+real: on Windows the 8 MB send never went pending at all, so every probe that
+needed an outstanding send was measuring nothing. The cause was `SO_RCVBUF` set
+on the accepted socket instead of on the listening one, where it is inherited
+from - set too late, receive-window auto-tuning had already swallowed the lot.
+Establishing an outstanding send is now a measurement of its own, reported as
+`pending=`, and it took three sends of 4 MB on Windows against one under Wine.
