@@ -41,6 +41,7 @@ are the real ones and not an approximation of them.
 | `clearinherit` | clears the event association the accepted socket inherits | is the inheritance the cause? |
 | `timeout` | wait with a 1000 ms timeout instead of `INFINITE` | does a bounded wait mask it? |
 | `asyncselect` | `WSAAsyncSelect` + a helper window and a message loop | is the OTHER notification path in eMule affected too? |
+| `poll` | no notification at all: level-triggered `select()` | does the readiness model that cannot lose an edge survive here? |
 
 `emule` reproduces; `enum` and `clearinherit` each remove one candidate cause;
 `timeout` tests the only remedy that is under eMule's control. `asyncselect`

@@ -72,7 +72,7 @@ jobs:
           # "no freeze" while never exercising the listener at all. Throttled, a
           # 60-second trial puts several thousand arm/drain cycles through it and
           # stays clear of the TIME_WAIT ceiling.
-          for mode in emule asyncselect; do
+          for mode in emule asyncselect poll; do
             echo "=============== mode=$mode ==============="
             for i in 1 2 3; do
               set +e

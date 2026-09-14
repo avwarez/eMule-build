@@ -56,10 +56,11 @@ enum EMode
 	MODE_ENUM,           // + WSAEnumNetworkEvents after the wait (the documented pattern)
 	MODE_CLEARINHERIT,   // + WSAEventSelect(hAccepted, NULL, 0) right after accept()
 	MODE_TIMEOUT,        // eMule's listener, but the wait has a timeout instead of INFINITE
-	MODE_ASYNCSELECT     // the OTHER notification path in eMule: WSAAsyncSelect + a message loop
+	MODE_ASYNCSELECT,    // the OTHER notification path in eMule: WSAAsyncSelect + a message loop
+	MODE_POLL            // no notification at all: level-triggered select()
 };
 
-static const char *const s_pszModeNames[] = { "emule", "enum", "clearinherit", "timeout", "asyncselect" };
+static const char *const s_pszModeNames[] = { "emule", "enum", "clearinherit", "timeout", "asyncselect", "poll" };
 
 struct SOptions
 {
@@ -92,6 +93,7 @@ static volatile LONG s_nDrainEmpty = 0;        // listener: wakeups that accepte
 static volatile LONG s_nConnLive = 0;
 static volatile LONG s_dwLastAccept = 0;       // GetTickCount of the last accept()
 static volatile LONG s_bListening = 0;
+static volatile LONG s_nSelectMissed = 0;      // poll mode: select() said "nothing" with clients waiting
 
 static HWND    s_hNotifyWnd = NULL;            // asyncselect mode: the helper window, as CAsyncSocketEx has
 #define WM_WSREPRO_NOTIFY (WM_APP + 1)
@@ -308,6 +310,49 @@ static void RunAsyncSelectListener(SOCKET hSocket)
 	::DestroyWindow(hWnd);
 }
 
+// The third listener: no notification mechanism at all. select() is
+// LEVEL-triggered - it answers "is there a connection waiting right now",
+// computed from the socket's current state, not from an edge delivered once.
+// There is nothing to lose and nothing to re-arm, so the failure mode that
+// kills the other two cannot exist here by construction.
+//
+// The 1-second timeout is not what makes it work, and the harness proves that
+// rather than assuming it: every time select() reports nothing while clients
+// are known to be waiting, s_nSelectMissed counts it. If that number stays at
+// zero, the timeout never had to rescue anything.
+static void RunPollListener(SOCKET hSocket)
+{
+	u_long ulNonBlock = 1;
+	if (ioctlsocket(hSocket, FIONBIO, &ulNonBlock)) {
+		Log("ioctlsocket(FIONBIO) FAILED err=%d", ::WSAGetLastError());
+		return;
+	}
+
+	::InterlockedExchange(&s_dwLastAccept, (LONG)::GetTickCount());
+	::InterlockedExchange(&s_bListening, 1);
+	Log("listener ready on port %u, mode=poll (level-triggered select)", s_opt.nPort);
+
+	while (::WaitForSingleObject(s_hTerminate, 0) == WAIT_TIMEOUT) {
+		fd_set stRead;
+		FD_ZERO(&stRead);
+		FD_SET(hSocket, &stRead);
+		timeval tv = { 1, 0 };
+
+		const int nRes = select(0, &stRead, NULL, NULL, &tv);
+		if (nRes > 0) {
+			::InterlockedIncrement(&s_nWaitReturns);
+			DrainAccepts(hSocket);
+		} else if (nRes == 0) {
+			if (s_nConnected > s_nAccepted)
+				::InterlockedIncrement(&s_nSelectMissed);
+		} else {
+			Log("select FAILED err=%d", ::WSAGetLastError());
+			break;
+		}
+	}
+	Log("listener loop END (poll), select said nothing with clients waiting %ld times", s_nSelectMissed);
+}
+
 static UINT AFX_CDECL WsReproListeningFunc(LPVOID)
 {
 	SOCKET hSocket = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, NULL, 0, 0);
@@ -328,8 +373,11 @@ static UINT AFX_CDECL WsReproListeningFunc(LPVOID)
 		return 1;
 	}
 
-	if (s_opt.nMode == MODE_ASYNCSELECT) {
-		RunAsyncSelectListener(hSocket);
+	if (s_opt.nMode == MODE_ASYNCSELECT || s_opt.nMode == MODE_POLL) {
+		if (s_opt.nMode == MODE_POLL)
+			RunPollListener(hSocket);
+		else
+			RunAsyncSelectListener(hSocket);
 		::InterlockedExchange(&s_bListening, 0);
 		closesocket(hSocket);
 		s_hListenSocket = INVALID_SOCKET;
@@ -511,7 +559,7 @@ static void Usage()
 	printf(
 		"wsrepro - reproducer for the eMule web-interface listener freeze\n"
 		"\n"
-		"  --mode <emule|enum|clearinherit|timeout|asyncselect>  listener variant (default emule)\n"
+		"  --mode <emule|enum|clearinherit|timeout|asyncselect|poll>  listener variant (default emule)\n"
 		"  --port <n>          listening port (default 4711)\n"
 		"  --hammers <n>       parallel client threads (default 16)\n"
 		"  --delay-ms <n>      pause between a client's connections (default 0)\n"
@@ -659,8 +707,8 @@ int main(int argc, char *argv[])
 		// get connections through (client-side port exhaustion, say) also reports "no
 		// freeze", and the only thing separating it from a real clean run is how many
 		// arm/drain cycles the listener actually went through.
-		Log("VERDICT: no freeze in %ds with mode=%s (%ld accepted, %ld wait cycles, %ld empty drains, %ld failed connects)"
-			, s_opt.nDurationS, s_pszModeNames[s_opt.nMode], s_nAccepted, s_nWaitReturns, s_nDrainEmpty, s_nClientFailed);
+		Log("VERDICT: no freeze in %ds with mode=%s (%ld accepted, %ld wait cycles, %ld empty drains, %ld failed connects, %ld missed readiness)"
+			, s_opt.nDurationS, s_pszModeNames[s_opt.nMode], s_nAccepted, s_nWaitReturns, s_nDrainEmpty, s_nClientFailed, s_nSelectMissed);
 
 	::SetEvent(s_hTerminate);
 	::Sleep(500);
