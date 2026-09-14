@@ -287,13 +287,19 @@ static int RunContract()
 		const BOOL bSized = (h != INVALID_HANDLE_VALUE)
 			&& ::SetFilePointerEx(h, liSize, NULL, FILE_BEGIN) && ::SetEndOfFile(h);
 		const bool bWrote = bSized && WritePattern(h, (ULONGLONG)liSize.QuadPart - 4096, 4096, pBuf);
-		if (h != INVALID_HANDLE_VALUE)
+		// Flushed before asking: a cached write is allocated when it reaches the
+		// disk, so the room the file takes is not settled until then.
+		if (h != INVALID_HANDLE_VALUE) {
+			::FlushFileBuffers(h);
 			::CloseHandle(h);
+		}
 
 		const ULONGLONG uDisk = GetDiskFileSize(szA);
 		Probe("disksize-sparse", "sparse=%d sized=%d wrote=%d ondisk=%s"
 			, bSparse != 0, bSized != 0, bWrote
-			, uDisk == 0 ? "ZERO" : (uDisk < (ULONGLONG)liSize.QuadPart / 2 ? "much-less" : "full-length"));
+			, uDisk == 0 ? "zero"
+				: (uDisk <= 1024 * 1024 ? "just-the-written-part"
+				: (uDisk < (ULONGLONG)liSize.QuadPart / 2 ? "much-less" : "full-length")));
 
 		// The same file through the other two calls eMule uses on it.
 		WIN32_FIND_DATA fd;
@@ -348,27 +354,34 @@ static int RunContract()
 	//    be neither deleted nor moved, and eMule has an explicit retry for the
 	//    refusal; a platform that allows either takes that protection away.
 	{
-		PathIn(szA, _countof(szA), _T("held.part"));
-		PathIn(szB, _countof(szB), _T("held.done"));
-		HANDLE h = OpenPartFile(szA, GENERIC_READ | GENERIC_WRITE, CREATE_ALWAYS);
-		if (h != INVALID_HANDLE_VALUE) {
-			WritePattern(h, 0, 65536, pBuf);
-
+		PathIn(szA, _countof(szA), _T("held1.part"));
+		HANDLE h1 = OpenPartFile(szA, GENERIC_READ | GENERIC_WRITE, CREATE_ALWAYS);
+		if (h1 != INVALID_HANDLE_VALUE) {
+			WritePattern(h1, 0, 65536, pBuf);
 			::SetLastError(ERROR_SUCCESS);
 			const BOOL bDeleted = ::DeleteFile(szA);
-			const DWORD dwDelErr = ::GetLastError();
-			Probe("delete-open", "deleted=%d err=%s", bDeleted != 0
-				, bDeleted ? "none" : (dwDelErr == ERROR_SHARING_VIOLATION ? "sharing" : (dwDelErr == ERROR_ACCESS_DENIED ? "access" : "other")));
-
-			::SetLastError(ERROR_SUCCESS);
-			const BOOL bMoved = ::MoveFileWithProgress(szA, szB, MoveProgressRoutine, NULL, MOVEFILE_COPY_ALLOWED);
-			const DWORD dwMoveErr = ::GetLastError();
-			Probe("move-open", "moved=%d err=%s", bMoved != 0
-				, bMoved ? "none" : (dwMoveErr == ERROR_SHARING_VIOLATION ? "sharing" : "other"));
-
-			::CloseHandle(h);
+			const DWORD dwErr = ::GetLastError();
+			Probe("delete-open", "deleted=%d err=%u", bDeleted != 0, bDeleted ? 0 : dwErr);
+			::CloseHandle(h1);
 		} else
 			Probe("delete-open", "skipped");
+		::DeleteFile(szA);
+
+		// A separate file, untouched by the probe above.
+		PathIn(szA, _countof(szA), _T("held2.part"));
+		PathIn(szB, _countof(szB), _T("held2.done"));
+		HANDLE h2 = OpenPartFile(szA, GENERIC_READ | GENERIC_WRITE, CREATE_ALWAYS);
+		if (h2 != INVALID_HANDLE_VALUE) {
+			WritePattern(h2, 0, 65536, pBuf);
+			::SetLastError(ERROR_SUCCESS);
+			const BOOL bMoved = ::MoveFileWithProgress(szA, szB, MoveProgressRoutine, NULL, MOVEFILE_COPY_ALLOWED);
+			const DWORD dwErr = ::GetLastError();
+			// The error number itself, not a name for it: eMule retries on
+			// exactly ERROR_SHARING_VIOLATION (32) and on nothing else.
+			Probe("move-open", "moved=%d err=%u", bMoved != 0, bMoved ? 0 : dwErr);
+			::CloseHandle(h2);
+		} else
+			Probe("move-open", "skipped");
 		::DeleteFile(szA);
 		::DeleteFile(szB);
 	}
@@ -421,10 +434,8 @@ static int RunContract()
 		const BOOL bPlain = ::MoveFile(szA, szB);
 		const DWORD dwPlainErr = ::GetLastError();
 		const BOOL bReplace = bPlain ? TRUE : ::MoveFileEx(szA, szB, MOVEFILE_REPLACE_EXISTING);
-		Probe("move-replace", "plain=%d plainerr=%s withflag=%d"
-			, bPlain != 0
-			, bPlain ? "none" : (dwPlainErr == ERROR_ALREADY_EXISTS || dwPlainErr == ERROR_FILE_EXISTS ? "exists" : "other")
-			, bReplace != 0);
+		Probe("move-replace", "plain=%d plainerr=%u withflag=%d"
+			, bPlain != 0, bPlain ? 0 : dwPlainErr, bReplace != 0);
 		::DeleteFile(szA);
 		::DeleteFile(szB);
 	}
@@ -463,10 +474,8 @@ static int RunContract()
 		::SetLastError(ERROR_SUCCESS);
 		HANDLE h = OpenPartFile(szLong, GENERIC_WRITE, CREATE_ALWAYS);
 		const DWORD dwErr = ::GetLastError();
-		Probe("long-path", "created=%d err=%s", h != INVALID_HANDLE_VALUE
-			, h != INVALID_HANDLE_VALUE ? "none"
-				: (dwErr == ERROR_PATH_NOT_FOUND ? "path-not-found"
-				: (dwErr == ERROR_FILENAME_EXCED_RANGE ? "too-long" : "other")));
+		Probe("long-path", "created=%d err=%u", h != INVALID_HANDLE_VALUE
+			, h != INVALID_HANDLE_VALUE ? 0 : dwErr);
 		if (h != INVALID_HANDLE_VALUE) {
 			::CloseHandle(h);
 			::DeleteFile(szLong);
