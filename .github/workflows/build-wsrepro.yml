@@ -91,3 +91,64 @@ jobs:
           path: build-wsrepro/Release/wsrepro.exe
           if-no-files-found: error
           retention-days: 14
+
+  wine:
+    name: Run under Wine (Linux)
+    needs: build
+    # The other half of the bench. Until now every comparison has been
+    # x64-on-Windows against ARM64-on-Wine, which varies the operating system
+    # AND the architecture at the same time - so a difference could always have
+    # been the architecture rather than the implementation. This job runs the
+    # exact same binary the Windows job just ran, under Wine, with the
+    # architecture held constant. What is left varying is the one thing being
+    # studied.
+    #
+    # Note the Wine here is whatever the runner image ships, not the 11.0 on
+    # the machine the fault was found on. That is a second difference to keep
+    # in mind when reading a disagreement between this job and that machine -
+    # and it is also useful on its own, since two Wine versions answering
+    # differently is itself a finding.
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [x64]
+
+    steps:
+      - name: Download the Windows build
+        uses: actions/download-artifact@v4
+        with:
+          name: wsrepro-${{ matrix.platform }}
+          path: bin
+
+      - name: Install Wine
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends wine64 xvfb
+          wine --version
+
+      - name: Create the prefix
+        # First run of anything builds the prefix and prints a wall of noise;
+        # get that over with before the measured runs, and off the real output.
+        env:
+          WINEDEBUG: -all
+        run: xvfb-run -a wine bin/wsrepro.exe --help > /dev/null 2>&1 || true
+
+      - name: Run the reproducer
+        # Same modes, same command line, same trial count as the Windows job,
+        # so the two outputs can be read side by side.
+        continue-on-error: true
+        env:
+          WINEDEBUG: -all
+        run: |
+          for mode in emule asyncselect poll; do
+            echo "=============== mode=$mode ==============="
+            for i in 1 2 3; do
+              set +e
+              xvfb-run -a wine bin/wsrepro.exe --mode "$mode" --port 4799 --hammers 2 --delay-ms 20 --duration-s 60 > "out-$mode-$i.txt" 2>&1
+              rc=$?
+              set -e
+              echo "--- trial $i, exit=$rc ---"
+              grep -E 'FREEZE:|VERDICT|accepted=' "out-$mode-$i.txt" | tail -6
+            done
+          done
