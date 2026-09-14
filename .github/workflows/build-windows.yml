@@ -31,6 +31,8 @@ on:
       - '.github/workflows/build-filerepro.yml'
       - 'timerepro/**'
       - '.github/workflows/build-timerepro.yml'
+      - 'dnsrepro/**'
+      - '.github/workflows/build-dnsrepro.yml'
 
 # Branches whose pushes publish a public pre-release on their own. There is one
 # line of development: v0.72a-cpp23 and v0.72a-cpp23-fix were folded into
