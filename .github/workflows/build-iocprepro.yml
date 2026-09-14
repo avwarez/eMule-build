@@ -72,7 +72,10 @@ jobs:
           echo "=============== emule ==============="
           grep -E 'STALL:|VERDICT|PROBE|totals:' out-emule.txt
           # The reference table the Wine job will be compared against.
-          grep '^PROBE ' out-contract.txt out-bigoff.txt | sed 's/^[^:]*://' > probes-windows.txt
+          # Line endings are stripped: the Windows run writes CRLF and the Wine
+          # run writes LF, which would otherwise report every single line as a
+          # difference and drown the one that matters.
+          grep '^PROBE ' out-contract.txt out-bigoff.txt | sed 's/^[^:]*://; s/\r$//' > probes-windows.txt
 
       - name: Upload iocprepro.exe
         uses: actions/upload-artifact@v4
@@ -156,7 +159,7 @@ jobs:
           grep -E 'STALL:|VERDICT|PROBE|totals:' out-strict.txt
           echo "=============== emule ==============="
           grep -E 'STALL:|VERDICT|PROBE|totals:' out-emule.txt
-          grep '^PROBE ' out-contract.txt out-bigoff.txt | sed 's/^[^:]*://' > probes-wine.txt
+          grep '^PROBE ' out-contract.txt out-bigoff.txt | sed 's/^[^:]*://; s/\r$//' > probes-wine.txt
 
       - name: Compare the two tables
         # Windows is the oracle. Nothing here encodes what the right answer is;

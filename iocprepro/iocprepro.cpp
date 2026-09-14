@@ -552,6 +552,7 @@ static CRITICAL_SECTION s_csTodo;
 static CList<ULONGLONG, ULONGLONG> s_listTodo;
 
 static OverlappedIo_Struct *s_pPool = NULL;
+static int s_nPoolSize = 0;
 static volatile LONG s_nInFlight = 0;         // requests issued and not yet completed
 
 static volatile LONG s_nIssued = 0;
@@ -573,10 +574,17 @@ static volatile LONG s_nShort = 0;            // fewer bytes than asked, inside 
 static volatile LONG s_nCorrupt = 0;          // the bytes are not the ones at that offset
 static volatile LONG s_nOrphan = 0;           // eMule's own: a failed completion dropped by the drain loop
 static volatile LONG s_nIoFailed = 0;         // ReadFile refused the request
+// Not a finding, a guard. eMule's StartCreateNextBlockPackage always empties
+// the work it finds; this one can run out of pool slots first and leave some
+// behind, which would park the thread for a reason that is the harness's and
+// not the platform's. The producers are capped so that it cannot happen - and
+// this counts the times it happened anyway, so that no stall is ever
+// attributed without checking.
+static volatile LONG s_nLeftover = 0;
 
 static void CompletionRoutine(DWORD dwBytes, OverlappedIo_Struct *pIo, ULONG_PTR key)
 {
-	if (pIo < s_pPool || pIo >= s_pPool + s_opt.nPending || ::InterlockedCompareExchange(&pIo->nState, 2, 1) != 1) {
+	if (pIo < s_pPool || pIo >= s_pPool + s_nPoolSize || ::InterlockedCompareExchange(&pIo->nState, 2, 1) != 1) {
 		::InterlockedIncrement(&s_nBogus);
 		return;
 	}
@@ -599,13 +607,19 @@ static void StartReads()
 {
 	for (;;) {
 		int nSlot = -1;
-		for (int i = 0; i < s_opt.nPending; ++i)
+		for (int i = 0; i < s_nPoolSize; ++i)
 			if (s_pPool[i].nState == 0) {
 				nSlot = i;
 				break;
 			}
-		if (nSlot < 0)
+		if (nSlot < 0) {
+			::EnterCriticalSection(&s_csTodo);
+			const bool bLeft = !s_listTodo.IsEmpty();
+			::LeaveCriticalSection(&s_csTodo);
+			if (bLeft)
+				::InterlockedIncrement(&s_nLeftover);
 			break;
+		}
 
 		::EnterCriticalSection(&s_csTodo);
 		const bool bHave = !s_listTodo.IsEmpty();
@@ -706,8 +720,12 @@ static UINT AFX_CDECL ProducerFunc(LPVOID)
 		uSeed = uSeed * 1103515245u + 12345u;
 		const ULONGLONG uOff = (ULONGLONG)((uSeed >> 8) % (unsigned)uBlocks) * ((ULONGLONG)s_opt.nBlockKB * 1024);
 
+		// Queued + outstanding is what has to fit in the pool: eMule's I/O
+		// thread starts every request it finds before it looks at completions
+		// again, so a request left on the list for want of a slot would park
+		// the thread with work waiting - a stall belonging to this harness.
 		::EnterCriticalSection(&s_csTodo);
-		const bool bRoom = s_listTodo.GetCount() < s_opt.nPending * 4;
+		const bool bRoom = s_listTodo.GetCount() + s_nInFlight < s_opt.nPending;
 		if (bRoom)
 			s_listTodo.AddTail(uOff);
 		::LeaveCriticalSection(&s_csTodo);
@@ -741,6 +759,11 @@ static UINT AFX_CDECL ProducerFunc(LPVOID)
 // What state was the thread left in, and does one hand-posted packet undo it.
 // The same question wsrepro asks of the listening thread, and the same three
 // possible answers.
+// What state was the thread left in, and why. The books come first: every
+// wakeup this program hands to the port is counted, and so is every one it
+// takes back out, so "a packet went missing" is something that can be read off
+// rather than inferred from the fact that a kick helped. A kick helps in every
+// one of these cases, which is exactly why it cannot be the evidence.
 static void Autopsy()
 {
 	::EnterCriticalSection(&s_csTodo);
@@ -749,28 +772,41 @@ static void Autopsy()
 	const LONG nInFlight = s_nInFlight;
 	const LONG nIssuedBefore = s_nIssued;
 	const LONG nCompletedBefore = s_nCompleted;
+	const LONG nPostedBefore = s_nPosted;
+	const LONG nTakenBefore = s_nWakeTaken;
 	const char cNewData = s_bNewData;
 
 	const bool bAlive = s_pIoThread && s_pIoThread->m_hThread
 		&& ::WaitForSingleObject(s_pIoThread->m_hThread, 0) == WAIT_TIMEOUT;
 
-	Log("autopsy: thread=%s run=%ld todo=%d inflight=%ld newdata=%d issued=%ld completed=%ld posted=%ld taken=%ld"
+	Log("autopsy: thread=%s run=%ld todo=%d inflight=%ld newdata=%d issued=%ld completed=%ld posted=%ld taken=%ld leftover=%ld"
 		, bAlive ? "alive" : "gone", s_Run, (int)nTodo, nInFlight, (int)cNewData
-		, nIssuedBefore, nCompletedBefore, s_nPosted, s_nWakeTaken);
+		, nIssuedBefore, nCompletedBefore, nPostedBefore, nTakenBefore, s_nLeftover);
 
 	if (!bAlive) {
 		Log("VERDICT: the I/O thread exited - this is not the parked-thread shape");
 		return;
 	}
 
+	// Does one packet posted by hand undo it? Asked of every case, because the
+	// answer separates "parked in GetQueuedCompletionStatus" from "blocked
+	// somewhere else entirely" - but never used on its own to name a culprit.
 	::InterlockedIncrement(&s_nPosted);
 	::PostQueuedCompletionStatus(s_hPort, 0, WAKEUP, NULL);
 	::Sleep(1000);
-
 	const bool bResumed = (s_nIssued > nIssuedBefore) || (s_nCompleted > nCompletedBefore);
+
 	if (!bResumed) {
 		Log("VERDICT: parked, and a hand-posted packet did not resume it - the thread is");
 		Log("VERDICT: blocked somewhere other than GetQueuedCompletionStatus.");
+		return;
+	}
+
+	if (nPostedBefore > nTakenBefore) {
+		Log("VERDICT: LOST WAKEUP. %ld packets were accepted by PostQueuedCompletionStatus"
+			, nPostedBefore - nTakenBefore);
+		Log("VERDICT: and never came back out of the port; the thread was parked with %d", (int)nTodo);
+		Log("VERDICT: requests waiting and nothing outstanding. One more packet restarted it.");
 		return;
 	}
 
@@ -782,18 +818,29 @@ static void Autopsy()
 		return;
 	}
 
-	if (s_opt.nMode == MODE_EMULE && cNewData && nInFlight == 0) {
-		Log("VERDICT: eMule's own race, not the platform. WakeUpCall() found the thread");
-		Log("VERDICT: busy and only set m_bNewData; the thread had already tested and");
-		Log("VERDICT: cleared that flag, and parked. Nothing was lost in the port - the");
-		Log("VERDICT: two unsynchronized accesses crossed. Expect this on Windows too.");
+	// Nothing went missing: as many packets came out as went in, and no I/O was
+	// outstanding. So the thread parked because nobody asked it to run - and
+	// from here the books say exactly who did not ask.
+	if (s_opt.nMode == MODE_EMULE && cNewData) {
+		Log("VERDICT: eMule's own race, not the platform. Every packet posted was");
+		Log("VERDICT: delivered (%ld for %ld). WakeUpCall() found the thread busy and only", nTakenBefore, nPostedBefore);
+		Log("VERDICT: set m_bNewData; the thread had already tested and cleared that flag,");
+		Log("VERDICT: and parked. The two unsynchronized accesses crossed. Expect this on");
+		Log("VERDICT: Windows too - it is not a platform difference.");
 		return;
 	}
 
-	Log("VERDICT: LOST WAKEUP. The thread was parked with %d requests on the list and", (int)nTodo);
-	Log("VERDICT: nothing outstanding; the wakeups posted for them were accepted by");
-	Log("VERDICT: PostQueuedCompletionStatus and never came back out. One more packet,");
-	Log("VERDICT: posted by hand, restarted it.");
+	if (s_nLeftover > 0) {
+		Log("VERDICT: this harness, not the platform or eMule. %ld times a cycle ran out of", s_nLeftover);
+		Log("VERDICT: pool slots and left requests on the list, which eMule's own loop");
+		Log("VERDICT: never does. Every packet posted was delivered. Raise --pending.");
+		return;
+	}
+
+	Log("VERDICT: nothing was lost in the port (%ld posted, %ld taken, none outstanding)"
+		, nPostedBefore, nTakenBefore);
+	Log("VERDICT: and nothing had asked the thread to run. Not a delivery failure: a gap");
+	Log("VERDICT: in who posts, on a path this run did not expect.");
 }
 
 static int RunStress()
@@ -816,8 +863,11 @@ static int RunStress()
 		return 2;
 	}
 
-	s_pPool = new OverlappedIo_Struct[s_opt.nPending];
-	for (int i = 0; i < s_opt.nPending; ++i) {
+	// A margin over the producers' cap: they read s_nInFlight without a lock,
+	// so the cap can be crossed by a request or two.
+	s_nPoolSize = s_opt.nPending + 8;
+	s_pPool = new OverlappedIo_Struct[s_nPoolSize];
+	for (int i = 0; i < s_nPoolSize; ++i) {
 		::ZeroMemory(&s_pPool[i], sizeof(OverlappedIo_Struct));
 		s_pPool[i].nSlot = i;
 		s_pPool[i].pBuffer = new BYTE[(size_t)s_opt.nBlockKB * 1024];
@@ -890,8 +940,8 @@ static int RunStress()
 	const LONG nLostWakeups = s_nPosted - s_nWakeTaken;
 	const LONG nLostCompletions = s_nIssued - s_nCompleted;
 
-	Log("totals: requested=%ld issued=%ld completed=%ld posted=%ld taken=%ld loops=%ld outer=%ld drained=%ld"
-		, s_nRequested, s_nIssued, s_nCompleted, s_nPosted, s_nWakeTaken, s_nLoops, s_nOuter, s_nDrained);
+	Log("totals: requested=%ld issued=%ld completed=%ld posted=%ld taken=%ld loops=%ld outer=%ld drained=%ld leftover=%ld"
+		, s_nRequested, s_nIssued, s_nCompleted, s_nPosted, s_nWakeTaken, s_nLoops, s_nOuter, s_nDrained, s_nLeftover);
 
 	// The ledger. Reported whether or not anything stalled, because a packet
 	// delivered to the wrong key or a block read from the wrong offset is a
@@ -919,7 +969,7 @@ static int RunStress()
 	if (s_pIoThread && s_pIoThread->m_hThread)
 		::WaitForSingleObject(s_pIoThread->m_hThread, 5000);
 
-	for (int i = 0; i < s_opt.nPending; ++i)
+	for (int i = 0; i < s_nPoolSize; ++i)
 		delete[] s_pPool[i].pBuffer;
 	delete[] s_pPool;
 	::CloseHandle(s_hPort);
