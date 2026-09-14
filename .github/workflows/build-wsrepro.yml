@@ -124,10 +124,23 @@ jobs:
       - name: Install Wine
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends wine64 xvfb
-          # The wine64 package installs /usr/bin/wine64 and no /usr/bin/wine,
-          # so resolve the name once instead of assuming either.
-          WINE=$(command -v wine || command -v wine64)
+          # The wine metapackage is what registers /usr/bin/wine through the
+          # alternatives system; wine64 alone ships the binary somewhere else
+          # on this image, so ask for both and then go looking rather than
+          # assuming a name.
+          sudo apt-get install -y --no-install-recommends wine wine64 xvfb || \
+            sudo apt-get install -y --no-install-recommends wine64 xvfb
+          WINE=$(command -v wine || command -v wine64 || true)
+          if [ -z "$WINE" ]; then
+            for c in /usr/lib/wine/wine64 /usr/lib/wine/wine /usr/lib/x86_64-linux-gnu/wine/wine64; do
+              [ -x "$c" ] && WINE=$c && break
+            done
+          fi
+          if [ -z "$WINE" ]; then
+            echo "no wine binary found; what the packages installed:"
+            dpkg -L wine64 2>/dev/null | grep -E 'bin/|wine64$' | head -20
+            exit 1
+          fi
           echo "WINE=$WINE" >> "$GITHUB_ENV"
           "$WINE" --version
 
