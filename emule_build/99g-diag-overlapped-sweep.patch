@@ -1,0 +1,79 @@
+diff --git a/srchybrid/UploadBandwidthThrottler.cpp b/srchybrid/UploadBandwidthThrottler.cpp
+index ff0df28..edfe0ad 100644
+--- a/srchybrid/UploadBandwidthThrottler.cpp
++++ b/srchybrid/UploadBandwidthThrottler.cpp
+@@ -353,6 +353,18 @@ UINT UploadBandwidthThrottler::RunInternal()
+ 	LONG nDiagStarvedSeen = 0;
+ 	DWORD dwDiagStarvedMaxAge = 0;
+ 	DWORD dwDiagStarvedLastLog = 0;
++	// UPDIAG: what the collection sweep below actually does. A send collected there on a socket
++	// the two conditions of the scan above would not have reached is one that a build without that
++	// sweep leaves outstanding - the correction counted rather than assumed. "asked" is its cost:
++	// how many times a socket was carried into the extensive check, which is the only call in the
++	// sweep that is not a flag read. The age reported is how long the send had been outstanding,
++	// which bounds from above how long its completion had been sitting; when it became collectable
++	// is what the probe at the end of this loop measures, and it is not asked for a second time.
++	LONG nDiagSweepAsked = 0;
++	LONG nDiagSweepCollected = 0;
++	LONG nDiagSweepRescued = 0;
++	DWORD dwDiagSweepMaxAge = 0;
++	DWORD dwDiagSweepLastLog = 0;
+ 	// The collectability sweep below is worth running once per millisecond at most.
+ 	DWORD dwDiagLastProbeTick = 0;
+ 	// The GUI timer drives everything periodic, including the drain of the log these lines go
+@@ -433,8 +445,38 @@ UINT UploadBandwidthThrottler::RunInternal()
+ 		// the loop above has just collected has had it lowered already.
+ 		for (INT_PTR i = GetStandardListSize(); --i >= 0;) {
+ 			ThrottledFileSocket *pSocket = m_StandardOrder_list[i];
+-			if (pSocket != NULL && pSocket->IsBusyQuickCheck())
++			if (pSocket != NULL && pSocket->IsBusyQuickCheck()) {
++				//UPDIAG: the two conditions of the scan above as they stand for this socket, read
++				//before the collection below can change either of them.
++				const bool bDiagInWindow = (i < nDiagWindow);
++				const bool bDiagHadQueues = pSocket->HasQueues();
++				const DWORD dwDiagOvAge = pSocket->DbgGetPendingSendAge();
++				++nDiagSweepAsked; //UPDIAG
+ 				pSocket->IsBusyExtensiveCheck();
++				//UPDIAG: the flag falls only when the completion was taken, so this is a collection
++				//and not a visit. Counted apart when neither condition above held, because that is
++				//the socket nothing else in the program would have come back to.
++				if (!pSocket->IsBusyQuickCheck()) {
++					++nDiagSweepCollected;
++					if (!bDiagInWindow || !bDiagHadQueues) {
++						++nDiagSweepRescued;
++						if (dwDiagOvAge > dwDiagSweepMaxAge)
++							dwDiagSweepMaxAge = dwDiagOvAge;
++						//UPDIAG: one line a second at most, and only for a send old enough that its
++						//slot was doing nothing while it waited. The aggregate below carries the rest.
++						const DWORD dwDiagNow = timeGetTime();
++						if (dwDiagOvAge >= 1000 && dwDiagNow - dwDiagSweepLastLog >= 1000) {
++							dwDiagSweepLastLog = dwDiagNow;
++							CString strDiagSocket;
++							pSocket->DbgGetDiagInfo(strDiagSocket);
++							theApp.QueueDebugLogLineEx(LOG_WARNING
++								, _T("UPDIAG|sweep collected slot %d after %ums, inwindow=%d hasqueues=%d %s")
++								, (int)i, dwDiagOvAge, (int)bDiagInWindow, (int)bDiagHadQueues
++								, (LPCTSTR)strDiagSocket);
++						}
++					}
++				}
++			}
+ 		}
+ 		queueLocker.Unlock();
+ 		nDiagLoopsNoSend += (LONG)(nCanSend == 0); //UPDIAG
+@@ -546,6 +588,7 @@ UINT UploadBandwidthThrottler::RunInternal()
+ 					_T(" | maxslot=%d tospend=%I64d restcalls=%ld restbusy=%ld restzero=%ld")
+ 					_T(" | orphans=%ld orphanage=%ums starved=%ld starvedage=%ums")
+ 					_T(" | ovstuck=%ld ovopen=%ld ovended=%ld ovnoqueues=%ld ovmax=%ldms ovtotal=%ldms ovprobes=%ld")
++					_T(" | sweepasked=%ld sweepcollected=%ld sweeprescued=%ld sweepmax=%ums")
+ 					_T(" | guiticks=%ld guiage=%ums guistalls=%ld guistallmax=%ums backlog=%d")
+ 					, allowedDataRate, nDiagRawAllowed, nEstiminatedDataRate, nCanSend, nBusy
+ 					, (int)GetStandardListSize(), (int)nDiagWindow, nSlotsBusyLevel, (LONGLONG)spendingRate
+@@ -555,6 +598,7 @@ UINT UploadBandwidthThrottler::RunInternal()
+ 					, (LONG)g_nDiagOvStuckBegun, (LONG)g_nDiagOvStuckOpen, (LONG)g_nDiagOvStuckEnded
+ 					, (LONG)g_nDiagOvStuckNoQueues, (LONG)g_nDiagOvStuckMaxMs, (LONG)g_nDiagOvStuckTotalMs
+ 					, (LONG)g_nDiagOvProbes
++					, nDiagSweepAsked, nDiagSweepCollected, nDiagSweepRescued, dwDiagSweepMaxAge
+ 					, (LONG)g_nDiagGuiTicks
+ 					, (DWORD)(g_dwDiagGuiLastTick ? ::GetTickCount() - (DWORD)g_dwDiagGuiLastTick : 0)
+ 					, nDiagGuiStalls, dwDiagGuiStallMax, (int)theApp.DbgGetDebugLogQueueCount());

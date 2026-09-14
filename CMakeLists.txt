@@ -327,6 +327,23 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          Every duration is measured on the thread that is still running, so
 #          it survives being written out long afterwards - which is the whole
 #          point, because the timestamp cannot.
+#
+#          99g-diag-overlapped-sweep measures the correction in 97h from the
+#          inside, and needs it. At every collection the sweep makes it
+#          records the two conditions the scan above would have applied to
+#          that socket, read before the collection can change either of
+#          them, and counts apart the completions taken from a socket
+#          neither condition would have reached - the correction doing
+#          something, counted rather than assumed. The line carries how many
+#          sockets were carried into the extensive check at all, which is
+#          what the sweep costs; how many completions it took; how many of
+#          those nothing else in the program would have come back to; and
+#          the age of the oldest. A send old enough that its slot sat idle
+#          while it waited also gets a line of its own, at most one a
+#          second. 99e is left alone and stays the instrument for the other
+#          half of the question: it counts episodes rather than samples, so
+#          a before and after can say whether the episodes were shortened or
+#          merely pushed below a sampling interval.
 # ---------------------------------------------------------------------------
 find_package(Git REQUIRED)
 
