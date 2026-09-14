@@ -103,6 +103,7 @@ Unthrottled (clients connecting back to back, roughly 500/s):
 | Wine 11.0, aarch64 | `clearinherit` | 10 | **10** |
 | Wine 11.0, aarch64 | `timeout` | 10 | 0 |
 | Wine 11.0, aarch64 | `asyncselect` | 10 | **10** |
+| Wine 11.0, aarch64 | `poll` | 10 | 0 |
 
 Throttled to ~90 connections/second with `--delay-ms 20`, which is what the
 Windows runner can sustain without exhausting its ephemeral ports - the same
@@ -153,7 +154,16 @@ a message loop - and froze 10 times out of 10. The autopsy there posts the
 itself, and the backlog empties immediately. So this is not a property of
 `WSAEventSelect`: the notification is lost below both of them.
 
-**Only a bounded wait survives.** `timeout` mode is eMule's listener with
+**Level-triggered readiness is immune.** `poll` mode throws the notification
+away entirely and asks `select()` whether a connection is waiting right now.
+Ten trials under Wine, **145,575 connections accepted, zero freezes**. The
+1-second timeout in that loop never rescued anything and the harness proves it
+rather than assuming it: it counts every `select()` that reported nothing while
+clients were known to be waiting, and that counter finished at **0** in all ten
+trials (and in the six Windows control trials). There is no edge to lose, so
+there is nothing to recover from.
+
+**Only a bounded wait survives, among the notification-based variants.** `timeout` mode is eMule's listener with
 `INFINITE` replaced by 1000 ms, and it did not freeze once. It does not prevent
 the lost edge; it stops the lost edge from being permanent.
 
