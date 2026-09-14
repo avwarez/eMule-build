@@ -82,9 +82,11 @@ exe as a run artifact.
 
 ## What it found (2026-09-14)
 
-Same source, same compiler, same static MFC; one machine runs Windows, the
-other runs Wine 11.0 on aarch64. Clients throttled to ~90 connections/second,
-which is also roughly the rate the field failure was seen at.
+Same source, same compiler, same static MFC. One machine runs Windows (the CI
+runner), the other runs Wine 11.0 on aarch64 - the machine where the field
+fault appears. Two clients in every run.
+
+Unthrottled (clients connecting back to back, roughly 500/s):
 
 | where | mode | trials | froze |
 |---|---|---|---|
@@ -92,8 +94,21 @@ which is also roughly the rate the field failure was seen at.
 | Wine 11.0, aarch64 | `enum` | 10 | **10** |
 | Wine 11.0, aarch64 | `clearinherit` | 10 | **10** |
 | Wine 11.0, aarch64 | `timeout` | 10 | 0 |
-| Windows runner, x64 | `emule` | 3 | 0 (11,903 wait cycles, 2,882 empty drains) |
-| Windows runner, Win32 | `emule` | 3 | 0 (11,979 wait cycles, 2,823 empty drains) |
+
+Throttled to ~90 connections/second with `--delay-ms 20`, which is what the
+Windows runner can sustain without exhausting its ephemeral ports - the same
+command line on both sides:
+
+| where | mode | trials | froze | wait cycles | empty drains |
+|---|---|---|---|---|---|
+| Wine 11.0, aarch64 | `emule` | 3 | **3** | - | - |
+| Windows runner, x64 | `emule` | 3 | 0 | 11,906 | 2,882 |
+| Windows runner, Win32 | `emule` | 3 | 0 | 11,979 | 2,823 |
+
+The empty-drain column matters: it counts the wakeups where `accept()` found
+nothing and returned `WSAEWOULDBLOCK`, which is the window the fault lives in.
+Windows went through that window about 5,700 times without losing a
+notification. Wine did not survive 200.
 
 Under Wine the freeze arrives after **6 to 194 connections** - seconds, not
 hours. The autopsy is the same every time: the listening thread is alive,
