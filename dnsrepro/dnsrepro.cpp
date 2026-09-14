@@ -365,6 +365,40 @@ static int RunContract()
 			Log("note: the answer buffer was written after the request was cancelled");
 	}
 
+	// 4b. The same question asked properly. The probe above cancels the lookup
+	//     of a name that does not resolve, so there was never an answer to be
+	//     written and "the buffer was not touched" proves very little. This one
+	//     cancels a lookup that DOES resolve, re-poisons the buffer AFTER the
+	//     cancel has returned, and repeats it enough times to catch the race
+	//     from both sides. A byte that changes after that is a write into
+	//     memory eMule has already freed.
+	{
+		int nLate = 0, nWritten = 0, nTries = 0;
+		for (int i = 0; i < 50; ++i) {
+			ResetRequests();
+			if (StartResolve("localhost", 0) < 0)
+				continue;
+			++nTries;
+			::WSACancelAsyncRequest(s_aReqs[0].hTask);
+			::memset(s_aReqs[0].szBuffer, 0xCC, sizeof s_aReqs[0].szBuffer);
+			PumpFor(50);
+			if (s_aReqs[0].bAnswered)
+				++nLate;
+			for (size_t j = 0; j < sizeof s_aReqs[0].szBuffer; ++j)
+				if ((BYTE)s_aReqs[0].szBuffer[j] != 0xCC) {
+					++nWritten;
+					break;
+				}
+		}
+		Probe("dns-cancel-race", "late-messages=%s written-after-cancel=%s"
+			, nLate == 0 ? "none" : (nLate == nTries ? "all" : "some")
+			, nWritten ? "YES" : "no");
+		Log("note: dns-cancel-race - %d tries, %d late messages, %d buffers written after the cancel"
+			, nTries, nLate, nWritten);
+		if (nWritten)
+			nExit = 1;
+	}
+
 	// 5. Many at once - the shape that failed on this platform before. Every
 	//    one of them must produce exactly one message.
 	{
