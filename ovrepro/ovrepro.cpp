@@ -970,22 +970,27 @@ static int RunStress()
 	// The finding: how long a finished send went uncollected, and how many
 	// slots never came back. In poll mode both must be zero - nothing there
 	// can leave a completion behind - so a non-zero pair is the platform's.
-	Probe("stuck", "mode=%s episodes=%ld dead=%d", s_pszModeNames[s_opt.nMode], s_nEpisodesTotal, nDead);
+	Probe("stuck", "mode=%s episodes=%ld worst=%ums dead=%d"
+		, s_pszModeNames[s_opt.nMode], s_nEpisodesTotal, dwWorst, nDead);
 
 	int nExit = 0;
 	if (s_nShort || s_nSendErrors)
 		nExit = 1;
 
 	if (s_opt.nMode == MODE_POLL) {
-		if (nDead > 0 || s_nEpisodesTotal > 0) {
+		// An episode on its own means nothing here. The monitor looks every
+		// 100 ms and the throttler collects every loop, so catching a
+		// completion in between the two is a race with the observer, not a
+		// fault - what would be a fault is one that LASTS.
+		if (nDead > 0 || dwWorst > 1000) {
 			Log("VERDICT: THE PLATFORM. Every socket with an outstanding send was collected");
-			Log("VERDICT: every loop, so nothing here could leave a completion behind - and");
-			Log("VERDICT: %ld were found ready and uncollected anyway, %d of them permanently."
-				, s_nEpisodesTotal, nDead);
+			Log("VERDICT: every loop, so nothing here could leave a completion behind - and one");
+			Log("VERDICT: stayed ready and uncollected for %ums, %d of them for good.", dwWorst, nDead);
 			nExit = 1;
 		} else
-			Log("VERDICT: no stuck send in %ds when every socket is collected (%ld sends, %ld collected)"
-				, s_opt.nDurationS, s_nSends, s_nCollected);
+			Log("VERDICT: no stuck send in %ds when every socket is collected (%ld sends, %ld"
+				" collected, %ld brief episodes, worst %ums)"
+				, s_opt.nDurationS, s_nSends, s_nCollected, s_nEpisodesTotal, dwWorst);
 	} else if (nDead > 0) {
 		Log("VERDICT: eMule's arrangement alone kills upload slots. %d of %d slots ended", nDead, s_opt.nSlots);
 		Log("VERDICT: holding a finished send that nobody will ever collect: outside the");
