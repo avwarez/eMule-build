@@ -65,6 +65,80 @@ Exit code 1 means something was found. `.github/workflows/build-dnsrepro.yml`
 builds ARM64/x64/Win32, runs both modes on the Windows runner, then runs the
 same x64 binary under Wine on Linux and diffs the two probe tables.
 
-## Results
+## Results — 14 September 2026, run 34868566010
 
-Not yet run.
+One x64 binary on both sides of the bench, Win32 as a third leg.
+
+**The message path does not lose answers.** 1,600 resolutions per leg, eight
+outstanding at a time, 200 rounds: `missing=0` everywhere. Worst round 16 ms on
+Windows x64, 32 ms on Win32, 2 ms under Wine. Whatever happened to `FD_ACCEPT`
+does not happen here — and this was the last place the same shape could have
+been hiding.
+
+Eleven of thirteen probes identical. The two that are not:
+
+| probe | Windows | Wine 9.0 |
+|---|---|---|
+| `dns-cancel-race` | `late-messages=none written-after-cancel=no` | `late-messages=all written-after-cancel=YES` |
+| `udp-unreachable` | `next-receive=connreset` | `next-receive=nothing` |
+
+### `WSACancelAsyncRequest` does not cancel — and the answer lands in freed memory
+
+Fifty tries each, cancelling a lookup of `localhost` immediately after starting
+it, with the answer buffer re-poisoned **after** the cancel returns so that only
+a later write can show:
+
+- Windows: 50 tries, **0** late messages, **0** buffers written.
+- Wine: 50 tries, **50** late messages, **50** buffers written.
+
+The cancel returns success on both. On Wine the resolver then writes the answer
+into the buffer anyway.
+
+That buffer is a member of eMule's request object, and the object is deleted
+right after the cancel:
+
+```cpp
+~SServerDNSRequest()
+{
+    if (m_hDNSTask)
+        WSACancelAsyncRequest(m_hDNSTask);      // UDPSocket.cpp:84
+```
+
+so on this platform the resolver writes a `hostent` into memory eMule has
+already freed. And it is not only a shutdown path — eMule sweeps its own
+pending requests:
+
+```cpp
+// Just for safety.
+// Ensure that there are no stalled DNS queries and/or packets hanging endlessly in the queue.
+if (curTick >= pDNSReq->m_dwCreated + MIN2MS(2)) {
+    delete pDNSReq;                             // UDPSocket.cpp:739
+```
+
+Any name that takes longer than two minutes to resolve is freed while its lookup
+is still live.
+
+The *message* that follows is harmless: `CUDPSocket::DnsLookupDone` looks the
+task handle up in its list, does not find it, and logs `Unknown DNS task
+completed`. It is the write that is not.
+
+**Not seen in the field here.** That log line does not appear in any of the 197
+log files on the machine this investigation started from — most likely because
+this installation reaches its servers by address rather than by name, so
+`WSAAsyncGetHostByName` is never called at all.
+
+### A datagram sent to nobody
+
+Windows turns the ICMP port-unreachable that comes back into `WSAECONNRESET` on
+the *next* receive of the sending socket; Wine reports nothing and the receive
+simply finds no data. `CUDPSocket::OnReceive` logs a failed receive and carries
+on, so neither behaviour breaks anything — but on Windows eMule occasionally
+logs a receive failure that under Wine it never will.
+
+### What the first run cost
+
+The first `dns-cancel` probe cancelled the lookup of a name that does not
+resolve, so there was never an answer to write and `buffer-written=0` proved
+very little. `dns-cancel-race` asks the same question of a name that does
+resolve, re-poisons the buffer after the cancel, and repeats it fifty times to
+catch the race from both sides.
