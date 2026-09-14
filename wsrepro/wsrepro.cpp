@@ -55,10 +55,11 @@ enum EMode
 	MODE_EMULE = 0,      // eMule's listener, reproduced call for call
 	MODE_ENUM,           // + WSAEnumNetworkEvents after the wait (the documented pattern)
 	MODE_CLEARINHERIT,   // + WSAEventSelect(hAccepted, NULL, 0) right after accept()
-	MODE_TIMEOUT         // eMule's listener, but the wait has a timeout instead of INFINITE
+	MODE_TIMEOUT,        // eMule's listener, but the wait has a timeout instead of INFINITE
+	MODE_ASYNCSELECT     // the OTHER notification path in eMule: WSAAsyncSelect + a message loop
 };
 
-static const char *const s_pszModeNames[] = { "emule", "enum", "clearinherit", "timeout" };
+static const char *const s_pszModeNames[] = { "emule", "enum", "clearinherit", "timeout", "asyncselect" };
 
 struct SOptions
 {
@@ -91,6 +92,9 @@ static volatile LONG s_nDrainEmpty = 0;        // listener: wakeups that accepte
 static volatile LONG s_nConnLive = 0;
 static volatile LONG s_dwLastAccept = 0;       // GetTickCount of the last accept()
 static volatile LONG s_bListening = 0;
+
+static HWND    s_hNotifyWnd = NULL;            // asyncselect mode: the helper window, as CAsyncSocketEx has
+#define WM_WSREPRO_NOTIFY (WM_APP + 1)
 
 static CRITICAL_SECTION s_csLog;
 
@@ -188,6 +192,122 @@ static UINT AFX_CDECL WsReproAcceptedFunc(LPVOID pD)
 // WSAEventSelect(FD_ACCEPT), and a wait/drain loop that never asks Winsock
 // which events actually fired.
 
+// The drain: accept() until WSAEWOULDBLOCK, a worker thread per connection.
+// Shared by both listeners below so that the only thing that differs between
+// them is how the arrival of a connection is announced.
+static int DrainAccepts(SOCKET hSocket)
+{
+	int nThisRound = 0;
+	for (;;) {
+		SOCKADDR_IN their_addr;
+		int sin_size = (int)sizeof(SOCKADDR_IN);
+
+		SOCKET hAccepted = accept(hSocket, (LPSOCKADDR)&their_addr, &sin_size);
+		if (INVALID_SOCKET == hAccepted) {
+			const int nErr = ::WSAGetLastError();
+			if (nErr != WSAEWOULDBLOCK)
+				Log("accept FAILED err=%d", nErr);
+			break;
+		}
+		++nThisRound;
+		::InterlockedIncrement(&s_nAccepted);
+		::InterlockedExchange(&s_dwLastAccept, (LONG)::GetTickCount());
+
+		if (s_opt.nMode == MODE_CLEARINHERIT) {
+			// An accepted socket inherits the listening socket's event
+			// association. Break that link here, before the worker thread
+			// re-selects the socket onto an event of its own.
+			WSAEventSelect(hAccepted, NULL, 0);
+			u_long ulNonBlock = 1;
+			ioctlsocket(hAccepted, FIONBIO, &ulNonBlock);
+		}
+
+		SocketData *pData = new SocketData;
+		pData->hSocket = hAccepted;
+		pData->incomingaddr = their_addr.sin_addr;
+		// same construct as eMule: not CreateThread, not AfxBeginThread
+		CWinThread *pAcceptThread = new CWinThread(WsReproAcceptedFunc, (LPVOID)pData);
+		if (!pAcceptThread->CreateThread()) {
+			Log("CreateThread FAILED err=%u live=%ld", ::GetLastError(), s_nConnLive);
+			delete pData;
+			delete pAcceptThread;
+			closesocket(hAccepted);
+		}
+	}
+	if (!nThisRound)
+		::InterlockedIncrement(&s_nDrainEmpty);
+	return nThisRound;
+}
+
+// The second listener: the notification path every OTHER socket in eMule uses.
+// CAsyncSocketEx creates a hidden helper window and calls WSAAsyncSelect, so a
+// connection arrives as a window message rather than as a signalled event. The
+// question this answers is whether the lost notification is specific to
+// WSAEventSelect or common to both paths - which is the difference between one
+// intervention point in eMule and a great many.
+static LRESULT CALLBACK WsReproWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+{
+	if (uMsg == WM_WSREPRO_NOTIFY) {
+		if (WSAGETSELECTEVENT(lParam) == FD_ACCEPT) {
+			::InterlockedIncrement(&s_nWaitReturns);
+			if (WSAGETSELECTERROR(lParam))
+				Log("FD_ACCEPT message carried err=%d", WSAGETSELECTERROR(lParam));
+			else
+				DrainAccepts((SOCKET)wParam);
+		}
+		return 0;
+	}
+	return ::DefWindowProc(hWnd, uMsg, wParam, lParam);
+}
+
+static void RunAsyncSelectListener(SOCKET hSocket)
+{
+	WNDCLASS wc = {};
+	wc.lpfnWndProc = WsReproWndProc;
+	wc.hInstance = ::GetModuleHandle(NULL);
+	wc.lpszClassName = _T("WsReproNotifyWnd");
+	if (!::RegisterClass(&wc)) {
+		Log("RegisterClass FAILED err=%u", ::GetLastError());
+		return;
+	}
+	HWND hWnd = ::CreateWindowEx(0, _T("WsReproNotifyWnd"), NULL, 0, 0, 0, 0, 0
+		, HWND_MESSAGE, NULL, ::GetModuleHandle(NULL), NULL);
+	if (!hWnd) {
+		Log("CreateWindowEx FAILED err=%u", ::GetLastError());
+		return;
+	}
+	s_hNotifyWnd = hWnd;
+
+	if (WSAAsyncSelect(hSocket, hWnd, WM_WSREPRO_NOTIFY, FD_ACCEPT)) {
+		Log("WSAAsyncSelect FAILED err=%d", ::WSAGetLastError());
+		::DestroyWindow(hWnd);
+		s_hNotifyWnd = NULL;
+		return;
+	}
+
+	::InterlockedExchange(&s_dwLastAccept, (LONG)::GetTickCount());
+	::InterlockedExchange(&s_bListening, 1);
+	Log("listener ready on port %u, mode=asyncselect (WSAAsyncSelect + message loop)", s_opt.nPort);
+
+	// A message pump that can also be woken by the terminate event, which is
+	// what a GUI thread's wait looks like.
+	for (;;) {
+		const DWORD dwRes = ::MsgWaitForMultipleObjects(1, &s_hTerminate, FALSE, INFINITE, QS_ALLINPUT);
+		if (dwRes == WAIT_OBJECT_0)
+			break;
+		if (dwRes != WAIT_OBJECT_0 + 1)
+			break;
+		MSG msg;
+		while (::PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
+			::TranslateMessage(&msg);
+			::DispatchMessage(&msg);
+		}
+	}
+	Log("listener loop END (asyncselect)");
+	s_hNotifyWnd = NULL;
+	::DestroyWindow(hWnd);
+}
+
 static UINT AFX_CDECL WsReproListeningFunc(LPVOID)
 {
 	SOCKET hSocket = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, NULL, 0, 0);
@@ -206,6 +326,14 @@ static UINT AFX_CDECL WsReproListeningFunc(LPVOID)
 		Log("listener bind/listen FAILED err=%d port=%u", ::WSAGetLastError(), s_opt.nPort);
 		closesocket(hSocket);
 		return 1;
+	}
+
+	if (s_opt.nMode == MODE_ASYNCSELECT) {
+		RunAsyncSelectListener(hSocket);
+		::InterlockedExchange(&s_bListening, 0);
+		closesocket(hSocket);
+		s_hListenSocket = INVALID_SOCKET;
+		return 0;
 	}
 
 	HANDLE hEvent = CreateEvent(NULL, FALSE, TRUE, NULL);
@@ -245,45 +373,7 @@ static UINT AFX_CDECL WsReproListeningFunc(LPVOID)
 						Log("listener FD_ACCEPT carried err=%d", stEvents.iErrorCode[FD_ACCEPT_BIT]);
 				}
 
-				int nThisRound = 0;
-				for (;;) {
-					SOCKADDR_IN their_addr;
-					int sin_size = (int)sizeof(SOCKADDR_IN);
-
-					SOCKET hAccepted = accept(hSocket, (LPSOCKADDR)&their_addr, &sin_size);
-					if (INVALID_SOCKET == hAccepted) {
-						const int nErr = ::WSAGetLastError();
-						if (nErr != WSAEWOULDBLOCK)
-							Log("accept FAILED err=%d", nErr);
-						break;
-					}
-					++nThisRound;
-					::InterlockedIncrement(&s_nAccepted);
-					::InterlockedExchange(&s_dwLastAccept, (LONG)::GetTickCount());
-
-					if (s_opt.nMode == MODE_CLEARINHERIT) {
-						// An accepted socket inherits the listening socket's event
-						// association. Break that link here, before the worker
-						// thread re-selects the socket onto an event of its own.
-						WSAEventSelect(hAccepted, NULL, 0);
-						u_long ulNonBlock = 1;
-						ioctlsocket(hAccepted, FIONBIO, &ulNonBlock);
-					}
-
-					SocketData *pData = new SocketData;
-					pData->hSocket = hAccepted;
-					pData->incomingaddr = their_addr.sin_addr;
-					// same construct as eMule: not CreateThread, not AfxBeginThread
-					CWinThread *pAcceptThread = new CWinThread(WsReproAcceptedFunc, (LPVOID)pData);
-					if (!pAcceptThread->CreateThread()) {
-						Log("CreateThread FAILED err=%u live=%ld", ::GetLastError(), s_nConnLive);
-						delete pData;
-						delete pAcceptThread;
-						closesocket(hAccepted);
-					}
-				}
-				if (!nThisRound)
-					::InterlockedIncrement(&s_nDrainEmpty);
+				DrainAccepts(hSocket);
 			}
 			Log("listener loop END, wait=%u err=%u", dwRes, ::GetLastError());
 		} else
@@ -373,6 +463,25 @@ static void Autopsy()
 		return;
 	}
 
+	if (s_opt.nMode == MODE_ASYNCSELECT) {
+		// The equivalent kick for the message path - and not a hypothetical one:
+		// this is what eMule's CListenSocket::ReStartListening() already does when
+		// it calls OnAccept(0) by hand.
+		Log("probe: post the FD_ACCEPT notification by hand");
+		if (s_hNotifyWnd
+			&& ::PostMessage(s_hNotifyWnd, WM_WSREPRO_NOTIFY, (WPARAM)s_hListenSocket, (LPARAM)MAKELONG(FD_ACCEPT, 0))
+			&& AcceptsResume(3000))
+		{
+			Log("VERDICT: LOST NOTIFICATION on the WSAAsyncSelect path too. The message");
+			Log("VERDICT: announcing the connection was never posted; posting it by hand");
+			Log("VERDICT: emptied the backlog.");
+			return;
+		}
+		Log("VERDICT: the message loop is running but the hand-posted notification did");
+		Log("VERDICT: not resume accepting - it is blocked somewhere else.");
+		return;
+	}
+
 	Log("probe 1: SetEvent on the listener's own event");
 	if (s_hListenEvent && ::SetEvent(s_hListenEvent) && AcceptsResume(3000)) {
 		Log("VERDICT: LOST NOTIFICATION. The thread was parked in the wait with a full");
@@ -402,7 +511,7 @@ static void Usage()
 	printf(
 		"wsrepro - reproducer for the eMule web-interface listener freeze\n"
 		"\n"
-		"  --mode <emule|enum|clearinherit|timeout>  listener variant (default emule)\n"
+		"  --mode <emule|enum|clearinherit|timeout|asyncselect>  listener variant (default emule)\n"
 		"  --port <n>          listening port (default 4711)\n"
 		"  --hammers <n>       parallel client threads (default 16)\n"
 		"  --delay-ms <n>      pause between a client's connections (default 0)\n"

@@ -72,13 +72,16 @@ jobs:
           # "no freeze" while never exercising the listener at all. Throttled, a
           # 60-second trial puts several thousand arm/drain cycles through it and
           # stays clear of the TIME_WAIT ceiling.
-          for i in 1 2 3; do
-            set +e
-            ./build-wsrepro/Release/wsrepro.exe --mode emule --port 4799 --hammers 2 --delay-ms 20 --duration-s 60 > "out-emule-$i.txt" 2>&1
-            rc=$?
-            set -e
-            echo "--- trial $i, exit=$rc ---"
-            grep -E 'FREEZE:|VERDICT|accepted=' "out-emule-$i.txt" | tail -6
+          for mode in emule asyncselect; do
+            echo "=============== mode=$mode ==============="
+            for i in 1 2 3; do
+              set +e
+              ./build-wsrepro/Release/wsrepro.exe --mode "$mode" --port 4799 --hammers 2 --delay-ms 20 --duration-s 60 > "out-$mode-$i.txt" 2>&1
+              rc=$?
+              set -e
+              echo "--- trial $i, exit=$rc ---"
+              grep -E 'FREEZE:|VERDICT|accepted=' "out-$mode-$i.txt" | tail -6
+            done
           done
 
       - name: Upload wsrepro.exe

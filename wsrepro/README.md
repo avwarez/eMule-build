@@ -40,8 +40,15 @@ are the real ones and not an approximation of them.
 | `enum` | adds `WSAEnumNetworkEvents` after the wait | is the missing call the cause? |
 | `clearinherit` | clears the event association the accepted socket inherits | is the inheritance the cause? |
 | `timeout` | wait with a 1000 ms timeout instead of `INFINITE` | does a bounded wait mask it? |
+| `asyncselect` | `WSAAsyncSelect` + a helper window and a message loop | is the OTHER notification path in eMule affected too? |
 
-`emule` reproduces; the other three each remove one candidate cause. A mode
+`emule` reproduces; `enum` and `clearinherit` each remove one candidate cause;
+`timeout` tests the only remedy that is under eMule's control. `asyncselect`
+is the blast-radius question: `WSAEventSelect` appears in exactly two places in
+eMule, both in `WebSocket.cpp`, while every other socket in the program - the
+main listener on the eD2K port included - is notified through `WSAAsyncSelect`
+and a hidden helper window. If that path loses notifications too, the exposure
+is the whole program rather than the web interface. A mode
 that stops freezing while `emule` freezes has named the mechanism.
 
 ## The autopsy
