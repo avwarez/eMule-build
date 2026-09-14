@@ -43,6 +43,7 @@ are the real ones and not an approximation of them.
 | `asyncselect` | `WSAAsyncSelect` + a helper window and a message loop | is the OTHER notification path in eMule affected too? |
 | `poll` | no notification at all: level-triggered `select()` | does the readiness model that cannot lose an edge survive here? |
 | `fdwrite` | `send()` until `WSAEWOULDBLOCK`, then wait for `FD_WRITE` | is it `accept()` specifically, or any re-enabling call that fails? |
+| `fdread` | `recv()` drained to `WSAEWOULDBLOCK`, then wait for `FD_READ` | the third and last drain shape in eMule |
 
 `emule` reproduces; `enum` and `clearinherit` each remove one candidate cause;
 `timeout` tests the only remedy that is under eMule's control. `asyncselect`
@@ -181,9 +182,15 @@ place where a call has to fail in order to re-arm a notification - `send()`
 returning `WSAEWOULDBLOCK` to re-enable `FD_WRITE`, which is how
 `CEMSocket::SendStd` works (EMSocket.cpp:646-657, and eMule's own comment there
 says so: *"Send() blocked, onsend will be called when ready to send again"*).
-Six trials under Wine: **658,000 blocked sends, 658,000 `FD_WRITE`
-notifications, zero lost, zero stalls**. For `FD_ACCEPT` the same machine loses
-one notification per hundred or so failing calls.
+`fdread` mode does the same for the read side - `recv()` drained to
+`WSAEWOULDBLOCK` to re-arm `FD_READ`, which is the other drain loop in
+`WebSocket.cpp`.
+
+| re-enabling call that fails | trials | failing calls | notifications lost | froze |
+|---|---|---|---|---|
+| `accept()` → `FD_ACCEPT` | 10 | 6-194 before dying | ~1 per 100 | **10** |
+| `send()` → `FD_WRITE` | 6 | 667,419 | **0** | 0 |
+| `recv()` → `FD_READ` | 6 | 795,780 | **0** | 0 |
 
 That asymmetry has a plausible reading: for `FD_WRITE` a failing call is the
 *documented, only* way to re-arm, so it is the path everything exercises; for
