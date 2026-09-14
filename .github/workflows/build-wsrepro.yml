@@ -1,0 +1,59 @@
+name: Build wsrepro (listener reproducer)
+
+# Builds the standalone web-listener reproducer in wsrepro/ with the same
+# compiler and the same static-MFC configuration as eMule itself, and leaves
+# the exe as a run artifact. It never publishes anything and never touches the
+# eMule build: wsrepro/CMakeLists.txt is its own CMake project, configured
+# separately from the top-level one.
+#
+# The reason it has its own workflow rather than a target in the main build is
+# turnaround. The eMule matrix is six full builds of eMule plus every vendored
+# dependency; this is one translation unit, so a change to the test case comes
+# back in a couple of minutes instead of most of an hour.
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'wsrepro/**'
+      - '.github/workflows/build-wsrepro.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # ARM64 is the one that matters for the experiment this was written
+        # for - the machine that shows the fault runs Wine on aarch64, whose
+        # Wine build is ARM64-only. x64 and Win32 come along because they cost
+        # a minute each and make it possible to tell a platform-specific
+        # answer from a universal one.
+        platform: [ARM64, x64, Win32]
+
+    steps:
+      - name: Pin deterministic line endings before checkout
+        run: git config --global core.autocrlf false
+
+      - name: Checkout
+        # No submodules: wsrepro has no dependency on any of them, nor on the
+        # emule sources it imitates.
+        uses: actions/checkout@v4
+
+      - name: Configure (CMake)
+        run: cmake -S wsrepro -B build-wsrepro -A ${{ matrix.platform }}
+
+      - name: Build
+        run: cmake --build build-wsrepro --config Release
+
+      - name: Upload wsrepro.exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: wsrepro-${{ matrix.platform }}
+          path: build-wsrepro/Release/wsrepro.exe
+          if-no-files-found: error
+          retention-days: 14
