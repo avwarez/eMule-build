@@ -125,14 +125,18 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends wine64 xvfb
-          wine --version
+          # The wine64 package installs /usr/bin/wine64 and no /usr/bin/wine,
+          # so resolve the name once instead of assuming either.
+          WINE=$(command -v wine || command -v wine64)
+          echo "WINE=$WINE" >> "$GITHUB_ENV"
+          "$WINE" --version
 
       - name: Create the prefix
         # First run of anything builds the prefix and prints a wall of noise;
         # get that over with before the measured runs, and off the real output.
         env:
           WINEDEBUG: -all
-        run: xvfb-run -a wine bin/wsrepro.exe --help > /dev/null 2>&1 || true
+        run: xvfb-run -a "$WINE" bin/wsrepro.exe --help > /dev/null 2>&1 || true
 
       - name: Run the reproducer
         # Same modes, same command line, same trial count as the Windows job,
@@ -145,7 +149,7 @@ jobs:
             echo "=============== mode=$mode ==============="
             for i in 1 2 3; do
               set +e
-              xvfb-run -a wine bin/wsrepro.exe --mode "$mode" --port 4799 --hammers 2 --delay-ms 20 --duration-s 60 > "out-$mode-$i.txt" 2>&1
+              xvfb-run -a "$WINE" bin/wsrepro.exe --mode "$mode" --port 4799 --hammers 2 --delay-ms 20 --duration-s 60 > "out-$mode-$i.txt" 2>&1
               rc=$?
               set -e
               echo "--- trial $i, exit=$rc ---"
