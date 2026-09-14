@@ -112,8 +112,8 @@ command line on both sides:
 | Wine 11.0, aarch64 | `emule` | 3 | **3** | - | - |
 | Windows runner, x64 | `emule` | 3 | 0 | 11,906 | 2,882 |
 | Windows runner, Win32 | `emule` | 3 | 0 | 11,979 | 2,823 |
-| Windows runner, x64 | `asyncselect` | 3 | 0 | 11,798 | 2,743 |
-| Windows runner, Win32 | `asyncselect` | 3 | 0 | 11,943 | 3,105 |
+| Windows runner, x64 | `asyncselect` | 3 | 0 | 11,943 | 3,105 |
+| Windows runner, Win32 | `asyncselect` | 3 | 0 | 11,798 | 2,743 |
 
 The empty-drain column matters: it counts the wakeups where `accept()` found
 nothing and returned `WSAEWOULDBLOCK`, which is the window the fault lives in.
