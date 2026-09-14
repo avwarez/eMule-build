@@ -705,6 +705,29 @@ static UINT AFX_CDECL IoThreadFunc(LPVOID)
 			::InterlockedIncrement(&s_nPosted);
 			::PostQueuedCompletionStatus(s_hPort, 0, WAKEUP, NULL);
 		}
+
+		// Strict mode only, and not a change to the shape under test: a check
+		// that the work still there has someone coming for it.
+		//
+		// The drain loop swallows wakeups. A packet posted while the cycle is
+		// past its StartReads() and still draining is taken by that drain,
+		// counted, and does nothing - its request stays on the list with no
+		// packet left to announce it. eMule does not care, because its work
+		// source is the upload list itself: every cycle walks all of it, so a
+		// swallowed wakeup costs a moment, never a request. This harness reads
+		// from a queue instead, where the same swallow loses the work. Rather
+		// than pretend the queue is a list, the last thing the cycle does is
+		// look at it - and what it posts is counted like everything else, so
+		// the books stay exact.
+		if (s_opt.nMode == MODE_STRICT && s_nInFlight == 0) {
+			::EnterCriticalSection(&s_csTodo);
+			const bool bMore = !s_listTodo.IsEmpty();
+			::LeaveCriticalSection(&s_csTodo);
+			if (bMore) {
+				::InterlockedIncrement(&s_nPosted);
+				::PostQueuedCompletionStatus(s_hPort, 0, WAKEUP, NULL);
+			}
+		}
 	}
 	s_Run = RUN_STOP;
 	return 0;
