@@ -79,3 +79,52 @@ cmake --build build-wsrepro --config Release
 The `Build wsrepro (listener reproducer)` workflow does exactly that for
 ARM64, x64 and Win32 on every push that touches this directory, and leaves the
 exe as a run artifact.
+
+## What it found (2026-09-14)
+
+Same source, same compiler, same static MFC; one machine runs Windows, the
+other runs Wine 11.0 on aarch64. Clients throttled to ~90 connections/second,
+which is also roughly the rate the field failure was seen at.
+
+| where | mode | trials | froze |
+|---|---|---|---|
+| Wine 11.0, aarch64 | `emule` | 10 | **10** |
+| Wine 11.0, aarch64 | `enum` | 10 | **10** |
+| Wine 11.0, aarch64 | `clearinherit` | 10 | **10** |
+| Wine 11.0, aarch64 | `timeout` | 10 | 0 |
+| Windows runner, x64 | `emule` | 3 | 0 (11,903 wait cycles, 2,882 empty drains) |
+| Windows runner, Win32 | `emule` | 3 | 0 (11,979 wait cycles, 2,823 empty drains) |
+
+Under Wine the freeze arrives after **6 to 194 connections** - seconds, not
+hours. The autopsy is the same every time: the listening thread is alive,
+parked in `WaitForMultipleObjects`, with connections waiting in the backlog,
+and a single `SetEvent` on its own event resumes accepting immediately. The
+`FD_ACCEPT` edge was never delivered.
+
+Three things follow.
+
+**The trigger is the empty drain.** The freeze only happens when the listener
+reaches `accept()` returning `WSAEWOULDBLOCK` and a connection arrives around
+that moment. Saturate the port (8 or more clients with no pause) and the
+listener never leaves the inner drain loop - 10,500 connections, two wakeups,
+no freeze. Slow the clients down so the listener parks between connections and
+it dies within seconds. That is why the fault looks like it needs hours of
+uptime: it needs an idle-ish port, which is the normal state of a web
+interface nobody is using.
+
+**`WSAEnumNetworkEvents` is not the answer.** The `enum` mode adds the call
+eMule omits - the documented pattern, and the one eMule itself uses for
+connections in the same file - and froze 10 times out of 10. So the omission,
+real as it is, is not what breaks here: the notification is lost below the
+level any of these calls can see. The same goes for the inherited event
+association (`clearinherit`, 10 out of 10).
+
+**Only a bounded wait survives.** `timeout` mode is eMule's listener with
+`INFINITE` replaced by 1000 ms, and it did not freeze once. It does not prevent
+the lost edge; it stops the lost edge from being permanent.
+
+The reading of this is that the pattern eMule uses is legitimate and works on
+Windows, and that this platform loses a `FD_ACCEPT` edge in the narrow window
+around an `accept()` that returns `WSAEWOULDBLOCK`. The corollary for eMule is
+narrower than a fix: an unbounded wait with no way back is what turns someone
+else's lost edge into a dead web interface.
