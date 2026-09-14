@@ -57,10 +57,11 @@ enum EMode
 	MODE_CLEARINHERIT,   // + WSAEventSelect(hAccepted, NULL, 0) right after accept()
 	MODE_TIMEOUT,        // eMule's listener, but the wait has a timeout instead of INFINITE
 	MODE_ASYNCSELECT,    // the OTHER notification path in eMule: WSAAsyncSelect + a message loop
-	MODE_POLL            // no notification at all: level-triggered select()
+	MODE_POLL,           // no notification at all: level-triggered select()
+	MODE_FDWRITE         // the other re-arm-by-failure: send() -> WSAEWOULDBLOCK -> FD_WRITE
 };
 
-static const char *const s_pszModeNames[] = { "emule", "enum", "clearinherit", "timeout", "asyncselect", "poll" };
+static const char *const s_pszModeNames[] = { "emule", "enum", "clearinherit", "timeout", "asyncselect", "poll", "fdwrite" };
 
 struct SOptions
 {
@@ -95,6 +96,16 @@ static volatile LONG s_nConnLive = 0;
 static volatile LONG s_dwLastAccept = 0;       // GetTickCount of the last accept()
 static volatile LONG s_bListening = 0;
 static volatile LONG s_nSelectMissed = 0;      // poll mode: select() said "nothing" with clients waiting
+static volatile LONG s_nSentKB = 0;            // fdwrite mode: kilobytes pushed by the senders
+static volatile LONG s_nRecvKB = 0;            // fdwrite mode: kilobytes taken by the readers
+static volatile LONG s_dwLastSend = 0;
+static volatile LONG s_nSendBlocked = 0;       // sends that returned WSAEWOULDBLOCK (the re-arm)
+static volatile LONG s_nFdWrite = 0;           // FD_WRITE notifications that actually arrived
+
+// fdwrite mode: the senders' events, so the autopsy can kick them the way it kicks
+// the listener. Small fixed table - this test runs a handful of connections.
+#define MAX_SENDERS 16
+static HANDLE s_pSenderEvents[MAX_SENDERS];
 
 static HWND    s_hNotifyWnd = NULL;            // asyncselect mode: the helper window, as CAsyncSocketEx has
 #define WM_WSREPRO_NOTIFY (WM_APP + 1)
@@ -125,6 +136,64 @@ struct SocketData
 	in_addr incomingaddr;
 };
 
+// fdwrite mode, server side. This is CEMSocket's send path, reduced to its
+// notification contract (EMSocket.cpp:646-657): push until send() returns
+// WSAEWOULDBLOCK, then wait for FD_WRITE and push again. The failing send IS the
+// call that re-arms FD_WRITE - there is no way to re-arm it without failing -
+// so if the platform can lose a notification around a re-enabling call that
+// fails, this path cannot avoid the window the way a listener can.
+static void RunSender(SOCKET hSocket)
+{
+	// A small send buffer makes the socket fill and drain many times a second,
+	// so a few seconds of running is thousands of re-arm cycles.
+	int nSndBuf = 4096;
+	setsockopt(hSocket, SOL_SOCKET, SO_SNDBUF, (const char*)&nSndBuf, sizeof nSndBuf);
+
+	HANDLE hEvent = CreateEvent(NULL, FALSE, TRUE, NULL);
+	if (!hEvent)
+		return;
+	if (WSAEventSelect(hSocket, hEvent, FD_WRITE | FD_CLOSE)) {
+		Log("sender WSAEventSelect FAILED err=%d", ::WSAGetLastError());
+		VERIFY(::CloseHandle(hEvent));
+		return;
+	}
+
+	int nSlot = -1;
+	::EnterCriticalSection(&s_csLog);
+	for (int i = 0; i < MAX_SENDERS; ++i)
+		if (!s_pSenderEvents[i]) {
+			s_pSenderEvents[i] = hEvent;
+			nSlot = i;
+			break;
+		}
+	::LeaveCriticalSection(&s_csLog);
+
+	static char s_szPayload[0x4000];
+	HANDLE pWait[] = { hEvent, s_hTerminate };
+	for (;;) {
+		const int nRes = send(hSocket, s_szPayload, (int)sizeof s_szPayload, 0);
+		if (nRes > 0) {
+			::InterlockedExchangeAdd(&s_nSentKB, nRes / 1024);
+			::InterlockedExchange(&s_dwLastSend, (LONG)::GetTickCount());
+			continue;
+		}
+		if (::WSAGetLastError() != WSAEWOULDBLOCK)
+			break;
+		::InterlockedIncrement(&s_nSendBlocked);
+		if (WAIT_OBJECT_0 != ::WaitForMultipleObjects(2, pWait, FALSE, INFINITE))
+			break;
+		::InterlockedIncrement(&s_nFdWrite);
+	}
+
+	if (nSlot >= 0) {
+		::EnterCriticalSection(&s_csLog);
+		s_pSenderEvents[nSlot] = NULL;
+		::LeaveCriticalSection(&s_csLog);
+	}
+	WSAEventSelect(hSocket, NULL, 0);
+	VERIFY(::CloseHandle(hEvent));
+}
+
 static UINT AFX_CDECL WsReproAcceptedFunc(LPVOID pD)
 {
 	const SocketData *pData = static_cast<SocketData*>(pD);
@@ -132,6 +201,14 @@ static UINT AFX_CDECL WsReproAcceptedFunc(LPVOID pD)
 	delete pData;
 
 	::InterlockedIncrement(&s_nConnLive);
+
+	if (s_opt.nMode == MODE_FDWRITE) {
+		RunSender(hSocket);
+		shutdown(hSocket, SD_BOTH);
+		closesocket(hSocket);
+		::InterlockedDecrement(&s_nConnLive);
+		return 0;
+	}
 
 	HANDLE hEvent = CreateEvent(NULL, FALSE, TRUE, NULL);
 	if (hEvent) {
@@ -472,6 +549,25 @@ static UINT AFX_CDECL WsReproHammerFunc(LPVOID)
 		}
 		::InterlockedIncrement(&s_nConnected);
 
+		if (s_opt.nMode == MODE_FDWRITE) {
+			// A reader that never stops reading, so the sender's buffer keeps
+			// draining and FD_WRITE has to keep arriving. Any stall on the
+			// sending side is then the platform's, not the peer's.
+			DWORD dwRecvTimeout = 30000;
+			setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, (const char*)&dwRecvTimeout, sizeof dwRecvTimeout);
+			int nRcvBuf = 4096;
+			setsockopt(s, SOL_SOCKET, SO_RCVBUF, (const char*)&nRcvBuf, sizeof nRcvBuf);
+			char szSink[0x1000];
+			while (::WaitForSingleObject(s_hTerminate, 0) == WAIT_TIMEOUT) {
+				const int nGot = recv(s, szSink, (int)sizeof szSink, 0);
+				if (nGot <= 0)
+					break;
+				::InterlockedExchangeAdd(&s_nRecvKB, nGot / 1024);
+			}
+			closesocket(s);
+			continue;
+		}
+
 		DWORD dwTimeout = (DWORD)s_opt.nClientWaitMs;
 		setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, (const char*)&dwTimeout, sizeof dwTimeout);
 
@@ -523,6 +619,30 @@ static void Autopsy()
 		return;
 	}
 
+	if (s_opt.nMode == MODE_FDWRITE) {
+		Log("probe: SetEvent on every blocked sender's own event");
+		const LONG nBefore = s_nSentKB;
+		::EnterCriticalSection(&s_csLog);
+		for (int i = 0; i < MAX_SENDERS; ++i)
+			if (s_pSenderEvents[i])
+				::SetEvent(s_pSenderEvents[i]);
+		::LeaveCriticalSection(&s_csLog);
+		const DWORD dwStart = ::GetTickCount();
+		while (::GetTickCount() - dwStart < 3000) {
+			if (s_nSentKB != nBefore) {
+				Log("VERDICT: LOST FD_WRITE. The sender was parked after a send() that");
+				Log("VERDICT: returned WSAEWOULDBLOCK, with its reader still draining the");
+				Log("VERDICT: socket; one SetEvent resumed sending. This is the same");
+				Log("VERDICT: defect as the accept one, on the upload path.");
+				return;
+			}
+			::Sleep(50);
+		}
+		Log("VERDICT: the senders are blocked and the kick did not resume them - the");
+		Log("VERDICT: stall is not a lost notification.");
+		return;
+	}
+
 	if (s_opt.nMode == MODE_ASYNCSELECT) {
 		// The equivalent kick for the message path - and not a hypothetical one:
 		// this is what eMule's CListenSocket::ReStartListening() already does when
@@ -571,7 +691,7 @@ static void Usage()
 	printf(
 		"wsrepro - reproducer for the eMule web-interface listener freeze\n"
 		"\n"
-		"  --mode <emule|enum|clearinherit|timeout|asyncselect|poll>  listener variant (default emule)\n"
+		"  --mode <emule|enum|clearinherit|timeout|asyncselect|poll|fdwrite>  variant (default emule)\n"
 		"  --port <n>          listening port (default 4711)\n"
 		"  --hammers <n>       parallel client threads (default 16)\n"
 		"  --delay-ms <n>      pause between a client's connections (default 0)\n"
@@ -691,6 +811,24 @@ int main(int argc, char *argv[])
 		const LONG nAccepted = s_nAccepted;
 		const LONG nConnected = s_nConnected;
 		const DWORD dwSinceAccept = dwNow - (DWORD)s_dwLastAccept;
+
+		if (s_opt.nMode == MODE_FDWRITE) {
+			// The symptom here is the upload one: a sender that is blocked
+			// waiting for FD_WRITE while its reader is still draining the socket.
+			const DWORD dwSinceSend = dwNow - (DWORD)s_dwLastSend;
+			if (s_nConnLive > 0 && s_dwLastSend != 0 && dwSinceSend > (DWORD)s_opt.nStallMs) {
+				Log("FREEZE: nothing sent for %ums with %ld live senders; sent=%ldKB recv=%ldKB blocked=%ld fdwrite=%ld"
+					, dwSinceSend, s_nConnLive, s_nSentKB, s_nRecvKB, s_nSendBlocked, s_nFdWrite);
+				bFrozen = true;
+				break;
+			}
+			if (dwNow - dwLastReport >= 5000) {
+				dwLastReport = dwNow;
+				Log("sent=%ldKB recv=%ldKB blocked=%ld fdwrite=%ld live=%ld"
+					, s_nSentKB, s_nRecvKB, s_nSendBlocked, s_nFdWrite, s_nConnLive);
+			}
+			continue;
+		}
 
 		// The field symptom, exactly: the client's connect() succeeds because the
 		// kernel completes the handshake into the backlog, and the server never
