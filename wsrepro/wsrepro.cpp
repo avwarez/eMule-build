@@ -546,7 +546,12 @@ int main(int argc, char *argv[])
 		Autopsy();
 		nExit = 1;
 	} else
-		Log("VERDICT: no freeze in %ds with mode=%s", s_opt.nDurationS, s_pszModeNames[s_opt.nMode]);
+		// accepted/wakeups are part of the verdict on purpose: a run that could not
+		// get connections through (client-side port exhaustion, say) also reports "no
+		// freeze", and the only thing separating it from a real clean run is how many
+		// arm/drain cycles the listener actually went through.
+		Log("VERDICT: no freeze in %ds with mode=%s (%ld accepted, %ld wait cycles, %ld empty drains, %ld failed connects)"
+			, s_opt.nDurationS, s_pszModeNames[s_opt.nMode], s_nAccepted, s_nWaitReturns, s_nDrainEmpty, s_nClientFailed);
 
 	::SetEvent(s_hTerminate);
 	::Sleep(500);
