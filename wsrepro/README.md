@@ -154,6 +154,26 @@ a message loop - and froze 10 times out of 10. The autopsy there posts the
 itself, and the backlog empties immediately. So this is not a property of
 `WSAEventSelect`: the notification is lost below both of them.
 
+**The defect is one call: an `accept()` that fails with `WSAEWOULDBLOCK`.**
+`--one-shot` takes exactly one connection per notification and leaves - never
+issuing a failing accept, which is what `CListenSocket::OnAccept` does in eMule.
+It does not freeze, on either notification path:
+
+| variant | failing `accept()` calls | trials | froze |
+|---|---|---|---|
+| `emule` (drains to WSAEWOULDBLOCK) | thousands | 10 | **10** |
+| `asyncselect` (drains) | thousands | 10 | **10** |
+| `emule --one-shot` | 1 (the initial spurious wakeup) | 10 | 0 |
+| `asyncselect --one-shot` | 0 | 10 | 0 |
+| `poll` (drains) | thousands | 10 | 0 |
+
+The last row is what pins it down. `poll` drains to `WSAEWOULDBLOCK` like the
+first two and still never freezes - because `select()` never consults the
+notification state that the failing `accept()` corrupts. So the failing call is
+the one that does the damage, and the notification APIs are its victims, not
+its cause: neither `WSAEventSelect`, nor `WSAAsyncSelect`, nor the wait, nor the
+message loop behaves incorrectly anywhere in this.
+
 **Level-triggered readiness is immune.** `poll` mode throws the notification
 away entirely and asks `select()` whether a connection is waiting right now.
 Ten trials under Wine, **145,575 connections accepted, zero freezes**. The
