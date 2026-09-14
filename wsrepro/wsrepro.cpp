@@ -58,10 +58,11 @@ enum EMode
 	MODE_TIMEOUT,        // eMule's listener, but the wait has a timeout instead of INFINITE
 	MODE_ASYNCSELECT,    // the OTHER notification path in eMule: WSAAsyncSelect + a message loop
 	MODE_POLL,           // no notification at all: level-triggered select()
-	MODE_FDWRITE         // the other re-arm-by-failure: send() -> WSAEWOULDBLOCK -> FD_WRITE
+	MODE_FDWRITE,        // the other re-arm-by-failure: send() -> WSAEWOULDBLOCK -> FD_WRITE
+	MODE_FDREAD          // the third one: recv() drained to WSAEWOULDBLOCK -> FD_READ
 };
 
-static const char *const s_pszModeNames[] = { "emule", "enum", "clearinherit", "timeout", "asyncselect", "poll", "fdwrite" };
+static const char *const s_pszModeNames[] = { "emule", "enum", "clearinherit", "timeout", "asyncselect", "poll", "fdwrite", "fdread" };
 
 struct SOptions
 {
@@ -101,6 +102,9 @@ static volatile LONG s_nRecvKB = 0;            // fdwrite mode: kilobytes taken 
 static volatile LONG s_dwLastSend = 0;
 static volatile LONG s_nSendBlocked = 0;       // sends that returned WSAEWOULDBLOCK (the re-arm)
 static volatile LONG s_nFdWrite = 0;           // FD_WRITE notifications that actually arrived
+static volatile LONG s_dwLastRecv = 0;         // fdread mode
+static volatile LONG s_nRecvBlocked = 0;       // recv() calls that returned WSAEWOULDBLOCK (the re-arm)
+static volatile LONG s_nFdRead = 0;            // FD_READ notifications that actually arrived
 
 // fdwrite mode: the senders' events, so the autopsy can kick them the way it kicks
 // the listener. Small fixed table - this test runs a handful of connections.
@@ -194,6 +198,69 @@ static void RunSender(SOCKET hSocket)
 	VERIFY(::CloseHandle(hEvent));
 }
 
+// fdread mode, server side. This is the drain loop of the web interface's
+// per-connection thread (WebSocket.cpp, the for(;;) around recv()): wait for
+// FD_READ, then recv() until it returns WSAEWOULDBLOCK. The failing recv is
+// what re-arms FD_READ, so this is the FD_READ twin of the accept loop that
+// does freeze - and the only one of eMule's three drain-to-WSAEWOULDBLOCK
+// shapes still unmeasured.
+static void RunReceiver(SOCKET hSocket)
+{
+	// A small receive buffer keeps the drain reaching empty, which is where the
+	// window is: saturate the socket instead and the loop never parks at all.
+	int nRcvBuf = 4096;
+	setsockopt(hSocket, SOL_SOCKET, SO_RCVBUF, (const char*)&nRcvBuf, sizeof nRcvBuf);
+
+	HANDLE hEvent = CreateEvent(NULL, FALSE, TRUE, NULL);
+	if (!hEvent)
+		return;
+	if (WSAEventSelect(hSocket, hEvent, FD_READ | FD_CLOSE)) {
+		Log("receiver WSAEventSelect FAILED err=%d", ::WSAGetLastError());
+		VERIFY(::CloseHandle(hEvent));
+		return;
+	}
+
+	int nSlot = -1;
+	::EnterCriticalSection(&s_csLog);
+	for (int i = 0; i < MAX_SENDERS; ++i)
+		if (!s_pSenderEvents[i]) {
+			s_pSenderEvents[i] = hEvent;
+			nSlot = i;
+			break;
+		}
+	::LeaveCriticalSection(&s_csLog);
+
+	char szBuf[0x1000];
+	HANDLE pWait[] = { hEvent, s_hTerminate };
+	bool bRun = true;
+	while (bRun) {
+		if (WAIT_OBJECT_0 != ::WaitForMultipleObjects(2, pWait, FALSE, INFINITE))
+			break;
+		::InterlockedIncrement(&s_nFdRead);
+		for (;;) {
+			const int nRes = recv(hSocket, szBuf, (int)sizeof szBuf, 0);
+			if (nRes > 0) {
+				::InterlockedExchangeAdd(&s_nRecvKB, nRes / 1024);
+				::InterlockedExchange(&s_dwLastRecv, (LONG)::GetTickCount());
+				continue;
+			}
+			if (nRes == 0 || ::WSAGetLastError() != WSAEWOULDBLOCK)
+				bRun = false;
+			else
+				::InterlockedIncrement(&s_nRecvBlocked);
+			break;
+		}
+	}
+
+	if (nSlot >= 0) {
+		::EnterCriticalSection(&s_csLog);
+		s_pSenderEvents[nSlot] = NULL;
+		::LeaveCriticalSection(&s_csLog);
+	}
+	WSAEventSelect(hSocket, NULL, 0);
+	VERIFY(::CloseHandle(hEvent));
+}
+
 static UINT AFX_CDECL WsReproAcceptedFunc(LPVOID pD)
 {
 	const SocketData *pData = static_cast<SocketData*>(pD);
@@ -202,8 +269,11 @@ static UINT AFX_CDECL WsReproAcceptedFunc(LPVOID pD)
 
 	::InterlockedIncrement(&s_nConnLive);
 
-	if (s_opt.nMode == MODE_FDWRITE) {
-		RunSender(hSocket);
+	if (s_opt.nMode == MODE_FDWRITE || s_opt.nMode == MODE_FDREAD) {
+		if (s_opt.nMode == MODE_FDREAD)
+			RunReceiver(hSocket);
+		else
+			RunSender(hSocket);
 		shutdown(hSocket, SD_BOTH);
 		closesocket(hSocket);
 		::InterlockedDecrement(&s_nConnLive);
@@ -549,6 +619,23 @@ static UINT AFX_CDECL WsReproHammerFunc(LPVOID)
 		}
 		::InterlockedIncrement(&s_nConnected);
 
+		if (s_opt.nMode == MODE_FDREAD) {
+			// One connection, held open, fed small chunks. Small so the server's
+			// drain reaches empty between them: that is the window under test,
+			// exactly as with the listener, where saturating the port hid the
+			// fault instead of exposing it.
+			char szChunk[256];
+			memset(szChunk, 'x', sizeof szChunk);
+			while (::WaitForSingleObject(s_hTerminate, 0) == WAIT_TIMEOUT) {
+				const int nPut = send(s, szChunk, (int)sizeof szChunk, 0);
+				if (nPut <= 0)
+					break;
+				::InterlockedExchangeAdd(&s_nSentKB, nPut / 1024);
+			}
+			closesocket(s);
+			continue;
+		}
+
 		if (s_opt.nMode == MODE_FDWRITE) {
 			// A reader that never stops reading, so the sender's buffer keeps
 			// draining and FD_WRITE has to keep arriving. Any stall on the
@@ -619,9 +706,10 @@ static void Autopsy()
 		return;
 	}
 
-	if (s_opt.nMode == MODE_FDWRITE) {
-		Log("probe: SetEvent on every blocked sender's own event");
-		const LONG nBefore = s_nSentKB;
+	if (s_opt.nMode == MODE_FDWRITE || s_opt.nMode == MODE_FDREAD) {
+		const bool bRead = (s_opt.nMode == MODE_FDREAD);
+		Log("probe: SetEvent on every blocked %s own event", bRead ? "receiver's" : "sender's");
+		const LONG nBefore = bRead ? s_nRecvKB : s_nSentKB;
 		::EnterCriticalSection(&s_csLog);
 		for (int i = 0; i < MAX_SENDERS; ++i)
 			if (s_pSenderEvents[i])
@@ -629,17 +717,24 @@ static void Autopsy()
 		::LeaveCriticalSection(&s_csLog);
 		const DWORD dwStart = ::GetTickCount();
 		while (::GetTickCount() - dwStart < 3000) {
-			if (s_nSentKB != nBefore) {
-				Log("VERDICT: LOST FD_WRITE. The sender was parked after a send() that");
-				Log("VERDICT: returned WSAEWOULDBLOCK, with its reader still draining the");
-				Log("VERDICT: socket; one SetEvent resumed sending. This is the same");
-				Log("VERDICT: defect as the accept one, on the upload path.");
+			if ((bRead ? s_nRecvKB : s_nSentKB) != nBefore) {
+				if (bRead) {
+					Log("VERDICT: LOST FD_READ. The receiver was parked after a recv() that");
+					Log("VERDICT: returned WSAEWOULDBLOCK, with its peer still sending; one");
+					Log("VERDICT: SetEvent resumed reading. Same defect as the accept one,");
+					Log("VERDICT: on the read path.");
+				} else {
+					Log("VERDICT: LOST FD_WRITE. The sender was parked after a send() that");
+					Log("VERDICT: returned WSAEWOULDBLOCK, with its reader still draining the");
+					Log("VERDICT: socket; one SetEvent resumed sending. Same defect as the");
+					Log("VERDICT: accept one, on the send path.");
+				}
 				return;
 			}
 			::Sleep(50);
 		}
-		Log("VERDICT: the senders are blocked and the kick did not resume them - the");
-		Log("VERDICT: stall is not a lost notification.");
+		Log("VERDICT: blocked, and the kick did not resume it - the stall is not a lost");
+		Log("VERDICT: notification.");
 		return;
 	}
 
@@ -691,7 +786,7 @@ static void Usage()
 	printf(
 		"wsrepro - reproducer for the eMule web-interface listener freeze\n"
 		"\n"
-		"  --mode <emule|enum|clearinherit|timeout|asyncselect|poll|fdwrite>  variant (default emule)\n"
+		"  --mode <emule|enum|clearinherit|timeout|asyncselect|poll|fdwrite|fdread>  variant (default emule)\n"
 		"  --port <n>          listening port (default 4711)\n"
 		"  --hammers <n>       parallel client threads (default 16)\n"
 		"  --delay-ms <n>      pause between a client's connections (default 0)\n"
@@ -811,6 +906,22 @@ int main(int argc, char *argv[])
 		const LONG nAccepted = s_nAccepted;
 		const LONG nConnected = s_nConnected;
 		const DWORD dwSinceAccept = dwNow - (DWORD)s_dwLastAccept;
+
+		if (s_opt.nMode == MODE_FDREAD) {
+			const DWORD dwSinceRecv = dwNow - (DWORD)s_dwLastRecv;
+			if (s_nConnLive > 0 && s_dwLastRecv != 0 && dwSinceRecv > (DWORD)s_opt.nStallMs) {
+				Log("FREEZE: nothing received for %ums with %ld live connections; recv=%ldKB blocked=%ld fdread=%ld"
+					, dwSinceRecv, s_nConnLive, s_nRecvKB, s_nRecvBlocked, s_nFdRead);
+				bFrozen = true;
+				break;
+			}
+			if (dwNow - dwLastReport >= 5000) {
+				dwLastReport = dwNow;
+				Log("recv=%ldKB blocked=%ld fdread=%ld live=%ld"
+					, s_nRecvKB, s_nRecvBlocked, s_nFdRead, s_nConnLive);
+			}
+			continue;
+		}
 
 		if (s_opt.nMode == MODE_FDWRITE) {
 			// The symptom here is the upload one: a sender that is blocked
