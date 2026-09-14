@@ -50,6 +50,34 @@ jobs:
       - name: Build
         run: cmake --build build-wsrepro --config Release
 
+      - name: Run the reproducer on the runner
+        # The whole point of the exercise is to tell a defect in eMule's pattern
+        # from a defect in the Winsock underneath it. The runner IS Windows, so
+        # running the same binary here is the control experiment: a freeze on
+        # this machine indicts the pattern, and no freeze here against a freeze
+        # elsewhere indicts the other implementation.
+        #
+        # ARM64 is skipped because an x64 runner cannot execute it - that build
+        # exists to be carried to the machine under study.
+        #
+        # continue-on-error: a freeze is the finding, not a build failure. The
+        # step reports what happened and the workflow goes on to publish the exe.
+        if: matrix.platform != 'ARM64'
+        continue-on-error: true
+        shell: bash
+        run: |
+          for mode in emule enum clearinherit timeout; do
+            echo "=============== mode=$mode ==============="
+            for i in 1 2; do
+              set +e
+              ./build-wsrepro/Release/wsrepro.exe --mode "$mode" --port 4799 --hammers 2 --duration-s 20 > "out-$mode-$i.txt" 2>&1
+              rc=$?
+              set -e
+              echo "--- trial $i, exit=$rc ---"
+              grep -E 'FREEZE:|VERDICT|accepted=' "out-$mode-$i.txt" | tail -8
+            done
+          done
+
       - name: Upload wsrepro.exe
         uses: actions/upload-artifact@v4
         with:
