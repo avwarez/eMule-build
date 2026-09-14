@@ -42,6 +42,7 @@ are the real ones and not an approximation of them.
 | `timeout` | wait with a 1000 ms timeout instead of `INFINITE` | does a bounded wait mask it? |
 | `asyncselect` | `WSAAsyncSelect` + a helper window and a message loop | is the OTHER notification path in eMule affected too? |
 | `poll` | no notification at all: level-triggered `select()` | does the readiness model that cannot lose an edge survive here? |
+| `fdwrite` | `send()` until `WSAEWOULDBLOCK`, then wait for `FD_WRITE` | is it `accept()` specifically, or any re-enabling call that fails? |
 
 `emule` reproduces; `enum` and `clearinherit` each remove one candidate cause;
 `timeout` tests the only remedy that is under eMule's control. `asyncselect`
@@ -173,6 +174,21 @@ notification state that the failing `accept()` corrupts. So the failing call is
 the one that does the damage, and the notification APIs are its victims, not
 its cause: neither `WSAEventSelect`, nor `WSAAsyncSelect`, nor the wait, nor the
 message loop behaves incorrectly anywhere in this.
+
+**It is `accept()` specifically, not "any failing re-enabling call".** That was
+the obvious generalisation and it is wrong. `fdwrite` mode reproduces the other
+place where a call has to fail in order to re-arm a notification - `send()`
+returning `WSAEWOULDBLOCK` to re-enable `FD_WRITE`, which is how
+`CEMSocket::SendStd` works (EMSocket.cpp:646-657, and eMule's own comment there
+says so: *"Send() blocked, onsend will be called when ready to send again"*).
+Six trials under Wine: **658,000 blocked sends, 658,000 `FD_WRITE`
+notifications, zero lost, zero stalls**. For `FD_ACCEPT` the same machine loses
+one notification per hundred or so failing calls.
+
+That asymmetry has a plausible reading: for `FD_WRITE` a failing call is the
+*documented, only* way to re-arm, so it is the path everything exercises; for
+`FD_ACCEPT` the re-arming call is a *successful* `accept()`, and the failing one
+is a corner nothing normally leans on.
 
 **Level-triggered readiness is immune.** `poll` mode throws the notification
 away entirely and asks `select()` whether a connection is waiting right now.
