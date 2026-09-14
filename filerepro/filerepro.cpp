@@ -278,6 +278,7 @@ static int RunContract()
 	//    it really takes, not the length.
 	{
 		PathIn(szA, _countof(szA), _T("sparse.part"));
+		const ULONGLONG uFreeBefore = GetFreeDiskSpaceX(s_szDir);
 		HANDLE h = OpenPartFile(szA, GENERIC_READ | GENERIC_WRITE, CREATE_ALWAYS);
 		DWORD dwRet = 0;
 		const BOOL bSparse = (h != INVALID_HANDLE_VALUE)
@@ -300,6 +301,15 @@ static int RunContract()
 			, uDisk == 0 ? "zero"
 				: (uDisk <= 1024 * 1024 ? "just-the-written-part"
 				: (uDisk < (ULONGLONG)liSize.QuadPart / 2 ? "much-less" : "full-length")));
+
+		// What the file costs is a different question from what the API says it
+		// costs, and only one of the two can be answered by asking the file. The
+		// disk itself answers the other.
+		const ULONGLONG uFreeAfter = GetFreeDiskSpaceX(s_szDir);
+		Probe("sparse-costs-disk", "measurable=%d eaten=%s"
+			, uFreeBefore > 0 && uFreeAfter > 0
+			, (uFreeBefore == 0 || uFreeAfter == 0) ? "n/a"
+				: (uFreeBefore - uFreeAfter > (ULONGLONG)1 << 30 ? "yes-the-whole-length" : "no-just-the-blocks"));
 
 		// The same file through the other two calls eMule uses on it.
 		WIN32_FIND_DATA fd;
