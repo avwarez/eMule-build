@@ -93,6 +93,27 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          notices the terminate event without a second object to wait on;
 #          it is not what makes the loop correct.
 #
+#          Taking one connection per report has a corner the drain loop did
+#          not have, and the patch closes it. An accept() that fails after
+#          select() said readable is ordinary when it fails with
+#          WSAEWOULDBLOCK - another taker, or a peer that gave up in
+#          between - and the next pass waits in select() as before. Any
+#          other error left the connection that made the socket readable
+#          where it was, so select() reports it again at once and going
+#          straight back to the top would spin the thread for as long as the
+#          condition lasts; running out of descriptors is the case that
+#          matters, and waiting is the only useful answer to it. The patch
+#          therefore waits a select() period on any error that is not
+#          WSAEWOULDBLOCK, which costs what an idle pass already costs, and
+#          writes one log line for the spell rather than one per pass - the
+#          error code has to change, or a minute to pass, before it says so
+#          again. That line ships: it is an error report on a path that
+#          should never be taken, not instrumentation, and the loop already
+#          logs a rejected address two statements further down. Vanilla in
+#          this same condition left the loop and went back to waiting on an
+#          event that could no longer be armed, which is the silence
+#          described above; there was no good behaviour here to preserve.
+#
 #          A standalone reproducer of the original loop - same constructs,
 #          same MFC threading, built by the same compiler - is in wsrepro/
 #          with its own workflow and its own README. It is what the words
