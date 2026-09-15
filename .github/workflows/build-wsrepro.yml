@@ -72,7 +72,7 @@ jobs:
           # "no freeze" while never exercising the listener at all. Throttled, a
           # 60-second trial puts several thousand arm/drain cycles through it and
           # stays clear of the TIME_WAIT ceiling.
-          for mode in emule asyncselect poll; do
+          for mode in emule asyncselect asynccounter poll; do
             echo "=============== mode=$mode ==============="
             for i in 1 2 3; do
               set +e
@@ -80,7 +80,7 @@ jobs:
               rc=$?
               set -e
               echo "--- trial $i, exit=$rc ---"
-              grep -E 'FREEZE:|VERDICT|accepted=' "out-$mode-$i.txt" | tail -6
+              grep -E 'FREEZE:|VERDICT|COUNTER:|Backlog counter|accepted=' "out-$mode-$i.txt" | tail -8
             done
           done
 
@@ -158,7 +158,7 @@ jobs:
         env:
           WINEDEBUG: -all
         run: |
-          for mode in emule asyncselect poll; do
+          for mode in emule asyncselect asynccounter poll; do
             echo "=============== mode=$mode ==============="
             for i in 1 2 3; do
               set +e
@@ -166,6 +166,6 @@ jobs:
               rc=$?
               set -e
               echo "--- trial $i, exit=$rc ---"
-              grep -E 'FREEZE:|VERDICT|accepted=' "out-$mode-$i.txt" | tail -6
+              grep -E 'FREEZE:|VERDICT|COUNTER:|Backlog counter|accepted=' "out-$mode-$i.txt" | tail -8
             done
           done

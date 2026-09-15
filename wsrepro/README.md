@@ -41,6 +41,7 @@ are the real ones and not an approximation of them.
 | `clearinherit` | clears the event association the accepted socket inherits | is the inheritance the cause? |
 | `timeout` | wait with a 1000 ms timeout instead of `INFINITE` | does a bounded wait mask it? |
 | `asyncselect` | `WSAAsyncSelect` + a helper window and a message loop | is the OTHER notification path in eMule affected too? |
+| `asynccounter` | the same path, with `CListenSocket`'s counter-driven accept | does eMule's MAIN listener have the fault, or only the web one? |
 | `poll` | no notification at all: level-triggered `select()` | does the readiness model that cannot lose an edge survive here? |
 | `fdwrite` | `send()` until `WSAEWOULDBLOCK`, then wait for `FD_WRITE` | is it `accept()` specifically, or any re-enabling call that fails? |
 | `fdread` | `recv()` drained to `WSAEWOULDBLOCK`, then wait for `FD_READ` | the third and last drain shape in eMule |

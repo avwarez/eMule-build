@@ -57,12 +57,13 @@ enum EMode
 	MODE_CLEARINHERIT,   // + WSAEventSelect(hAccepted, NULL, 0) right after accept()
 	MODE_TIMEOUT,        // eMule's listener, but the wait has a timeout instead of INFINITE
 	MODE_ASYNCSELECT,    // the OTHER notification path in eMule: WSAAsyncSelect + a message loop
+	MODE_ASYNCCOUNTER,   // that path with the accept loop eMule's MAIN listener really has
 	MODE_POLL,           // no notification at all: level-triggered select()
 	MODE_FDWRITE,        // the other re-arm-by-failure: send() -> WSAEWOULDBLOCK -> FD_WRITE
 	MODE_FDREAD          // the third one: recv() drained to WSAEWOULDBLOCK -> FD_READ
 };
 
-static const char *const s_pszModeNames[] = { "emule", "enum", "clearinherit", "timeout", "asyncselect", "poll", "fdwrite", "fdread" };
+static const char *const s_pszModeNames[] = { "emule", "enum", "clearinherit", "timeout", "asyncselect", "asynccounter", "poll", "fdwrite", "fdread" };
 
 struct SOptions
 {
@@ -110,6 +111,20 @@ static volatile LONG s_nFdRead = 0;            // FD_READ notifications that act
 // the listener. Small fixed table - this test runs a handful of connections.
 #define MAX_SENDERS 16
 static HANDLE s_pSenderEvents[MAX_SENDERS];
+
+// asynccounter mode. CListenSocket::OnAccept (ListenSocket.cpp:2137) does not
+// drain: it raises m_nPendingConnections by one for every FD_ACCEPT it is handed
+// and then takes exactly that many connections, so in the ordinary case it
+// issues one accept() per notification and never a failing one. What the counter
+// can do that --one-shot cannot is DRIFT - a notification that no connection
+// backs, or a connection announced twice, and the loop reaches accept() with
+// nothing to take. eMule prints a line when that happens, and that line is the
+// field probe for this fault: it appears in none of the 244 log files on the
+// machine under study, so the bench has to either produce it or show it cannot
+// happen here.
+static volatile LONG s_nPending = 0;           // eMule's m_nPendingConnections
+static volatile LONG s_nPendingMax = 0;
+static volatile LONG s_nBacklogDesync = 0;     // accept() found nothing with the counter above zero
 
 static HWND    s_hNotifyWnd = NULL;            // asyncselect mode: the helper window, as CAsyncSocketEx has
 #define WM_WSREPRO_NOTIFY (WM_APP + 1)
@@ -400,6 +415,133 @@ static int DrainAccepts(SOCKET hSocket)
 	return nThisRound;
 }
 
+/////////////////////////////////////////////////////////////////////////////
+// asynccounter mode: the connections it accepts stay on the listener's own
+// helper window, which is what eMule does and what no other mode here models.
+// CClientReqSocket is a CAsyncSocketEx like CListenSocket, so both end up on the
+// one hidden window of the thread that created them, and OnAccept's last line -
+// newsocket->AsyncSelect(FD_WRITE|FD_READ|FD_CLOSE) - REPLACES the association
+// the accepted socket inherited from the listener, on the window whose
+// FD_ACCEPT interest has to survive that call. There is no worker thread here
+// for the same reason: eMule does not start one per incoming connection.
+
+struct AsyncConn
+{
+	SOCKET hSocket;
+	int    nHeaderMatch;
+	bool   bAnswered;
+};
+
+#define MAX_ASYNC_CONNS 512
+static AsyncConn s_pAsyncConns[MAX_ASYNC_CONNS];
+
+static AsyncConn *FindConnection(SOCKET hSocket)
+{
+	for (int i = 0; i < MAX_ASYNC_CONNS; ++i)
+		if (s_pAsyncConns[i].hSocket == hSocket)
+			return &s_pAsyncConns[i];
+	return NULL;
+}
+
+static bool TrackConnection(SOCKET hSocket)
+{
+	for (int i = 0; i < MAX_ASYNC_CONNS; ++i)
+		if (s_pAsyncConns[i].hSocket == INVALID_SOCKET) {
+			s_pAsyncConns[i].hSocket = hSocket;
+			s_pAsyncConns[i].nHeaderMatch = 0;
+			s_pAsyncConns[i].bAnswered = false;
+			::InterlockedIncrement(&s_nConnLive);
+			return true;
+		}
+	return false;
+}
+
+static void DropConnection(SOCKET hSocket)
+{
+	AsyncConn *pConn = FindConnection(hSocket);
+	if (pConn == NULL)
+		return;
+	pConn->hSocket = INVALID_SOCKET;
+	::InterlockedDecrement(&s_nConnLive);
+	shutdown(hSocket, SD_BOTH);
+	closesocket(hSocket);
+}
+
+// FD_READ on an accepted socket: read the request, answer it once the header
+// ends. Driven by the message loop, so nothing here parks the pump.
+static void ServeAsyncConnection(SOCKET hSocket)
+{
+	AsyncConn *pConn = FindConnection(hSocket);
+	if (pConn == NULL)
+		return;
+	for (;;) {
+		char pBuf[0x1000];
+		const int nRes = recv(hSocket, pBuf, sizeof pBuf, 0);
+		if (nRes <= 0) {
+			if (nRes == 0 || ::WSAGetLastError() != WSAEWOULDBLOCK)
+				DropConnection(hSocket);
+			return;
+		}
+		for (int i = 0; i < nRes; ++i) {
+			const char c = pBuf[i];
+			if ((pConn->nHeaderMatch % 2 == 0 && c == '\r') || (pConn->nHeaderMatch % 2 == 1 && c == '\n'))
+				++pConn->nHeaderMatch;
+			else
+				pConn->nHeaderMatch = (c == '\r') ? 1 : 0;
+			if (pConn->nHeaderMatch == 4 && !pConn->bAnswered) {
+				static const char szReply[] =
+					"HTTP/1.0 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok";
+				send(hSocket, szReply, (int)(sizeof szReply - 1), 0);
+				pConn->bAnswered = true;
+			}
+		}
+	}
+}
+
+// CListenSocket::OnAccept, call for call.
+static void AcceptByCounter(SOCKET hSocket, HWND hWnd)
+{
+	if (++s_nPending < 1)
+		s_nPending = 1;
+	if (s_nPending > s_nPendingMax)
+		s_nPendingMax = s_nPending;
+
+	while (s_nPending > 0) {
+		--s_nPending;
+
+		SOCKADDR_IN their_addr;
+		int sin_size = (int)sizeof(SOCKADDR_IN);
+
+		SOCKET hAccepted = accept(hSocket, (LPSOCKADDR)&their_addr, &sin_size);
+		if (INVALID_SOCKET == hAccepted) {
+			const int nErr = ::WSAGetLastError();
+			if (nErr == WSAEWOULDBLOCK) {
+				// eMule's own words, from the same branch.
+				Log("Backlog counter says %ld connections waiting, accept() says WSAEWOULDBLOCK - setting counter to zero"
+					, s_nPending);
+				::InterlockedIncrement(&s_nBacklogDesync);
+			} else
+				Log("accept FAILED err=%d", nErr);
+			s_nPending = 0;
+			::InterlockedIncrement(&s_nDrainEmpty);
+			break;
+		}
+		::InterlockedIncrement(&s_nAccepted);
+		::InterlockedExchange(&s_dwLastAccept, (LONG)::GetTickCount());
+
+		if (!TrackConnection(hAccepted)) {
+			Log("connection table full, live=%ld", s_nConnLive);
+			shutdown(hAccepted, SD_BOTH);
+			closesocket(hAccepted);
+			continue;
+		}
+		if (WSAAsyncSelect(hAccepted, hWnd, WM_WSREPRO_NOTIFY, FD_READ | FD_WRITE | FD_CLOSE)) {
+			Log("accepted WSAAsyncSelect FAILED err=%d", ::WSAGetLastError());
+			DropConnection(hAccepted);
+		}
+	}
+}
+
 // The second listener: the notification path every OTHER socket in eMule uses.
 // CAsyncSocketEx creates a hidden helper window and calls WSAAsyncSelect, so a
 // connection arrives as a window message rather than as a signalled event. The
@@ -409,12 +551,24 @@ static int DrainAccepts(SOCKET hSocket)
 static LRESULT CALLBACK WsReproWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
 	if (uMsg == WM_WSREPRO_NOTIFY) {
-		if (WSAGETSELECTEVENT(lParam) == FD_ACCEPT) {
+		const SOCKET hSocket = (SOCKET)wParam;
+		const int nEvent = WSAGETSELECTEVENT(lParam);
+		if (nEvent == FD_ACCEPT) {
 			::InterlockedIncrement(&s_nWaitReturns);
 			if (WSAGETSELECTERROR(lParam))
 				Log("FD_ACCEPT message carried err=%d", WSAGETSELECTERROR(lParam));
+			else if (s_opt.nMode == MODE_ASYNCCOUNTER)
+				AcceptByCounter(hSocket, hWnd);
 			else
-				DrainAccepts((SOCKET)wParam);
+				DrainAccepts(hSocket);
+		} else if (s_opt.nMode == MODE_ASYNCCOUNTER) {
+			// The accepted sockets share this window with the listener, so their
+			// events arrive here too. FD_WRITE is selected because eMule selects
+			// it and is otherwise ignored.
+			if (nEvent == FD_READ)
+				ServeAsyncConnection(hSocket);
+			else if (nEvent == FD_CLOSE)
+				DropConnection(hSocket);
 		}
 		return 0;
 	}
@@ -448,7 +602,9 @@ static void RunAsyncSelectListener(SOCKET hSocket)
 
 	::InterlockedExchange(&s_dwLastAccept, (LONG)::GetTickCount());
 	::InterlockedExchange(&s_bListening, 1);
-	Log("listener ready on port %u, mode=asyncselect (WSAAsyncSelect + message loop)", s_opt.nPort);
+	Log("listener ready on port %u, mode=%s (WSAAsyncSelect + message loop, %s)"
+		, s_opt.nPort, s_pszModeNames[s_opt.nMode]
+		, (s_opt.nMode == MODE_ASYNCCOUNTER) ? "counter-driven accept" : "drain to WSAEWOULDBLOCK");
 
 	// A message pump that can also be woken by the terminate event, which is
 	// what a GUI thread's wait looks like.
@@ -464,7 +620,7 @@ static void RunAsyncSelectListener(SOCKET hSocket)
 			::DispatchMessage(&msg);
 		}
 	}
-	Log("listener loop END (asyncselect)");
+	Log("listener loop END (%s)", s_pszModeNames[s_opt.nMode]);
 	s_hNotifyWnd = NULL;
 	::DestroyWindow(hWnd);
 }
@@ -532,7 +688,7 @@ static UINT AFX_CDECL WsReproListeningFunc(LPVOID)
 		return 1;
 	}
 
-	if (s_opt.nMode == MODE_ASYNCSELECT || s_opt.nMode == MODE_POLL) {
+	if (s_opt.nMode == MODE_ASYNCSELECT || s_opt.nMode == MODE_ASYNCCOUNTER || s_opt.nMode == MODE_POLL) {
 		if (s_opt.nMode == MODE_POLL)
 			RunPollListener(hSocket);
 		else
@@ -738,7 +894,7 @@ static void Autopsy()
 		return;
 	}
 
-	if (s_opt.nMode == MODE_ASYNCSELECT) {
+	if (s_opt.nMode == MODE_ASYNCSELECT || s_opt.nMode == MODE_ASYNCCOUNTER) {
 		// The equivalent kick for the message path - and not a hypothetical one:
 		// this is what eMule's CListenSocket::ReStartListening() already does when
 		// it calls OnAccept(0) by hand.
@@ -786,7 +942,7 @@ static void Usage()
 	printf(
 		"wsrepro - reproducer for the eMule web-interface listener freeze\n"
 		"\n"
-		"  --mode <emule|enum|clearinherit|timeout|asyncselect|poll|fdwrite|fdread>  variant (default emule)\n"
+		"  --mode <emule|enum|clearinherit|timeout|asyncselect|asynccounter|poll|fdwrite|fdread>  variant (default emule)\n"
 		"  --port <n>          listening port (default 4711)\n"
 		"  --hammers <n>       parallel client threads (default 16)\n"
 		"  --delay-ms <n>      pause between a client's connections (default 0)\n"
@@ -858,6 +1014,9 @@ int main(int argc, char *argv[])
 		printf("WSAStartup failed\n");
 		return 2;
 	}
+
+	for (int i = 0; i < MAX_ASYNC_CONNS; ++i)
+		s_pAsyncConns[i].hSocket = INVALID_SOCKET;
 
 	Log("start: mode=%s%s port=%u hammers=%d delay=%dms stall=%dms duration=%ds"
 		, s_pszModeNames[s_opt.nMode], s_opt.bOneShot ? " one-shot" : ""
@@ -956,12 +1115,26 @@ int main(int argc, char *argv[])
 			Log("accepted=%ld connected=%ld served=%ld timeout=%ld cfail=%ld wakeups=%ld empty=%ld live=%ld"
 				, nAccepted, nConnected, s_nServed, s_nClientTimeout, s_nClientFailed
 				, s_nWaitReturns, s_nDrainEmpty, s_nConnLive);
+			if (s_opt.nMode == MODE_ASYNCCOUNTER)
+				Log("counter: notifications=%ld accepted=%ld desync=%ld pendmax=%ld"
+					, s_nWaitReturns, nAccepted, s_nBacklogDesync, s_nPendingMax);
 		}
 	}
 
 	Log("accepted=%ld connected=%ld served=%ld timeout=%ld cfail=%ld wakeups=%ld empty=%ld live=%ld"
 		, s_nAccepted, s_nConnected, s_nServed, s_nClientTimeout, s_nClientFailed
 		, s_nWaitReturns, s_nDrainEmpty, s_nConnLive);
+
+	// The invariant this mode exists to test, stated as a number so that the two
+	// platforms can be compared without reading either one's verdict. FD_ACCEPT
+	// is re-enabled by accept() and by nothing else, so a connection that arrives
+	// while the notification is disabled must be announced the moment the accept
+	// that takes its predecessor re-enables it. One accept per notification, and
+	// therefore accepted == notifications, for as long as no edge is lost.
+	if (s_opt.nMode == MODE_ASYNCCOUNTER)
+		Log("COUNTER: notifications=%ld accepted=%ld desync=%ld pendmax=%ld backlog=%ld"
+			, s_nWaitReturns, s_nAccepted, s_nBacklogDesync, s_nPendingMax
+			, s_nConnected - s_nAccepted);
 
 	int nExit = 0;
 	if (bFrozen) {
