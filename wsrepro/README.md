@@ -206,6 +206,40 @@ the one that does the damage, and the notification APIs are its victims, not
 its cause: neither `WSAEventSelect`, nor `WSAAsyncSelect`, nor the wait, nor the
 message loop behaves incorrectly anywhere in this.
 
+**The main eD2K listener is not exposed, and that is measured now rather than
+inferred.** `--one-shot` approximates `CListenSocket::OnAccept` by taking one
+connection per notification; `asynccounter` *is* it - the
+`m_nPendingConnections` counter, its `WSAEWOULDBLOCK` branch with eMule's own
+log line, and the accepted sockets left on the listener's own helper window with
+`WSAAsyncSelect(FD_READ|FD_WRITE|FD_CLOSE)`, which is what `OnAccept`'s last line
+does and what no other mode here models. Run 35033496097, one x64 binary, three
+trials of 60 s per leg:
+
+| leg | accepted | notifications | `desync` | `pendmax` | empty accepts | froze |
+|---|---|---|---|---|---|---|
+| Windows x64 | 4106 / 4240 / 4029 | identical | 0 | 1 | 0 | 0/3 |
+| Windows Win32 | 4029 / 4019 / 4033 | identical | 0 | 1 | 0 | 0/3 |
+| Wine (same x64 binary) | 5668 / 5666 / 5662 | identical | 0 | 1 | 0 | 0/3 |
+
+41,452 accepts across the three legs and **not one notification unaccounted
+for**: `accepted == notifications` exactly, every trial, both platforms. That
+equality is the whole test. `FD_ACCEPT` is re-enabled by `accept()` and by
+nothing else, so a connection that arrives while the notification is disabled
+has to be announced the instant the accept that takes its predecessor re-enables
+it; one lost edge and the two counters separate for good.
+
+The control ran in the same job: `emule` froze 3/3 under Wine and `asyncselect`
+froze 3/3, so the fault was live while `asynccounter` stayed clean. And the
+mechanism shows in one column - `empty accepts` is 0 for the counter on every
+leg, against 523 to 1068 per trial for the two drain modes. The counter never
+asks for a connection that is not there, so it never enters the window the fault
+lives in. Which is also why eMule's "Backlog counter says ..." line has never
+appeared in 551,788 lines of field log across 244 files: not luck, structure.
+
+Wine accepted about 37% more connections than Windows in the same 60 seconds
+(5,665 against 4,125 on average), which is the `timerepro` result showing up
+again on a different bench - short waits cost less there.
+
 **It is `accept()` specifically, not "any failing re-enabling call".** That was
 the obvious generalisation and it is wrong. `fdwrite` mode reproduces the other
 place where a call has to fail in order to re-arm a notification - `send()`
