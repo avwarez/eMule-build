@@ -170,12 +170,28 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          nothing queues more data behind it, and neither condition can
 #          become true again. The flag that hides the completion is the flag
 #          that keeps the collector away, and the slot does nothing for the
-#          rest of its life. The patch sweeps the whole list under the same
-#          lock, collecting from every socket that has a send outstanding
-#          wherever it sits and whatever it has queued. The cheap check is a
-#          plain flag read, so a slot with nothing outstanding costs nothing
-#          here, and one the scan above has just collected has had the flag
-#          lowered already.
+#          rest of its life. The patch hoists the bound of the scan into a
+#          local and then, under the same lock, collects from the slots the
+#          scan could not reach and only from those: the ones past that
+#          bound, and the ones inside it whose queue is empty. A slot the
+#          scan did reach has just been asked, and asking it again would
+#          cost a lock and a system call; if its send completes in between,
+#          the scan returns to it on the next pass, because both conditions
+#          that took it there still hold. The slots collected here have no
+#          such next pass, which is the whole reason for the loop. Both
+#          tests are plain reads of memory this thread already holds the
+#          queue lock for.
+#
+#          A first version asked every slot with a send outstanding. It was
+#          run for eight hours on Wine 11 aarch64 and measured: 13,532,503
+#          calls to WSAGetOverlappedResult, each taking the socket's send
+#          lock, to collect 19 completions that nothing else would have
+#          taken - 16 on a slot with an empty queue, 3 past the end of the
+#          scan. Every one of the 19 satisfies the condition above, so the
+#          narrower loop collects the same slots at a small fraction of the
+#          cost. The longest of them had been outstanding 64,699 ms; the
+#          slot went back to work and was still uploading fifteen minutes
+#          later.
 #
 #          The shape is measured rather than proposed. ovrepro/ reproduces
 #          the two gates around a real overlapped send, with its own
@@ -204,11 +220,11 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          99a-diag-upload-path used to stand on its own: it touched no file
 #          any corrective patch touched, so it applied to an unmodified tree
 #          and was how the behaviour of a build without those patches was
-#          measured. It no longer does. 97h inserts its sweep between the
-#          busy scan and the unlock, which is the middle of the hunk this
-#          patch rewrites, and patch context cannot separate the two; this
-#          file was rebased onto it and now needs it, the way 99b needs 97f
-#          and 99c needs 97g. What the property existed for has been spent:
+#          measured. It no longer does. 97h hoists the bound of the busy
+#          scan into a local, and this patch reports that bound and reads it
+#          in the same loop it rewrites; it was rebased onto 97h and now
+#          needs it, the way 99b needs 97f and 99c needs 97g. What the
+#          property existed for has been spent:
 #          the last log written before the change is the before side, and it
 #          reads orphans=43310 orphanage=34333ms, ovstuck=4877 ovmax=21114ms
 #          ovtotal=54680ms over 10,365,293 probes.
@@ -329,21 +345,23 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          point, because the timestamp cannot.
 #
 #          99g-diag-overlapped-sweep measures the correction in 97h from the
-#          inside, and needs it. At every collection the sweep makes it
-#          records the two conditions the scan above would have applied to
-#          that socket, read before the collection can change either of
-#          them, and counts apart the completions taken from a socket
-#          neither condition would have reached - the correction doing
-#          something, counted rather than assumed. The line carries how many
-#          sockets were carried into the extensive check at all, which is
-#          what the sweep costs; how many completions it took; how many of
-#          those nothing else in the program would have come back to; and
-#          the age of the oldest. A send old enough that its slot sat idle
-#          while it waited also gets a line of its own, at most one a
-#          second. 99e is left alone and stays the instrument for the other
-#          half of the question: it counts episodes rather than samples, so
-#          a before and after can say whether the episodes were shortened or
-#          merely pushed below a sampling interval.
+#          inside, and needs it. The line carries how many sockets the sweep
+#          carried into the extensive check at all, which is what it costs;
+#          how many completions it took; how many of those nothing else in
+#          the program would have come back to; and the age of the oldest.
+#          Since the sweep only reaches slots the scan could not, a
+#          collection is by construction one nothing else would have made,
+#          so the last two counters must agree - they are kept apart on
+#          purpose, because a divergence would say the condition is letting
+#          through a slot the scan had already asked. A send old enough that
+#          its slot sat idle while it waited also gets a line of its own, at
+#          most one a second, carrying the slot, the bound of the scan, and
+#          which side of it the slot was on: inside means the queue was
+#          empty, outside means the scan stopped short of it, and the
+#          condition admits no third case. 99e is left alone and stays the
+#          instrument for the other half of the question: it counts episodes
+#          rather than samples, so a before and after can say whether the
+#          episodes were shortened or merely pushed below a sampling interval.
 # ---------------------------------------------------------------------------
 find_package(Git REQUIRED)
 
