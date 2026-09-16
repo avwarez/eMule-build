@@ -13,7 +13,8 @@
 	url = https://github.com/miniupnp/miniupnp.git
 [submodule "resizablelib"]
 	path = resizablelib
-	url = https://github.com/ppescher/resizablelib.git
+	url = https://github.com/avwarez/resizablelib.git
+	branch = 20260917
 [submodule "zlib"]
 	path = zlib
 	url = https://github.com/madler/zlib.git

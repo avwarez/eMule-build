@@ -214,10 +214,12 @@ set(UPNPC_NO_INSTALL ON CACHE BOOL "Don't add install() rules for a vendored sub
 add_subdirectory(miniupnp/miniupnpc)
 
 # ---------------------------------------------------------------------------
-# ResizableLib - vanilla git submodule (resizablelib/, ppescher/resizablelib
-# pinned to v1.5.3), built via our own resizablelib_build/CMakeLists.txt
-# since the upstream repo ships no CMake support of its own (see that file
-# for why).
+# ResizableLib - git submodule (resizablelib/, avwarez/resizablelib pinned to
+# branch 20260917, which carries the High DPI work done on top of v1.5.3),
+# built via our own resizablelib_build/CMakeLists.txt since the upstream repo
+# ships no CMake support of its own (see that file for why). That file reads
+# the source list out of ResizableLib.vcxproj rather than listing it, so the
+# file this branch adds - ResizableDialogEx.cpp - is picked up on its own.
 # ---------------------------------------------------------------------------
 add_subdirectory(resizablelib_build)
 
