@@ -1,16 +1,16 @@
 diff --git a/srchybrid/PartFileWriteThread.cpp b/srchybrid/PartFileWriteThread.cpp
-index b3492f5..b5eabac 100644
+index b3492f5..eec077d 100644
 --- a/srchybrid/PartFileWriteThread.cpp
 +++ b/srchybrid/PartFileWriteThread.cpp
-@@ -38,6 +38,8 @@ CPartFileWriteThread::CPartFileWriteThread()
- 	: m_eventThreadEnded(FALSE, TRUE)
+@@ -39,6 +39,8 @@ CPartFileWriteThread::CPartFileWriteThread()
  	, m_hPort()
  	, m_Run(RUN_STOP)
+ 	, m_bNewData()
 +	, m_nDiagTakeFailed() //UPDIAG
 +	, m_dwDiagLastFailLog() //UPDIAG
- 	, m_bNewData()
  {
  	AfxBeginThread(RunProc, (LPVOID)this, THREAD_PRIORITY_BELOW_NORMAL);
+ }
 @@ -73,8 +75,23 @@ bool CPartFileWriteThread::TakeCompletion(DWORD dwTimeout, DWORD &rdwWritten, UL
  	rpIO = NULL;
  	if (::GetQueuedCompletionStatus(m_hPort, &rdwWritten, &rKey, (LPOVERLAPPED*)&rpIO, dwTimeout))
@@ -22,7 +22,7 @@ index b3492f5..b5eabac 100644
 +		return false;
 +	//UPDIAG: a write that failed, taken and accounted for. Before 97i this ended the loop
 +	//that took it, which on this thread means downloaded data stops reaching the disk.
-+	++m_nDiagTakeFailed;
++	::InterlockedIncrement(&m_nDiagTakeFailed);
 +	{
 +		const DWORD dwDiagNow = ::GetTickCount();
 +		if (dwDiagNow - m_dwDiagLastFailLog >= 1000) {
@@ -50,24 +50,23 @@ index b3492f5..b5eabac 100644
  
  	//Improper termination of asynchronous I/O follows...
 diff --git a/srchybrid/PartFileWriteThread.h b/srchybrid/PartFileWriteThread.h
-index a1a514d..310f5fd 100644
+index a1a514d..6fe0f07 100644
 --- a/srchybrid/PartFileWriteThread.h
 +++ b/srchybrid/PartFileWriteThread.h
-@@ -64,6 +64,11 @@ private:
- 
- 	CEvent	m_eventThreadEnded;
+@@ -66,4 +66,10 @@ private:
  	HANDLE	m_hPort;
+ 	volatile char m_Run; //0 - not running; 1 - idle; 2 - processing
+ 	volatile char m_bNewData;
 +	// UPDIAG: the write side gets the two lines that matter and no reporting surface of
 +	// its own - nothing outside this class reads its state, so counters would have no
 +	// reader. A failed write completion and an unexpected exit both write to the log.
++	// Declared last, and initialised last, so the two orders agree (C5038).
 +	volatile LONG m_nDiagTakeFailed;
 +	DWORD m_dwDiagLastFailLog;
- 	volatile char m_Run; //0 - not running; 1 - idle; 2 - processing
- 	volatile char m_bNewData;
  };
 \ No newline at end of file
 diff --git a/srchybrid/UploadDiskIOThread.cpp b/srchybrid/UploadDiskIOThread.cpp
-index 73afd59..3feb30c 100644
+index 73afd59..87d091a 100644
 --- a/srchybrid/UploadDiskIOThread.cpp
 +++ b/srchybrid/UploadDiskIOThread.cpp
 @@ -74,6 +74,11 @@ CUploadDiskIOThread::CUploadDiskIOThread()
@@ -88,7 +87,7 @@ index 73afd59..3feb30c 100644
  	rpIO = NULL;
 -	if (::GetQueuedCompletionStatus(m_hPort, &rdwRead, &rKey, (LPOVERLAPPED*)&rpIO, dwTimeout))
 +	if (::GetQueuedCompletionStatus(m_hPort, &rdwRead, &rKey, (LPOVERLAPPED*)&rpIO, dwTimeout)) {
-+		++m_nDiagTakeOk; //UPDIAG
++		::InterlockedIncrement(&m_nDiagTakeOk); //UPDIAG
 +		::InterlockedExchange(&m_dwDiagLastTake, (LONG)::GetTickCount()); //UPDIAG
  		return true;
 +	}
@@ -96,13 +95,13 @@ index 73afd59..3feb30c 100644
  	rdwRead = 0;
 -	return rpIO != NULL;
 +	if (rpIO == NULL) {
-+		++m_nDiagTakeNone; //UPDIAG
++		::InterlockedIncrement(&m_nDiagTakeNone); //UPDIAG
 +		return false;
 +	}
 +	//UPDIAG: the event the correction above exists for. It used to end the loop that took
 +	//it - the drain losing one read for good, the outer wait losing this thread - and say
 +	//nothing at all. One line a second is enough to see it arrive without flooding.
-+	++m_nDiagTakeFailed;
++	::InterlockedIncrement(&m_nDiagTakeFailed);
 +	::InterlockedExchange(&m_dwDiagLastTake, (LONG)::GetTickCount());
 +	{
 +		const DWORD dwDiagNow = ::GetTickCount();
