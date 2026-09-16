@@ -1,0 +1,152 @@
+diff --git a/srchybrid/PartFileWriteThread.cpp b/srchybrid/PartFileWriteThread.cpp
+index 7a762d2..b3492f5 100644
+--- a/srchybrid/PartFileWriteThread.cpp
++++ b/srchybrid/PartFileWriteThread.cpp
+@@ -62,6 +62,21 @@ void CPartFileWriteThread::EndThread()
+ 	m_eventThreadEnded.Lock();
+ }
+ 
++// The same three outcomes as on the reading side, and the same consequence for taking
++// them for two: a write whose completion says it failed is still a completion, and the
++// entry it leaves on m_listPendingIO is this thread's to remove. See the twin of this
++// function in UploadDiskIOThread.cpp for the full account.
++bool CPartFileWriteThread::TakeCompletion(DWORD dwTimeout, DWORD &rdwWritten, ULONG_PTR &rKey, OverlappedWrite_Struct *&rpIO)
++{
++	rdwWritten = 0;
++	rKey = 0;
++	rpIO = NULL;
++	if (::GetQueuedCompletionStatus(m_hPort, &rdwWritten, &rKey, (LPOVERLAPPED*)&rpIO, dwTimeout))
++		return true;
++	rdwWritten = 0;
++	return rpIO != NULL;
++}
++
+ UINT CPartFileWriteThread::RunInternal()
+ {
+ 	m_hPort = ::CreateIoCompletionPort(INVALID_HANDLE_VALUE, 0, 0, 1);
+@@ -72,10 +87,8 @@ UINT CPartFileWriteThread::RunInternal()
+ 	ULONG_PTR completionKey = 0;
+ 	OverlappedWrite_Struct *pCurIO = NULL;
+ 	m_Run = RUN_IDLE;
+-	while (m_Run
+-		&& ::GetQueuedCompletionStatus(m_hPort, &dwWrite, &completionKey, (LPOVERLAPPED*)&pCurIO, INFINITE)
+-		&& completionKey)
+-	{
++	bool bStopPacket = false;
++	while (m_Run && TakeCompletion(INFINITE, dwWrite, completionKey, pCurIO) && completionKey) {
+ 		m_Run = RUN_WORK;
+ 		//move buffer list into the local storage
+ 		if (!m_FlushList.IsEmpty()) {
+@@ -89,13 +102,17 @@ UINT CPartFileWriteThread::RunInternal()
+ 		WriteBuffers();
+ 		//check completed I/O
+ 		do {
+-			if (!completionKey)
++			// Reached only just after a packet was taken, so a key of zero is the packet
++			// EndThread() posts, not a take that came back empty.
++			if (!completionKey) {
++				bStopPacket = true;
+ 				break;
++			}
+ 			if (completionKey != WAKEUP) //ignore wakeups
+ 				WriteCompletionRoutine(dwWrite, pCurIO);
+-		} while (::GetQueuedCompletionStatus(m_hPort, &dwWrite, &completionKey, (LPOVERLAPPED*)&pCurIO, 0));
++		} while (TakeCompletion(0, dwWrite, completionKey, pCurIO));
+ 
+-		if (!completionKey) //thread termination
++		if (bStopPacket) //thread termination
+ 			break;
+ 		m_Run = RUN_IDLE;
+ 		if (InterlockedExchange8(&m_bNewData, 0) && m_listPendingIO.IsEmpty())
+diff --git a/srchybrid/PartFileWriteThread.h b/srchybrid/PartFileWriteThread.h
+index 901748f..a1a514d 100644
+--- a/srchybrid/PartFileWriteThread.h
++++ b/srchybrid/PartFileWriteThread.h
+@@ -54,6 +54,7 @@ public:
+ private:
+ 	static UINT AFX_CDECL RunProc(LPVOID pParam);
+ 	UINT	RunInternal();
++	bool	TakeCompletion(DWORD dwTimeout, DWORD &rdwWritten, ULONG_PTR &rKey, OverlappedWrite_Struct *&rpIO);
+ 
+ 	void	WriteBuffers();
+ 	void	WriteCompletionRoutine(DWORD dwBytesWritten, const OverlappedWrite_Struct *pOvWrite);
+diff --git a/srchybrid/UploadDiskIOThread.cpp b/srchybrid/UploadDiskIOThread.cpp
+index e72b5cd..9914ced 100644
+--- a/srchybrid/UploadDiskIOThread.cpp
++++ b/srchybrid/UploadDiskIOThread.cpp
+@@ -80,6 +80,28 @@ void CUploadDiskIOThread::EndThread()
+ 	m_eventThreadEnded.Lock();
+ }
+ 
++// GetQueuedCompletionStatus has three outcomes, not two, and both loops below depend
++// on telling them apart. It returns TRUE when it dequeues a packet for an operation
++// that succeeded. It returns FALSE with a completion when it dequeues a packet for an
++// operation that FAILED - the read is over either way, and the entry it left on
++// m_listPendingIO is this thread's to remove, because no one else takes anything off
++// this port. It returns FALSE without a completion when it dequeued nothing at all.
++// Reading the return value alone folds the middle case into the last one, and then
++// whichever loop asked the question ends on it: the drain below loses that read for
++// good, and the wait above it ends the thread that feeds every upload. Answer the
++// question the loops actually have - "is there a completion to deal with" - and let
++// the failure travel with it as a zero byte count, which is what a failed read moved.
++bool CUploadDiskIOThread::TakeCompletion(DWORD dwTimeout, DWORD &rdwRead, ULONG_PTR &rKey, OverlappedRead_Struct *&rpIO)
++{
++	rdwRead = 0;
++	rKey = 0;
++	rpIO = NULL;
++	if (::GetQueuedCompletionStatus(m_hPort, &rdwRead, &rKey, (LPOVERLAPPED*)&rpIO, dwTimeout))
++		return true;
++	rdwRead = 0;
++	return rpIO != NULL;
++}
++
+ UINT CUploadDiskIOThread::RunInternal()
+ {
+ 	m_hPort = ::CreateIoCompletionPort(INVALID_HANDLE_VALUE, 0, 0, 1);
+@@ -90,10 +112,8 @@ UINT CUploadDiskIOThread::RunInternal()
+ 	ULONG_PTR completionKey = 0;
+ 	OverlappedRead_Struct *pCurIO = NULL;
+ 	m_Run = RUN_IDLE;
+-	while (m_Run
+-			&& ::GetQueuedCompletionStatus(m_hPort, &dwRead, &completionKey, (LPOVERLAPPED*)&pCurIO, INFINITE)
+-			&& completionKey)
+-	{
++	bool bStopPacket = false;
++	while (m_Run && TakeCompletion(INFINITE, dwRead, completionKey, pCurIO) && completionKey) {
+ 		m_Run = RUN_WORK;
+ 		//start new reads
+ 		CCriticalSection *pcsUploadListRead = NULL;
+@@ -106,13 +126,18 @@ UINT CUploadDiskIOThread::RunInternal()
+ 
+ 		//check completed I/O
+ 		do {
+-			if (!completionKey)
++			// Reached only just after a packet was taken, so a key of zero here is the
++			// packet EndThread() posts and not the "nothing was dequeued" of a take that
++			// came back empty - that one ends the loop at the condition below instead.
++			if (!completionKey) {
++				bStopPacket = true;
+ 				break;
++			}
+ 			if (completionKey != WAKEUP) //ignore wakeups
+ 				ReadCompletionRoutine(dwRead, pCurIO);
+-		} while (::GetQueuedCompletionStatus(m_hPort, &dwRead, &completionKey, (LPOVERLAPPED*)&pCurIO, 0));
++		} while (TakeCompletion(0, dwRead, completionKey, pCurIO));
+ 
+-		if (!completionKey) //thread termination
++		if (bStopPacket) //thread termination
+ 			break;
+ 		m_Run = RUN_IDLE;
+ 		// if we have put a new data on any socket, tell the throttler
+diff --git a/srchybrid/UploadDiskIOThread.h b/srchybrid/UploadDiskIOThread.h
+index 710756c..e64aae5 100644
+--- a/srchybrid/UploadDiskIOThread.h
++++ b/srchybrid/UploadDiskIOThread.h
+@@ -49,6 +49,7 @@ public:
+ private:
+ 	static UINT AFX_CDECL RunProc(LPVOID pParam);
+ 	UINT		RunInternal();
++	bool		TakeCompletion(DWORD dwTimeout, DWORD &rdwRead, ULONG_PTR &rKey, OverlappedRead_Struct *&rpIO);
+ 
+ 	bool		AssociateFile(CKnownFile *pFile);
+ 	static bool ShouldCompressBasedOnFilename(const CString &strFileName);

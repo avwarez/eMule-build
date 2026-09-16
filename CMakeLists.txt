@@ -226,6 +226,50 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          the condition arises there far more often - 1,277 episodes
 #          against 12 - which decides how often it is met, not whether it is
 #          there.
+#          97i-robustness-iocp-failed-completion changes how the two
+#          completion-port threads - the one that reads file data for
+#          uploads and the one that writes downloaded data to disk - decide
+#          that a wait produced nothing. GetQueuedCompletionStatus has three
+#          outcomes, not two. It returns TRUE when it dequeues a packet for
+#          an operation that succeeded. It returns FALSE while still
+#          dequeuing a packet when the operation FAILED: the read or write
+#          is over either way, and the entry it left on m_listPendingIO is
+#          that thread's to remove, because nothing else takes anything off
+#          that port. It returns FALSE without a packet when it dequeued
+#          nothing at all. Both threads used the call directly as a loop
+#          condition, which folds the middle outcome into the last one, and
+#          the loop that asked then ends on it.
+#
+#          There are two such loops in each thread and the consequences
+#          differ. The inner one drains the port after each pass: ending
+#          there loses that one completion for good, and its entry stays on
+#          m_listPendingIO, which is the list that has to be empty before
+#          WakeUpCall() will post anything. The outer one is the thread's
+#          own wait: ending there ends the thread. On the upload side that
+#          is the thread every upload's file data comes from; on the
+#          download side it is the thread everything received reaches the
+#          disk through. Neither said anything on the way out.
+#
+#          The patch gives each thread a TakeCompletion() that answers the
+#          question the loops actually have - is there a completion to deal
+#          with - and lets the failure travel with it as a zero byte count,
+#          which is what a failed transfer moved and what both completion
+#          routines already treat as an error; the shutdown path in each
+#          thread has always called them that way. Termination is then read
+#          from a dequeued packet with a zero key rather than from the key
+#          variable, which a take that came back empty now clears.
+#
+#          The shape came from iocprepro/, which reproduces both threads
+#          construct for construct: its read-past-eof probe produces exactly
+#          this completion - GetQueuedCompletionStatus returning FALSE with
+#          a valid overlapped pointer and error 38 - and it does so on
+#          Windows x64, on Windows Win32 and under Wine alike, which is what
+#          puts the fault in this code rather than under it. The field says
+#          it has never happened here: the counter 99a kept for it read zero
+#          in all 42,100 samples taken over six days. It is corrected
+#          because the price of it happening once is a thread, not because
+#          it was seen.
+#
 #   98     corrections to the shipped language resources, from the fork's
 #          v0.72a-lang branch - source data for the `languages` target
 #          rather than code, so they change no binary.
@@ -244,8 +288,12 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          measured. It no longer does. 97h hoists the bound of the busy
 #          scan into a local, and this patch reports that bound and reads it
 #          in the same loop it rewrites; it was rebased onto 97h and now
-#          needs it, the way 99b needs 97f and 99c needs 97g. What the
-#          property existed for has been spent:
+#          needs it, the way 99b needs 97f and 99c needs 97g. It was rebased
+#          again onto 97i, whose TakeCompletion() replaces the two calls its
+#          disk-I/O hunk quotes as context; the detector it used to carry
+#          there - a completion left behind by the drain - went with that
+#          rebase, because 97i no longer leaves one, and what took its place
+#          is in 99h. What the property existed for has been spent:
 #          the last log written before the change is the before side, and it
 #          reads orphans=43310 orphanage=34333ms, ovstuck=4877 ovmax=21114ms
 #          ovtotal=54680ms over 10,365,293 probes.
@@ -383,6 +431,25 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          instrument for the other half of the question: it counts episodes
 #          rather than samples, so a before and after can say whether the
 #          episodes were shortened or merely pushed below a sampling interval.
+#
+#          99h-diag-iocp-completions watches the correction in 97i from
+#          inside the one place that can now see it. TakeCompletion() is a
+#          single choke point, so the three outcomes are counted where they
+#          are decided: takeok, takefail and takenone. takefail is the one
+#          to read - it is the completion that used to end a loop in
+#          silence, and each one also gets a line of its own, at most one a
+#          second, with the error code and the length of the pending list.
+#          takeage says how long ago a completion last arrived. That last
+#          number matters because of who reads it: the upload thread's
+#          counters are printed by CUploadQueue::Process from another
+#          thread entirely, so a thread that has died or wedged is visible
+#          from outside even though it can no longer report anything
+#          itself. RunInternal also says on the way out which of the three
+#          exits it took and what was still pending, on both threads, so a
+#          run that stops uploading or stops flushing has an entry to be
+#          read against instead of nothing. The write thread gets the two
+#          log lines and no counters: nothing outside that class reads its
+#          state, so counters there would have no reader.
 # ---------------------------------------------------------------------------
 find_package(Git REQUIRED)
 
