@@ -339,3 +339,61 @@ Windows, and that this platform loses a `FD_ACCEPT` edge in the narrow window
 around an `accept()` that returns `WSAEWOULDBLOCK`. The corollary for eMule is
 narrower than a fix: an unbounded wait with no way back is what turns someone
 else's lost edge into a dead web interface.
+
+## What the `iocp` mode measured (2026-09-16)
+
+Three implementations, the same 60-second trial, the same command line
+(`--hammers 2 --delay-ms 20`), the default 8 outstanding `AcceptEx` and one
+thread on the port. Run `35135203643`, plus two local trials on the machine
+under study:
+
+| where | trials | posted | syncok | compok | compfail | compnone | updfail | residual | froze |
+|---|---|---|---|---|---|---|---|---|---|
+| Windows runner, x64 | 3 | 3,933 / 3,923 / 3,931 | 0 | 3,925 / 3,915 / 3,923 | 0 | 0 | 0 | **0** | 0 |
+| Windows runner, Win32 | 3 | 3,923 / 3,910 / 3,910 | 0 | 3,915 / 3,902 / 3,903 | 0 | 0 | 0 | **0** | 0 |
+| Wine 9.0, Linux x86_64 | 3 | 5,372 / 5,366 / 5,355 | 0 | 5,364 / 5,358 / 5,348 | 0 | 0 | 0 | **0** | 0 |
+| Wine 11.0, aarch64 | 2 | 5,318 / 5,318 | 0 | 5,310 / 5,310 | 0 | 0 | 0 | **0** | 0 |
+
+Every counter agrees across all three, not only the verdict. `residual = 0`
+everywhere: no completion packet was ever undelivered.
+
+Put next to the same run's readiness modes, on the Wine side:
+
+| mode | model | Wine 9.0, 3 trials |
+|---|---|---|
+| `emule` | `WSAEventSelect`, drain to `WSAEWOULDBLOCK` | **froze 3/3** - lost notification |
+| `asyncselect` | `WSAAsyncSelect`, drain to `WSAEWOULDBLOCK` | **froze 3/3** - lost notification |
+| `asynccounter` | `WSAAsyncSelect`, one accept per notification | clean, 5,687 = 5,687 |
+| `poll` | level-triggered `select()` | clean |
+| `iocp` | `AcceptEx` on a completion port | clean |
+
+The two that freeze are exactly the two that drain to a failing call. The
+completion model has no such call anywhere in its loop, and it is the only
+notification-driven mode of the five that survives here.
+
+Three details worth keeping:
+
+**`syncok = 0` on every implementation.** `AcceptEx` never completed
+synchronously in ~35,000 operations, on any of the three. The disagreement
+this mode was built to catch - a synchronous success that does or does not
+queue a packet - never got the chance to appear, so it remains untested rather
+than tested-and-equal. Wine's own code says it would queue one
+(`dlls/ws2_32/socket.c`: `cvalue = overlapped` whenever `hEvent` has no low
+bit set, which is this harness's case), but that is a reading, not a
+measurement.
+
+**`compfail = 0` everywhere too.** The outcome patch `97i` exists for - a
+packet dequeued for an operation that failed - did not occur here either, which
+matches the field: 514,522 takes on the upload path with the same counter at
+zero.
+
+**One wakeup per connection, exactly.** `iocp` accepted 3,925 connections in
+3,925 wait cycles with zero empty drains; `emule` needed 3,949 cycles for 3,948
+connections and wasted 1,124 of them on an `accept()` that found nothing. About
+a quarter of the readiness model's wakeups do no work - and that quarter is
+also precisely the window the freeze lives in.
+
+The throughput difference between the columns (about 65 accepts/s on the
+Windows runner against 89 under Wine, against a client throttle of ~100/s) is
+two different machines, not two different implementations. It is not a
+comparison and should not be read as one.
