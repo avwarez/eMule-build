@@ -38,6 +38,7 @@
 #include <afxwin.h>
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <mswsock.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -60,10 +61,11 @@ enum EMode
 	MODE_ASYNCCOUNTER,   // that path with the accept loop eMule's MAIN listener really has
 	MODE_POLL,           // no notification at all: level-triggered select()
 	MODE_FDWRITE,        // the other re-arm-by-failure: send() -> WSAEWOULDBLOCK -> FD_WRITE
-	MODE_FDREAD          // the third one: recv() drained to WSAEWOULDBLOCK -> FD_READ
+	MODE_FDREAD,         // the third one: recv() drained to WSAEWOULDBLOCK -> FD_READ
+	MODE_IOCP            // the model Microsoft recommends: AcceptEx on a completion port
 };
 
-static const char *const s_pszModeNames[] = { "emule", "enum", "clearinherit", "timeout", "asyncselect", "asynccounter", "poll", "fdwrite", "fdread" };
+static const char *const s_pszModeNames[] = { "emule", "enum", "clearinherit", "timeout", "asyncselect", "asynccounter", "poll", "fdwrite", "fdread", "iocp" };
 
 struct SOptions
 {
@@ -75,9 +77,11 @@ struct SOptions
 	int   nDurationS;    // give up looking for the freeze after this long
 	int   nClientWaitMs; // how long a client waits for its reply before giving up
 	bool  bOneShot;      // accept ONE connection per notification, never a failing accept()
+	int   nIocpAccepts;  // iocp mode: AcceptEx operations kept outstanding
+	int   nIocpThreads;  // iocp mode: threads pulling from the completion port
 };
 
-static SOptions s_opt = { MODE_EMULE, 4711, 16, 0, 5000, 300, 3000, false };
+static SOptions s_opt = { MODE_EMULE, 4711, 16, 0, 5000, 300, 3000, false, 8, 1 };
 
 /////////////////////////////////////////////////////////////////////////////
 // Shared state
@@ -106,6 +110,19 @@ static volatile LONG s_nFdWrite = 0;           // FD_WRITE notifications that ac
 static volatile LONG s_dwLastRecv = 0;         // fdread mode
 static volatile LONG s_nRecvBlocked = 0;       // recv() calls that returned WSAEWOULDBLOCK (the re-arm)
 static volatile LONG s_nFdRead = 0;            // FD_READ notifications that actually arrived
+
+// iocp mode. Every one of these is a plain count of a call or of an outcome, so
+// that the two platforms can be compared on the numbers alone, with no verdict
+// in between. See RunIocpListener for what ties them together.
+static volatile LONG s_nIocpPosted = 0;        // AcceptEx calls issued
+static volatile LONG s_nIocpSyncOk = 0;        // ...of which returned TRUE right away
+static volatile LONG s_nIocpPend = 0;          // ...of which returned ERROR_IO_PENDING
+static volatile LONG s_nIocpPostFail = 0;      // ...of which failed outright
+static volatile LONG s_nIocpCompOk = 0;        // GQCS: TRUE with a packet
+static volatile LONG s_nIocpCompFail = 0;      // GQCS: FALSE WITH a packet - the case 97i exists for
+static volatile LONG s_nIocpCompNone = 0;      // GQCS: FALSE without a packet
+static volatile LONG s_nIocpInFlight = 0;      // AcceptEx operations outstanding right now
+static volatile LONG s_nIocpUpdFail = 0;       // SO_UPDATE_ACCEPT_CONTEXT refused
 
 // fdwrite mode: the senders' events, so the autopsy can kick them the way it kicks
 // the listener. Small fixed table - this test runs a handful of connections.
@@ -357,6 +374,25 @@ static UINT AFX_CDECL WsReproAcceptedFunc(LPVOID pD)
 // WSAEventSelect(FD_ACCEPT), and a wait/drain loop that never asks Winsock
 // which events actually fired.
 
+// One worker thread per accepted connection, exactly as eMule starts one. Every
+// listener below uses this same function, so the connection-serving half of the
+// bench is identical across modes and the only variable left is the way the
+// arrival of a connection is announced.
+static void StartWorker(SOCKET hAccepted, in_addr stAddr)
+{
+	SocketData *pData = new SocketData;
+	pData->hSocket = hAccepted;
+	pData->incomingaddr = stAddr;
+	// same construct as eMule: not CreateThread, not AfxBeginThread
+	CWinThread *pAcceptThread = new CWinThread(WsReproAcceptedFunc, (LPVOID)pData);
+	if (!pAcceptThread->CreateThread()) {
+		Log("CreateThread FAILED err=%u live=%ld", ::GetLastError(), s_nConnLive);
+		delete pData;
+		delete pAcceptThread;
+		closesocket(hAccepted);
+	}
+}
+
 // The drain: accept() until WSAEWOULDBLOCK, a worker thread per connection.
 // Shared by both listeners below so that the only thing that differs between
 // them is how the arrival of a connection is announced.
@@ -387,17 +423,7 @@ static int DrainAccepts(SOCKET hSocket)
 			ioctlsocket(hAccepted, FIONBIO, &ulNonBlock);
 		}
 
-		SocketData *pData = new SocketData;
-		pData->hSocket = hAccepted;
-		pData->incomingaddr = their_addr.sin_addr;
-		// same construct as eMule: not CreateThread, not AfxBeginThread
-		CWinThread *pAcceptThread = new CWinThread(WsReproAcceptedFunc, (LPVOID)pData);
-		if (!pAcceptThread->CreateThread()) {
-			Log("CreateThread FAILED err=%u live=%ld", ::GetLastError(), s_nConnLive);
-			delete pData;
-			delete pAcceptThread;
-			closesocket(hAccepted);
-		}
+		StartWorker(hAccepted, their_addr.sin_addr);
 
 		// --one-shot: leave now, on a SUCCESSFUL accept, so that no failing
 		// accept() is ever issued in this round. This is not an invented
@@ -668,9 +694,251 @@ static void RunPollListener(SOCKET hSocket)
 	Log("listener loop END (poll), select said nothing with clients waiting %ld times", s_nSelectMissed);
 }
 
+/////////////////////////////////////////////////////////////////////////////
+// The fourth listener: the model Microsoft has recommended for twenty-five
+// years, and the only one here that is not a notification at all.
+//
+// WSAAsyncSelect and WSAEventSelect announce READINESS. That is an edge: it is
+// delivered once, it disables itself, and the only thing that re-enables it is
+// a call that fails. Every other mode in this file measures that shape, and it
+// is the shape that can lose an edge and then stop for good.
+//
+// AcceptEx on a completion port announces COMPLETION. The accept has already
+// been performed by the kernel by the time anything is delivered, and the
+// packet carries its result. There is no edge, nothing to re-arm, and no
+// failing call anywhere in the loop - so the fault the other modes hunt cannot
+// exist here by construction.
+//
+// What CAN exist is the fault 97i was written for, and that is what this mode
+// measures instead. GetQueuedCompletionStatus has THREE outcomes, not two:
+//
+//   TRUE,  packet  - the operation completed
+//   FALSE, packet  - the operation FAILED; the packet is still ours to take,
+//                    and so is the socket that came with it
+//   FALSE, no packet - nothing was dequeued
+//
+// They are counted separately, and one identity ties them together:
+//
+//   posted == completed + failed + postfailed + still in flight
+//
+// It has to hold at every instant on any conforming implementation. It is the
+// accept-side twin of the takenone == loops identity the upload path uses, and
+// it is what makes the two platforms comparable on numbers alone, with no
+// verdict in between.
+//
+// Deliberately NOT set: FILE_SKIP_COMPLETION_PORT_ON_SUCCESS. An AcceptEx that
+// returns TRUE right away still queues a packet without it, and whether the
+// two implementations agree on that is part of what is being asked.
+
+#define IOCP_KEY_ACCEPT ((ULONG_PTR)1)
+#define IOCP_KEY_QUIT   ((ULONG_PTR)2)
+
+struct AcceptCtx
+{
+	WSAOVERLAPPED ov;
+	SOCKET  hAccepted;
+	volatile LONG bInFlight;
+	// AcceptEx writes the local and the remote address here, each needing
+	// sizeof(SOCKADDR_IN) + 16 bytes. It refuses smaller.
+	char    szAddrBuf[(sizeof(SOCKADDR_IN) + 16) * 2];
+};
+
+#define MAX_IOCP_ACCEPTS 64
+#define MAX_IOCP_THREADS 8
+
+static AcceptCtx s_pAcceptCtx[MAX_IOCP_ACCEPTS];
+static HANDLE s_hIocpPort = NULL;
+static LPFN_ACCEPTEX s_pfnAcceptEx = NULL;
+
+static bool PostAccept(SOCKET hListen, AcceptCtx *pCtx)
+{
+	pCtx->hAccepted = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, NULL, 0, WSA_FLAG_OVERLAPPED);
+	if (INVALID_SOCKET == pCtx->hAccepted) {
+		Log("iocp WSASocket FAILED err=%d", ::WSAGetLastError());
+		return false;
+	}
+	memset(&pCtx->ov, 0, sizeof pCtx->ov);
+	::InterlockedExchange(&pCtx->bInFlight, 1);
+	::InterlockedIncrement(&s_nIocpPosted);
+	::InterlockedIncrement(&s_nIocpInFlight);
+
+	// dwReceiveDataLength = 0: complete as soon as the connection is there,
+	// without waiting for the client's first byte. Anything else would be
+	// measuring the client instead of the accept.
+	DWORD dwGot = 0;
+	if (s_pfnAcceptEx(hListen, pCtx->hAccepted, pCtx->szAddrBuf, 0
+		, (DWORD)(sizeof(SOCKADDR_IN) + 16), (DWORD)(sizeof(SOCKADDR_IN) + 16)
+		, &dwGot, (LPOVERLAPPED)&pCtx->ov))
+	{
+		::InterlockedIncrement(&s_nIocpSyncOk);
+		return true;
+	}
+	const int nErr = ::WSAGetLastError();
+	if (nErr == WSA_IO_PENDING || nErr == ERROR_IO_PENDING) {
+		::InterlockedIncrement(&s_nIocpPend);
+		return true;
+	}
+	::InterlockedIncrement(&s_nIocpPostFail);
+	::InterlockedDecrement(&s_nIocpInFlight);
+	::InterlockedExchange(&pCtx->bInFlight, 0);
+	Log("AcceptEx FAILED err=%d", nErr);
+	closesocket(pCtx->hAccepted);
+	pCtx->hAccepted = INVALID_SOCKET;
+	return false;
+}
+
+// The completion loop. Run by the listening thread itself, and by --iocp-threads
+// minus one extra threads if asked: sharing one port between several threads is
+// the one thing this model can do that no other mode here can, so it is worth
+// being able to turn on.
+static UINT AFX_CDECL WsReproIocpFunc(LPVOID)
+{
+	const SOCKET hListen = s_hListenSocket;
+	for (;;) {
+		DWORD dwBytes = 0;
+		ULONG_PTR uKey = 0;
+		LPOVERLAPPED pOv = NULL;
+		const BOOL bOk = ::GetQueuedCompletionStatus(s_hIocpPort, &dwBytes, &uKey, &pOv, INFINITE);
+
+		if (uKey == IOCP_KEY_QUIT)
+			break;
+		if (pOv == NULL) {
+			// Third outcome: nothing was dequeued. With an INFINITE wait this
+			// can only mean the port itself is gone.
+			::InterlockedIncrement(&s_nIocpCompNone);
+			Log("GQCS returned without a packet ok=%d err=%u", bOk, ::GetLastError());
+			break;
+		}
+
+		AcceptCtx *pCtx = CONTAINING_RECORD(pOv, AcceptCtx, ov);
+		::InterlockedExchange(&pCtx->bInFlight, 0);
+		::InterlockedDecrement(&s_nIocpInFlight);
+		::InterlockedIncrement(&s_nWaitReturns);
+
+		if (!bOk) {
+			// Second outcome: a packet for an operation that failed. The socket
+			// that went with it is ours to close - leave it and the leak is a
+			// handle per event, which is exactly what 97i is about.
+			::InterlockedIncrement(&s_nIocpCompFail);
+			Log("AcceptEx completion carried err=%u", ::GetLastError());
+			if (pCtx->hAccepted != INVALID_SOCKET) {
+				closesocket(pCtx->hAccepted);
+				pCtx->hAccepted = INVALID_SOCKET;
+			}
+		} else {
+			::InterlockedIncrement(&s_nIocpCompOk);
+			const SOCKET hAccepted = pCtx->hAccepted;
+			pCtx->hAccepted = INVALID_SOCKET;
+
+			// Until this is done the accepted socket carries no context:
+			// getpeername and shutdown fail on it. It is also a free
+			// conformance probe, so its refusals are counted rather than
+			// ignored.
+			if (setsockopt(hAccepted, SOL_SOCKET, SO_UPDATE_ACCEPT_CONTEXT
+				, (const char*)&hListen, (int)sizeof hListen))
+			{
+				::InterlockedIncrement(&s_nIocpUpdFail);
+			}
+
+			::InterlockedIncrement(&s_nAccepted);
+			::InterlockedExchange(&s_dwLastAccept, (LONG)::GetTickCount());
+
+			SOCKADDR_IN their_addr;
+			memset(&their_addr, 0, sizeof their_addr);
+			int sin_size = (int)sizeof their_addr;
+			getpeername(hAccepted, (LPSOCKADDR)&their_addr, &sin_size);
+			StartWorker(hAccepted, their_addr.sin_addr);
+		}
+
+		if (::WaitForSingleObject(s_hTerminate, 0) != WAIT_TIMEOUT)
+			break;
+		PostAccept(hListen, pCtx);
+	}
+	return 0;
+}
+
+static void RunIocpListener(SOCKET hSocket)
+{
+	s_hIocpPort = ::CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 0);
+	if (s_hIocpPort == NULL) {
+		Log("CreateIoCompletionPort FAILED err=%u", ::GetLastError());
+		return;
+	}
+	if (s_hIocpPort != ::CreateIoCompletionPort((HANDLE)hSocket, s_hIocpPort, IOCP_KEY_ACCEPT, 0)) {
+		Log("CreateIoCompletionPort(listening socket) FAILED err=%u", ::GetLastError());
+		return;
+	}
+
+	// AcceptEx is not exported by ws2_32: it is fetched by GUID through the
+	// socket, the same way every Windows server does it. Getting this far is
+	// itself the first thing the other implementation has to get right.
+	GUID guidAcceptEx = WSAID_ACCEPTEX;
+	DWORD dwBytes = 0;
+	if (WSAIoctl(hSocket, SIO_GET_EXTENSION_FUNCTION_POINTER
+		, &guidAcceptEx, sizeof guidAcceptEx
+		, &s_pfnAcceptEx, sizeof s_pfnAcceptEx, &dwBytes, NULL, NULL))
+	{
+		Log("SIO_GET_EXTENSION_FUNCTION_POINTER(AcceptEx) FAILED err=%d", ::WSAGetLastError());
+		return;
+	}
+
+	for (int i = 0; i < MAX_IOCP_ACCEPTS; ++i)
+		s_pAcceptCtx[i].hAccepted = INVALID_SOCKET;
+
+	int nPosted = 0;
+	for (int i = 0; i < s_opt.nIocpAccepts; ++i)
+		if (PostAccept(hSocket, &s_pAcceptCtx[i]))
+			++nPosted;
+	if (!nPosted) {
+		Log("no AcceptEx could be posted - nothing to measure");
+		return;
+	}
+
+	::InterlockedExchange(&s_dwLastAccept, (LONG)::GetTickCount());
+	::InterlockedExchange(&s_bListening, 1);
+	Log("listener ready on port %u, mode=iocp (AcceptEx x%d on a completion port, %d thread(s))"
+		, s_opt.nPort, nPosted, s_opt.nIocpThreads);
+
+	CWinThread *pExtra[MAX_IOCP_THREADS];
+	int nExtra = 0;
+	for (int i = 1; i < s_opt.nIocpThreads; ++i) {
+		CWinThread *pT = new CWinThread(WsReproIocpFunc, NULL);
+		pT->m_bAutoDelete = FALSE;
+		if (pT->CreateThread())
+			pExtra[nExtra++] = pT;
+		else {
+			Log("iocp thread %d CreateThread FAILED err=%u", i, ::GetLastError());
+			delete pT;
+		}
+	}
+
+	WsReproIocpFunc(NULL);
+
+	// One quit packet per thread still pulling, then let them go.
+	for (int i = 0; i < nExtra; ++i)
+		::PostQueuedCompletionStatus(s_hIocpPort, 0, IOCP_KEY_QUIT, NULL);
+	for (int i = 0; i < nExtra; ++i) {
+		if (pExtra[i]->m_hThread)
+			::WaitForSingleObject(pExtra[i]->m_hThread, 2000);
+		delete pExtra[i];
+	}
+
+	for (int i = 0; i < s_opt.nIocpAccepts; ++i)
+		if (s_pAcceptCtx[i].hAccepted != INVALID_SOCKET) {
+			closesocket(s_pAcceptCtx[i].hAccepted);
+			s_pAcceptCtx[i].hAccepted = INVALID_SOCKET;
+		}
+
+	Log("listener loop END (iocp), posted=%ld compok=%ld compfail=%ld inflight=%ld"
+		, s_nIocpPosted, s_nIocpCompOk, s_nIocpCompFail, s_nIocpInFlight);
+}
+
 static UINT AFX_CDECL WsReproListeningFunc(LPVOID)
 {
-	SOCKET hSocket = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, NULL, 0, 0);
+	// AcceptEx needs an overlapped listening socket; every other mode gets the
+	// flags eMule passes, which are none.
+	const DWORD dwSockFlags = (s_opt.nMode == MODE_IOCP) ? WSA_FLAG_OVERLAPPED : 0;
+	SOCKET hSocket = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, NULL, 0, dwSockFlags);
 	if (INVALID_SOCKET == hSocket) {
 		Log("listener WSASocket FAILED err=%d", ::WSAGetLastError());
 		return 1;
@@ -688,9 +956,13 @@ static UINT AFX_CDECL WsReproListeningFunc(LPVOID)
 		return 1;
 	}
 
-	if (s_opt.nMode == MODE_ASYNCSELECT || s_opt.nMode == MODE_ASYNCCOUNTER || s_opt.nMode == MODE_POLL) {
+	if (s_opt.nMode == MODE_ASYNCSELECT || s_opt.nMode == MODE_ASYNCCOUNTER
+		|| s_opt.nMode == MODE_POLL || s_opt.nMode == MODE_IOCP)
+	{
 		if (s_opt.nMode == MODE_POLL)
 			RunPollListener(hSocket);
+		else if (s_opt.nMode == MODE_IOCP)
+			RunIocpListener(hSocket);
 		else
 			RunAsyncSelectListener(hSocket);
 		::InterlockedExchange(&s_bListening, 0);
@@ -913,6 +1185,48 @@ static void Autopsy()
 		return;
 	}
 
+	if (s_opt.nMode == MODE_IOCP) {
+		// There is no event to set and no message to post here, so the probe is
+		// a different question: have the operations the listener is waiting for
+		// already finished without their packets ever arriving at the port?
+		// WSAGetOverlappedResult asks the socket directly and bypasses the port
+		// entirely, which is what makes it able to tell the two apart.
+		Log("probe: ask each in-flight AcceptEx whether it has already completed");
+		int nDone = 0;
+		int nStillPending = 0;
+		for (int i = 0; i < s_opt.nIocpAccepts; ++i) {
+			if (!s_pAcceptCtx[i].bInFlight)
+				continue;
+			DWORD dwGot = 0;
+			DWORD dwFlags = 0;
+			if (::WSAGetOverlappedResult(s_hListenSocket, &s_pAcceptCtx[i].ov, &dwGot, FALSE, &dwFlags))
+				++nDone;
+			else if (::WSAGetLastError() == WSA_IO_INCOMPLETE)
+				++nStillPending;
+			else {
+				++nDone;
+				Log("in-flight AcceptEx %d ended with err=%d", i, ::WSAGetLastError());
+			}
+		}
+		Log("in-flight=%ld  already finished=%d  still pending=%d", s_nIocpInFlight, nDone, nStillPending);
+		if (nDone > 0) {
+			Log("VERDICT: LOST COMPLETION. %d AcceptEx operations had already finished", nDone);
+			Log("VERDICT: while the listener was still parked on GetQueuedCompletionStatus:");
+			Log("VERDICT: their completion packets never reached the port. Same class of");
+			Log("VERDICT: fault as the lost FD_ACCEPT edge, on the model that is supposed");
+			Log("VERDICT: not to have edges.");
+		} else if (nStillPending > 0) {
+			Log("VERDICT: the accepts are all still pending while connections wait in the");
+			Log("VERDICT: backlog - AcceptEx itself is not taking them. That is a different");
+			Log("VERDICT: defect from a lost completion, and the counters above say which.");
+		} else {
+			Log("VERDICT: nothing was in flight at all - the listener ran out of posted");
+			Log("VERDICT: accepts, which is this harness's fault and not the platform's.");
+			Log("VERDICT: re-run with a larger --iocp-accepts.");
+		}
+		return;
+	}
+
 	Log("probe 1: SetEvent on the listener's own event");
 	if (s_hListenEvent && ::SetEvent(s_hListenEvent) && AcceptsResume(3000)) {
 		Log("VERDICT: LOST NOTIFICATION. The thread was parked in the wait with a full");
@@ -942,7 +1256,7 @@ static void Usage()
 	printf(
 		"wsrepro - reproducer for the eMule web-interface listener freeze\n"
 		"\n"
-		"  --mode <emule|enum|clearinherit|timeout|asyncselect|asynccounter|poll|fdwrite|fdread>  variant (default emule)\n"
+		"  --mode <emule|enum|clearinherit|timeout|asyncselect|asynccounter|poll|fdwrite|fdread|iocp>  variant (default emule)\n"
 		"  --port <n>          listening port (default 4711)\n"
 		"  --hammers <n>       parallel client threads (default 16)\n"
 		"  --delay-ms <n>      pause between a client's connections (default 0)\n"
@@ -950,6 +1264,8 @@ static void Usage()
 		"  --duration-s <n>    stop looking for the freeze after this long (default 300)\n"
 		"  --client-wait-ms <n>  how long a client waits for its reply (default 3000)\n"
 		"  --one-shot          accept one connection per notification, never a failing accept()\n"
+		"  --iocp-accepts <n>  iocp mode: AcceptEx operations kept outstanding (default 8, max 64)\n"
+		"  --iocp-threads <n>  iocp mode: threads pulling from the port (default 1, max 8)\n"
 		"\n"
 		"Exit code: 0 = no freeze observed, 1 = freeze observed, 2 = could not start\n");
 }
@@ -987,6 +1303,19 @@ static bool ParseArgs(int argc, char *argv[])
 			s_opt.nDurationS = atoi(argv[++i]);
 		else if (!strcmp(p, "--one-shot"))
 			s_opt.bOneShot = true;
+		else if (!strcmp(p, "--iocp-accepts") && bHasVal) {
+			s_opt.nIocpAccepts = atoi(argv[++i]);
+			if (s_opt.nIocpAccepts < 1)
+				s_opt.nIocpAccepts = 1;
+			if (s_opt.nIocpAccepts > MAX_IOCP_ACCEPTS)
+				s_opt.nIocpAccepts = MAX_IOCP_ACCEPTS;
+		} else if (!strcmp(p, "--iocp-threads") && bHasVal) {
+			s_opt.nIocpThreads = atoi(argv[++i]);
+			if (s_opt.nIocpThreads < 1)
+				s_opt.nIocpThreads = 1;
+			if (s_opt.nIocpThreads > MAX_IOCP_THREADS)
+				s_opt.nIocpThreads = MAX_IOCP_THREADS;
+		}
 		else if (!strcmp(p, "--client-wait-ms") && bHasVal)
 			s_opt.nClientWaitMs = atoi(argv[++i]);
 		else {
@@ -1118,6 +1447,10 @@ int main(int argc, char *argv[])
 			if (s_opt.nMode == MODE_ASYNCCOUNTER)
 				Log("counter: notifications=%ld accepted=%ld desync=%ld pendmax=%ld"
 					, s_nWaitReturns, nAccepted, s_nBacklogDesync, s_nPendingMax);
+			else if (s_opt.nMode == MODE_IOCP)
+				Log("iocp: posted=%ld syncok=%ld pending=%ld postfail=%ld compok=%ld compfail=%ld compnone=%ld inflight=%ld"
+					, s_nIocpPosted, s_nIocpSyncOk, s_nIocpPend, s_nIocpPostFail
+					, s_nIocpCompOk, s_nIocpCompFail, s_nIocpCompNone, s_nIocpInFlight);
 		}
 	}
 
@@ -1136,6 +1469,18 @@ int main(int argc, char *argv[])
 			, s_nWaitReturns, s_nAccepted, s_nBacklogDesync, s_nPendingMax
 			, s_nConnected - s_nAccepted);
 
+	// The same thing for the completion model, and the line the two platforms
+	// are meant to be compared on. residual must be 0: every AcceptEx ever
+	// posted is either completed, failed at completion, failed at post time, or
+	// still outstanding. A non-zero residual is a packet that was never
+	// delivered, which no amount of load is allowed to produce.
+	if (s_opt.nMode == MODE_IOCP)
+		Log("IOCP: posted=%ld syncok=%ld pending=%ld postfail=%ld | compok=%ld compfail=%ld compnone=%ld inflight=%ld updfail=%ld | residual=%ld backlog=%ld"
+			, s_nIocpPosted, s_nIocpSyncOk, s_nIocpPend, s_nIocpPostFail
+			, s_nIocpCompOk, s_nIocpCompFail, s_nIocpCompNone, s_nIocpInFlight, s_nIocpUpdFail
+			, s_nIocpPosted - (s_nIocpCompOk + s_nIocpCompFail + s_nIocpPostFail + s_nIocpInFlight)
+			, s_nConnected - s_nAccepted);
+
 	int nExit = 0;
 	if (bFrozen) {
 		Autopsy();
@@ -1149,6 +1494,9 @@ int main(int argc, char *argv[])
 			, s_opt.nDurationS, s_pszModeNames[s_opt.nMode], s_nAccepted, s_nWaitReturns, s_nDrainEmpty, s_nClientFailed, s_nSelectMissed);
 
 	::SetEvent(s_hTerminate);
+	if (s_opt.nMode == MODE_IOCP && s_hIocpPort != NULL)
+		for (int i = 0; i < s_opt.nIocpThreads; ++i)
+			::PostQueuedCompletionStatus(s_hIocpPort, 0, IOCP_KEY_QUIT, NULL);
 	::Sleep(500);
 	if (s_pSocketThread && s_pSocketThread->m_hThread)
 		::WaitForSingleObject(s_pSocketThread->m_hThread, 2000);

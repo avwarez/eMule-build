@@ -45,6 +45,7 @@ are the real ones and not an approximation of them.
 | `poll` | no notification at all: level-triggered `select()` | does the readiness model that cannot lose an edge survive here? |
 | `fdwrite` | `send()` until `WSAEWOULDBLOCK`, then wait for `FD_WRITE` | is it `accept()` specifically, or any re-enabling call that fails? |
 | `fdread` | `recv()` drained to `WSAEWOULDBLOCK`, then wait for `FD_READ` | the third and last drain shape in eMule |
+| `iocp` | `AcceptEx` on a completion port | does the model Microsoft recommends behave the same on both implementations? |
 
 `emule` reproduces; `enum` and `clearinherit` each remove one candidate cause;
 `timeout` tests the only remedy that is under eMule's control. `asyncselect`
@@ -54,6 +55,65 @@ main listener on the eD2K port included - is notified through `WSAAsyncSelect`
 and a hidden helper window. If that path loses notifications too, the exposure
 is the whole program rather than the web interface. A mode
 that stops freezing while `emule` freezes has named the mechanism.
+
+## The `iocp` mode
+
+The other nine modes all test one family: **readiness**. `WSAAsyncSelect` and
+`WSAEventSelect` announce that a call may now be made; the announcement is an
+edge, delivered once, disabled by its own delivery, and re-enabled only by a
+call that fails. Every fault this bench has found lives in that shape.
+
+`iocp` is the other family: **completion**. `AcceptEx` is issued in advance, the
+kernel performs the accept, and the packet that arrives carries the result. No
+edge, nothing to re-arm, no failing call in the loop - so the fault the other
+modes hunt cannot exist here by construction, and the question becomes a
+different one.
+
+What it measures instead is the shape patch `97i` was written for.
+`GetQueuedCompletionStatus` has three outcomes, not two:
+
+| outcome | meaning |
+|---|---|
+| `TRUE`, packet | the operation completed |
+| `FALSE`, packet | the operation **failed**; the packet and the socket are still the caller's to dispose of |
+| `FALSE`, no packet | nothing was dequeued |
+
+They are counted separately (`compok`, `compfail`, `compnone`) and tied together
+by one identity, printed as `residual` on the closing `IOCP:` line:
+
+```
+posted == compok + compfail + postfail + inflight
+```
+
+It must hold at every instant on any conforming implementation. A non-zero
+`residual` is a completion packet that was never delivered - the completion-model
+equivalent of a lost edge, on the model that is not supposed to have any.
+
+The autopsy for this mode cannot set an event or post a message, because there
+is neither. It asks each outstanding `AcceptEx` directly, with
+`WSAGetOverlappedResult`, which bypasses the port entirely:
+
+- some have **already finished** while the listener was still parked -> the
+  packets never reached the port: **lost completion**;
+- all **still pending** while connections wait in the backlog -> `AcceptEx`
+  itself is not taking them, which is a different defect;
+- none in flight at all -> the harness ran out of posted accepts, not a
+  platform finding. Re-run with a larger `--iocp-accepts`.
+
+Two further things are deliberately part of the comparison rather than
+smoothed over:
+
+- `FILE_SKIP_COMPLETION_PORT_ON_SUCCESS` is **not** set, so an `AcceptEx` that
+  returns `TRUE` immediately must still queue a packet. `syncok` counts those,
+  and whether the two implementations agree about them is a finding either way.
+- `SO_UPDATE_ACCEPT_CONTEXT` is applied to every accepted socket and its
+  refusals are counted in `updfail`, rather than being ignored the way most
+  code ignores them.
+
+Extra switches: `--iocp-accepts <n>` (outstanding operations, default 8,
+max 64) and `--iocp-threads <n>` (threads pulling from the port, default 1,
+max 8). Sharing one port between several threads is the one thing this model
+can do that no other mode here can.
 
 ## The autopsy
 
