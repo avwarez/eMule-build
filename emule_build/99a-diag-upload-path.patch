@@ -354,7 +354,7 @@ index 61ad554..4e6d0da 100644
  }
  
 diff --git a/srchybrid/UploadDiskIOThread.cpp b/srchybrid/UploadDiskIOThread.cpp
-index 9914ced..73afd59 100644
+index e72b5cd..a42d7f4 100644
 --- a/srchybrid/UploadDiskIOThread.cpp
 +++ b/srchybrid/UploadDiskIOThread.cpp
 @@ -45,6 +45,14 @@ static char THIS_FILE[] = __FILE__;
@@ -395,14 +395,16 @@ index 9914ced..73afd59 100644
  	ASSERT(theApp.uploadqueue != NULL);
  	AfxBeginThread(RunProc, (LPVOID)this);
  }
-@@ -111,9 +134,19 @@ UINT CUploadDiskIOThread::RunInternal()
+@@ -89,11 +112,21 @@ UINT CUploadDiskIOThread::RunInternal()
  	DWORD dwRead = 0;
  	ULONG_PTR completionKey = 0;
  	OverlappedRead_Struct *pCurIO = NULL;
 +	DWORD dwDiagLastTick = ::GetTickCount(); //UPDIAG
  	m_Run = RUN_IDLE;
- 	bool bStopPacket = false;
- 	while (m_Run && TakeCompletion(INFINITE, dwRead, completionKey, pCurIO) && completionKey) {
+ 	while (m_Run
+ 			&& ::GetQueuedCompletionStatus(m_hPort, &dwRead, &completionKey, (LPOVERLAPPED*)&pCurIO, INFINITE)
+ 			&& completionKey)
+ 	{
 +		//UPDIAG: who asked for this pass, and what the pass had produced before it ran
 +		const int nDiagSrc = IS_WAKEUP(completionKey) ? (int)(WAKEUP - completionKey) : -1;
 +		const LONG nDiagReadsBefore = m_nDiagReads;
@@ -415,7 +417,7 @@ index 9914ced..73afd59 100644
  		m_Run = RUN_WORK;
  		//start new reads
  		CCriticalSection *pcsUploadListRead = NULL;
-@@ -123,6 +156,9 @@ UINT CUploadDiskIOThread::RunInternal()
+@@ -103,13 +136,18 @@ UINT CUploadDiskIOThread::RunInternal()
  			StartCreateNextBlockPackage(rUploadList.GetNext(pos));
  		InterlockedExchange8(&m_bNewData, 0);
  		pcsUploadListRead->Unlock();
@@ -425,19 +427,17 @@ index 9914ced..73afd59 100644
  
  		//check completed I/O
  		do {
-@@ -133,8 +169,10 @@ UINT CUploadDiskIOThread::RunInternal()
- 				bStopPacket = true;
+ 			if (!completionKey)
  				break;
- 			}
 -			if (completionKey != WAKEUP) //ignore wakeups
 +			if (!IS_WAKEUP(completionKey)) { //ignore wakeups
 +				++m_nDiagDrained; //UPDIAG: nearly every completion is taken here, not by the outer wait
  				ReadCompletionRoutine(dwRead, pCurIO);
 +			}
- 		} while (TakeCompletion(0, dwRead, completionKey, pCurIO));
+ 		} while (::GetQueuedCompletionStatus(m_hPort, &dwRead, &completionKey, (LPOVERLAPPED*)&pCurIO, 0));
  
- 		if (bStopPacket) //thread termination
-@@ -146,7 +184,14 @@ UINT CUploadDiskIOThread::RunInternal()
+ 		if (!completionKey) //thread termination
+@@ -121,7 +159,14 @@ UINT CUploadDiskIOThread::RunInternal()
  			m_bSignalThrottler = false;
  		}
  		if (InterlockedExchange8(&m_bNewData, 0) && m_listPendingIO.IsEmpty())
@@ -453,7 +453,7 @@ index 9914ced..73afd59 100644
  	}
  	m_Run = RUN_STOP;
  
-@@ -162,6 +207,28 @@ UINT CUploadDiskIOThread::RunInternal()
+@@ -137,6 +182,28 @@ UINT CUploadDiskIOThread::RunInternal()
  	return 0;
  }
  
@@ -482,7 +482,7 @@ index 9914ced..73afd59 100644
  bool CUploadDiskIOThread::AssociateFile(CKnownFile *pFile)
  {
  	ASSERT(m_hPort && m_Run);
-@@ -195,14 +262,18 @@ void CUploadDiskIOThread::DissociateFile(CKnownFile *pFile)
+@@ -170,14 +237,18 @@ void CUploadDiskIOThread::DissociateFile(CKnownFile *pFile)
  
  void CUploadDiskIOThread::StartCreateNextBlockPackage(UploadingToClient_Struct *pUploadClientStruct)
  {
@@ -503,7 +503,7 @@ index 9914ced..73afd59 100644
  
  	// now also get a lock on the Block lists
  	CSingleLock lockBlockLists(&pUploadClientStruct->m_csBlockListsLock, TRUE);
-@@ -216,8 +287,10 @@ void CUploadDiskIOThread::StartCreateNextBlockPackage(UploadingToClient_Struct *
+@@ -191,8 +262,10 @@ void CUploadDiskIOThread::StartCreateNextBlockPackage(UploadingToClient_Struct *
  	// buffer at least 1 block (180KB) for normal uploads, and 5 blocks (~900KB) for fast uploads
  	const uint32 nBufferLimit = (pClient->GetUploadDatarate() > BIGBUFFER_MINDATARATE) ? (5 * EMBLOCKSIZE + 1) : (EMBLOCKSIZE + 1);
  
@@ -515,7 +515,7 @@ index 9914ced..73afd59 100644
  
  	try {
  		// Get more data if currently buffered was less than nBufferLimit Bytes
-@@ -279,11 +352,16 @@ void CUploadDiskIOThread::StartCreateNextBlockPackage(UploadingToClient_Struct *
+@@ -254,11 +327,16 @@ void CUploadDiskIOThread::StartCreateNextBlockPackage(UploadingToClient_Struct *
  			}
  			++pFile->nInUse;
  			pOverlappedRead->pos = m_listPendingIO.AddTail(pOverlappedRead);
@@ -532,7 +532,7 @@ index 9914ced..73afd59 100644
  		}
  		return; //no errors
  	} catch (const CString &ex) {
-@@ -309,8 +387,15 @@ void CUploadDiskIOThread::ReadCompletionRoutine(DWORD dwRead, const OverlappedRe
+@@ -284,8 +362,15 @@ void CUploadDiskIOThread::ReadCompletionRoutine(DWORD dwRead, const OverlappedRe
  	if (m_Run) {
  		m_listPendingIO.RemoveAt(pOvRead->pos);
  		bool bReadError = !dwRead;
@@ -549,7 +549,7 @@ index 9914ced..73afd59 100644
  		else if (dwRead != pOvRead->uEndOffset - pOvRead->uStartOffset) {
  			theApp.QueueDebugLogLineEx(LOG_ERROR, _T("ReadCompletionRoutine: Didn't read requested data count - wanted: %lu, read: %lu")
  				, (DWORD)(pOvRead->uEndOffset - pOvRead->uStartOffset), dwRead);
-@@ -503,11 +588,16 @@ void CUploadDiskIOThread::CreatePackedPackets(const OverlappedRead_Struct &Overl
+@@ -478,11 +563,16 @@ void CUploadDiskIOThread::CreatePackedPackets(const OverlappedRead_Struct &Overl
  	delete[] output;
  }
  
