@@ -283,6 +283,37 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          on its socket and nothing is in flight - and reports it the
 #          moment it appears rather than at the next tick.
 #
+#          Counting the requests dropped as already served turned out not to
+#          be enough. Roughly half of every range peers ask for is one we
+#          have already handed to the disk - 3,986 of 8,024 in the first
+#          session measured - and vanilla drops all of them without a word,
+#          so the count on its own could not say which kind of repeat it
+#          was. It now can. Each served block is stamped with the moment it
+#          was handed over, in a list kept in lockstep with the served list
+#          itself, and the drop reports which range it was, how long ago
+#          that range was served and how far down the history it was found.
+#          Note what served means here, because the whole reading depends on
+#          it: the read has been issued, not finished and not sent.
+#
+#          The other half of the question is not about the range but about
+#          the packet that carried it. OP_REQUESTPARTS has room for three
+#          ranges and is sent at that size whatever it has to say, so a
+#          repeat travelling beside a fresh range costs nothing on the wire
+#          and is simply the downloader filling the slots it would otherwise
+#          leave empty. A packet made of repeats alone is a different event:
+#          that is a peer asking again on its own account, and the only
+#          shape that would be ours to answer for. Each packet is therefore
+#          classified once, at the signal the caller sends after its three
+#          slots, and only that one shape gets a line - silence on it means
+#          every repeat we dropped arrived beside a request we answered.
+#
+#          The counters this added are incremented through
+#          InterlockedIncrement rather than ++, which on a volatile operand
+#          is deprecated in C++23 and is where every C5214 in this build
+#          comes from. The rest of the band still uses ++ and still warns;
+#          this is not the patch that changes that, but there was no reason
+#          to add to the count.
+#
 #          Finally it names every way a client can ask for a slot and be
 #          turned away. Five of those paths simply return: three say nothing
 #          at all, and two carry a message wrapped in DEBUG_ONLY, which a

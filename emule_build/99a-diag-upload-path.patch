@@ -1,12 +1,15 @@
 diff --git a/srchybrid/BaseClient.cpp b/srchybrid/BaseClient.cpp
-index 5bcda5b..0dd9fda 100644
+index 5bcda5b..4ec7968 100644
 --- a/srchybrid/BaseClient.cpp
 +++ b/srchybrid/BaseClient.cpp
-@@ -108,6 +108,7 @@ void CUpDownClient::Init()
+@@ -108,6 +108,10 @@ void CUpDownClient::Init()
  	m_abyUpPartStatus = NULL;
  	m_lastPartAsked = _UI16_MAX;
  	m_bAddNextConnect = false;
 +	m_nDiagPendingBlocks = 0; //UPDIAG
++	m_nDiagPktIn = 0; //UPDIAG
++	m_nDiagPktNew = 0; //UPDIAG
++	m_nDiagPktDup = 0; //UPDIAG
  
  	if (socket) {
  		SOCKADDR_IN sockAddr = {};
@@ -35,10 +38,10 @@ index f348815..ac46cb8 100644
  // <-- ZZ:UploadBandWithThrottler (UDP)
 \ No newline at end of file
 diff --git a/srchybrid/UpdownClient.h b/srchybrid/UpdownClient.h
-index 12a08ec..3a8ee42 100644
+index 12a08ec..806c1f0 100644
 --- a/srchybrid/UpdownClient.h
 +++ b/srchybrid/UpdownClient.h
-@@ -231,6 +231,12 @@ public:
+@@ -231,6 +231,19 @@ public:
  	UINT			GetScore(bool sysvalue, bool isdownloading = false, bool onlybasevalue = false) const;
  	void			AddReqBlock(Requested_Block_Struct *reqblock, bool bSignalIOThread);
  	DWORD			GetUpStartTime() const							{ return m_dwUploadTime; }
@@ -48,6 +51,13 @@ index 12a08ec..3a8ee42 100644
 +	//and taking the two in the other order here would cross them.
 +	LONG			DbgGetPendingBlocks() const						{ return m_nDiagPendingBlocks; }
 +	volatile LONG	m_nDiagPendingBlocks;
++	//UPDIAG: the three ranges of one OP_REQUESTPARTS packet, tallied by outcome while the packet
++	//is parsed and read once at its end. One repeat inside a packet that also carries a fresh
++	//range is the downloader topping up a fixed-size packet; a packet made of repeats alone is a
++	//peer asking again on its own account. Only the second one would be ours to answer for.
++	uint8			m_nDiagPktIn;
++	uint8			m_nDiagPktNew;
++	uint8			m_nDiagPktDup;
  	DWORD			GetUpStartTimeDelay() const						{ return ::GetTickCount() - m_dwUploadTime; }
  	void			SetUpStartTime()								{ m_dwUploadTime = ::GetTickCount(); }
  	void			SendHashsetPacket(const uchar *pData, uint32 nSize, bool bFileIdentifiers);
@@ -256,10 +266,10 @@ index 2da3f93..55e9be9 100644
  	}
  
 diff --git a/srchybrid/UploadClient.cpp b/srchybrid/UploadClient.cpp
-index 61ad554..4e6d0da 100644
+index 61ad554..45ed513 100644
 --- a/srchybrid/UploadClient.cpp
 +++ b/srchybrid/UploadClient.cpp
-@@ -316,12 +316,40 @@ void CUpDownClient::SetUploadFileID(CKnownFile *newreqfile)
+@@ -316,12 +316,65 @@ void CUpDownClient::SetUploadFileID(CKnownFile *newreqfile)
  }
  
  static INT_PTR dbgLastQueueCount = 0;
@@ -270,6 +280,29 @@ index 61ad554..4e6d0da 100644
 +volatile LONG g_nDiagReqDupDone = 0;
 +volatile LONG g_nDiagReqDupPending = 0;
 +volatile LONG g_nDiagReqWake = 0;
++// UPDIAG: half of the block requests peers send us are repeats of ranges already served, and
++// vanilla drops them in silence. These say which kind of repeat they are. The age buckets are
++// measured from the moment the block was handed to the disk, so a repeat inside the first second
++// is the downloader filling the two spare slots of a fixed-size packet, while one at a minute is
++// a peer that thinks it never got the data. The depth is the same question asked in blocks.
++// Incremented with ::InterlockedIncrement() rather than ++: applying ++ to a volatile operand
++// is deprecated in C++20 and is what every C5214 in this build comes from. Same effect, and the
++// call says plainly that these are counters read from outside the statement that writes them.
++volatile LONG g_nDiagDupAge1 = 0;		// repeated inside 1 s
++volatile LONG g_nDiagDupAge10 = 0;		// 1 s to 10 s
++volatile LONG g_nDiagDupAge60 = 0;		// 10 s to 60 s
++volatile LONG g_nDiagDupAgeOld = 0;		// a minute or more
++volatile LONG g_nDiagDupAgeMax = 0;
++volatile LONG g_nDiagDupDepthMax = 0;
++// UPDIAG: the served list and its stamps are appended and emptied together, so this stays 0.
++// It is here because a silent drift would turn every age above into a fiction.
++volatile LONG g_nDiagDupNoTick = 0;
++// UPDIAG: the shape of each OP_REQUESTPARTS packet - see CUpDownClient::m_nDiagPktIn.
++volatile LONG g_nDiagPktNew = 0;		// fresh ranges only
++volatile LONG g_nDiagPktMixed = 0;		// fresh ranges and repeats together
++volatile LONG g_nDiagPktDupOnly = 0;	// repeats only: the peer asked again by itself
++volatile LONG g_nDiagPktOther = 0;		// ranges arrived but none reached either list
++volatile LONG g_nDiagPktNone = 0;		// a packet whose three slots were all empty
 +
 +// UPDIAG: the three lines below fire once per block request, which on a busy slot is several
 +// times a second and crowds out everything else in the log. The counters above stay exact; the
@@ -293,6 +326,8 @@ index 61ad554..4e6d0da 100644
 +		// turns on. eMule logs nothing here, so "the peer stopped asking" and "the peer
 +		// asked and we dropped it" are indistinguishable in a vanilla trace.
 +		++g_nDiagReqIn;
++		if (m_nDiagPktIn < 255)
++			++m_nDiagPktIn; //UPDIAG: read and cleared at the end of the packet, below
 +		static DWORD s_dwDiagLastIn = 0;
 +		if (DiagLogDue(s_dwDiagLastIn))
 +			theApp.QueueDebugLogLineEx(LOG_INFO, _T("UPDIAG|reqblock in, upstate=%d off=%I64u-%I64u client: %s")
@@ -300,25 +335,61 @@ index 61ad554..4e6d0da 100644
  		if (GetUploadState() != US_UPLOADING) {
  			if (thePrefs.GetLogUlDlEvents())
  				AddDebugLogLine(DLP_LOW, false, _T("UploadClient: Client tried to add req block when not in upload slot! Prevented req blocks from being added. %s"), (LPCTSTR)DbgGetClientInfo());
-@@ -392,6 +420,17 @@ void CUpDownClient::AddReqBlock(Requested_Block_Struct *reqblock, bool bSignalIO
+@@ -386,12 +439,52 @@ void CUpDownClient::AddReqBlock(Requested_Block_Struct *reqblock, bool bSignalIO
+ 			return;
+ 		}
+ 
+-		for (POSITION pos = pUploadingClientStruct->m_DoneBlocks_list.GetHeadPosition(); pos != NULL;) {
++		//UPDIAG: nDiagDepth counts how far down the served history the match is found, with the
++		//head - the block handed to the disk most recently - at 0. posDiagTick walks the stamps
++		//beside it, so when the match is found both the distance in blocks and the distance in
++		//milliseconds are already in hand.
++		int nDiagDepth = 0;
++		POSITION posDiagTick = pUploadingClientStruct->m_DiagDoneTicks.GetHeadPosition();
++		for (POSITION pos = pUploadingClientStruct->m_DoneBlocks_list.GetHeadPosition(); pos != NULL; ++nDiagDepth) {
+ 			const Requested_Block_Struct *cur_reqblock = pUploadingClientStruct->m_DoneBlocks_list.GetNext(pos);
++			//UPDIAG: 0 only if the two lists have drifted, which is counted rather than assumed away
++			const DWORD dwDiagServedAt = (posDiagTick != NULL) ? pUploadingClientStruct->m_DiagDoneTicks.GetNext(posDiagTick) : 0;
+ 			if (reqblock->StartOffset == cur_reqblock->StartOffset
  				&& reqblock->EndOffset == cur_reqblock->EndOffset
  				&& md4equ(reqblock->FileID, cur_reqblock->FileID))
  			{
 +				++g_nDiagReqDupDone; //UPDIAG: dropped without a word by vanilla
++				if (m_nDiagPktDup < 255)
++					++m_nDiagPktDup; //UPDIAG
 +				//UPDIAG: the peer repeats a request when what it asked for has not arrived, and
 +				//dropping the repeat means nothing new is queued on its socket. Record what that
 +				//socket looked like at this instant: a repeat arriving while a send has been
 +				//outstanding for a long time is the pair of events that leaves the slot idle.
++				//And record which range it was and how long ago it was served, because without
++				//those two the drop cannot be told apart from the one below it in this file.
++				const DWORD dwDiagAge = (dwDiagServedAt != 0) ? ::GetTickCount() - dwDiagServedAt : 0;
++				if (dwDiagServedAt == 0)
++					::InterlockedIncrement(&g_nDiagDupNoTick);
++				else if (dwDiagAge < SEC2MS(1))
++					::InterlockedIncrement(&g_nDiagDupAge1);
++				else if (dwDiagAge < SEC2MS(10))
++					::InterlockedIncrement(&g_nDiagDupAge10);
++				else if (dwDiagAge < SEC2MS(60))
++					::InterlockedIncrement(&g_nDiagDupAge60);
++				else
++					::InterlockedIncrement(&g_nDiagDupAgeOld);
++				if ((LONG)dwDiagAge > g_nDiagDupAgeMax)
++					g_nDiagDupAgeMax = (LONG)dwDiagAge;
++				if (nDiagDepth > g_nDiagDupDepthMax)
++					g_nDiagDupDepthMax = nDiagDepth;
 +				static DWORD s_dwDiagLastDup = 0;
 +				if (DiagLogDue(s_dwDiagLastDup))
-+					theApp.QueueDebugLogLineEx(LOG_WARNING, _T("UPDIAG|reqblock dropped, already served, sockage=%ums sockbusy=%d client: %s")
++					theApp.QueueDebugLogLineEx(LOG_WARNING, _T("UPDIAG|reqblock dropped, already served, off=%I64u-%I64u age=%ums depth=%d/%d sockage=%ums sockbusy=%d client: %s")
++						, reqblock->StartOffset, reqblock->EndOffset
++						, dwDiagAge, nDiagDepth, (int)pUploadingClientStruct->m_DoneBlocks_list.GetCount()
 +						, socket != NULL ? socket->DbgGetPendingSendAge() : 0
 +						, socket != NULL ? (int)socket->IsBusyQuickCheck() : -1
 +						, (LPCTSTR)DbgGetClientInfo());
  				delete reqblock;
  				return;
  			}
-@@ -402,22 +441,33 @@ void CUpDownClient::AddReqBlock(Requested_Block_Struct *reqblock, bool bSignalIO
+@@ -402,22 +495,61 @@ void CUpDownClient::AddReqBlock(Requested_Block_Struct *reqblock, bool bSignalIO
  				&& reqblock->EndOffset == cur_reqblock->EndOffset
  				&& md4equ(reqblock->FileID, cur_reqblock->FileID))
  			{
@@ -334,12 +405,40 @@ index 61ad554..4e6d0da 100644
 +			, (LONG)pUploadingClientStruct->m_BlockRequests_queue.GetCount()); //UPDIAG
  		dbgLastQueueCount = pUploadingClientStruct->m_BlockRequests_queue.GetCount();
 +		++g_nDiagReqQueued; //UPDIAG
++		if (m_nDiagPktNew < 255)
++			++m_nDiagPktNew; //UPDIAG
 +		static DWORD s_dwDiagLastQueued = 0;
 +		if (DiagLogDue(s_dwDiagLastQueued))
 +			theApp.QueueDebugLogLineEx(LOG_INFO, _T("UPDIAG|reqblock queued, pending=%d served=%d")
 +				, (int)dbgLastQueueCount, (int)pUploadingClientStruct->m_DoneBlocks_list.GetCount());
  		lockBlockLists.Unlock(); // not needed, just to make it visible
  	}
++	if (bSignalIOThread) {
++		//UPDIAG: one OP_REQUESTPARTS packet has just been parsed in full - the caller signals the
++		//thread once, after its three slots. Classify it here, where the three tallies are still
++		//the ones this packet produced, and clear them for the next. A packet abandoned mid-parse
++		//by a read error never reaches this point and leaves its tallies to be counted with the
++		//following one; that is rare, logged elsewhere, and cannot change which class is modal.
++		if (m_nDiagPktIn == 0)
++			::InterlockedIncrement(&g_nDiagPktNone);
++		else if (m_nDiagPktDup == 0)
++			::InterlockedIncrement(m_nDiagPktNew > 0 ? &g_nDiagPktNew : &g_nDiagPktOther);
++		else if (m_nDiagPktNew > 0)
++			::InterlockedIncrement(&g_nDiagPktMixed);
++		else {
++			//UPDIAG: the one shape that is not a downloader topping up a fixed-size packet with
++			//ranges it has already asked for. Silence on this line means every repeat we drop
++			//arrived alongside a fresh request, and no peer was waiting on what we dropped.
++			::InterlockedIncrement(&g_nDiagPktDupOnly);
++			static DWORD s_dwDiagLastPktDup = 0;
++			if (DiagLogDue(s_dwDiagLastPktDup))
++				theApp.QueueDebugLogLineEx(LOG_WARNING, _T("UPDIAG|reqpacket repeats only, in=%d dup=%d client: %s")
++					, (int)m_nDiagPktIn, (int)m_nDiagPktDup, (LPCTSTR)DbgGetClientInfo());
++		}
++		m_nDiagPktIn = 0;
++		m_nDiagPktNew = 0;
++		m_nDiagPktDup = 0;
++	}
  	if (bSignalIOThread && theApp.m_pUploadDiskIOThread != NULL) {
 +		++g_nDiagReqWake; //UPDIAG: a wakeup the protocol asked for, unlike the throttler's
  		/*DebugLog(_T("BlockRequest Packet received, we have currently %u waiting requests and %s data in buffer (%u in ready packets, %s in pending IO Disk read), socket busy: %s")
@@ -354,7 +453,7 @@ index 61ad554..4e6d0da 100644
  }
  
 diff --git a/srchybrid/UploadDiskIOThread.cpp b/srchybrid/UploadDiskIOThread.cpp
-index e72b5cd..a42d7f4 100644
+index e72b5cd..e8bbcc3 100644
 --- a/srchybrid/UploadDiskIOThread.cpp
 +++ b/srchybrid/UploadDiskIOThread.cpp
 @@ -45,6 +45,14 @@ static char THIS_FILE[] = __FILE__;
@@ -515,7 +614,7 @@ index e72b5cd..a42d7f4 100644
  
  	try {
  		// Get more data if currently buffered was less than nBufferLimit Bytes
-@@ -254,11 +327,16 @@ void CUploadDiskIOThread::StartCreateNextBlockPackage(UploadingToClient_Struct *
+@@ -254,11 +327,20 @@ void CUploadDiskIOThread::StartCreateNextBlockPackage(UploadingToClient_Struct *
  			}
  			++pFile->nInUse;
  			pOverlappedRead->pos = m_listPendingIO.AddTail(pOverlappedRead);
@@ -527,12 +626,16 @@ index e72b5cd..a42d7f4 100644
  			addedPayloadQueueSession += uTogo;
  			pClient->SetQueueSessionUploadAdded(addedPayloadQueueSession);
  			pUploadClientStruct->m_DoneBlocks_list.AddHead(pUploadClientStruct->m_BlockRequests_queue.RemoveHead());
++			//UPDIAG: the one place a block becomes "served", which is what a repeated request is
++			//tested against. Note what "served" means here: the read has just been issued, not
++			//finished and not sent. Stamped on the same line so the two lists cannot drift.
++			pUploadClientStruct->m_DiagDoneTicks.AddHead(::GetTickCount());
 +			::InterlockedExchange(&pClient->m_nDiagPendingBlocks
 +				, (LONG)pUploadClientStruct->m_BlockRequests_queue.GetCount()); //UPDIAG
  		}
  		return; //no errors
  	} catch (const CString &ex) {
-@@ -284,8 +362,15 @@ void CUploadDiskIOThread::ReadCompletionRoutine(DWORD dwRead, const OverlappedRe
+@@ -284,8 +366,15 @@ void CUploadDiskIOThread::ReadCompletionRoutine(DWORD dwRead, const OverlappedRe
  	if (m_Run) {
  		m_listPendingIO.RemoveAt(pOvRead->pos);
  		bool bReadError = !dwRead;
@@ -549,7 +652,7 @@ index e72b5cd..a42d7f4 100644
  		else if (dwRead != pOvRead->uEndOffset - pOvRead->uStartOffset) {
  			theApp.QueueDebugLogLineEx(LOG_ERROR, _T("ReadCompletionRoutine: Didn't read requested data count - wanted: %lu, read: %lu")
  				, (DWORD)(pOvRead->uEndOffset - pOvRead->uStartOffset), dwRead);
-@@ -478,11 +563,16 @@ void CUploadDiskIOThread::CreatePackedPackets(const OverlappedRead_Struct &Overl
+@@ -478,11 +567,16 @@ void CUploadDiskIOThread::CreatePackedPackets(const OverlappedRead_Struct &Overl
  	delete[] output;
  }
  
@@ -571,7 +674,7 @@ index e72b5cd..a42d7f4 100644
  }
 \ No newline at end of file
 diff --git a/srchybrid/UploadDiskIOThread.h b/srchybrid/UploadDiskIOThread.h
-index e64aae5..80abdc1 100644
+index 710756c..7cb7f8a 100644
 --- a/srchybrid/UploadDiskIOThread.h
 +++ b/srchybrid/UploadDiskIOThread.h
 @@ -43,8 +43,16 @@ public:
@@ -592,7 +695,7 @@ index e64aae5..80abdc1 100644
  
  private:
  	static UINT AFX_CDECL RunProc(LPVOID pParam);
-@@ -69,4 +77,23 @@ private:
+@@ -68,4 +76,23 @@ private:
  	volatile char m_Run; //0 - not running; 1 - idle; 2 - processing
  	volatile char m_bNewData;
  	bool		m_bSignalThrottler;
@@ -618,7 +721,7 @@ index e64aae5..80abdc1 100644
  };
 \ No newline at end of file
 diff --git a/srchybrid/UploadQueue.cpp b/srchybrid/UploadQueue.cpp
-index 489091a..7a9f251 100644
+index 489091a..5ca4942 100644
 --- a/srchybrid/UploadQueue.cpp
 +++ b/srchybrid/UploadQueue.cpp
 @@ -44,6 +44,16 @@
@@ -665,7 +768,7 @@ index 489091a..7a9f251 100644
  			// be careful what functions to call while having locks, RemoveFromUploadQueue could,
  			// for example, lead to a deadlock here because it tries to get the uploadlist lock,
  			// while the IO thread tries to fetch the uploadlist lock and then the blocklist lock
-@@ -355,6 +373,38 @@ void CUploadQueue::Process()
+@@ -355,6 +373,55 @@ void CUploadQueue::Process()
  		}
  	}
  
@@ -677,12 +780,21 @@ index 489091a..7a9f251 100644
 +	{
 +		extern volatile LONG g_nDiagReqIn, g_nDiagReqQueued, g_nDiagReqDupDone
 +			, g_nDiagReqDupPending, g_nDiagReqWake; //defined in UploadClient.cpp
++		//UPDIAG: how old a repeated request is when it arrives, and what shape the packet that
++		//carried it had. Both are needed to read dupserved above: on its own that number says
++		//only that half the ranges peers ask for are ones we have already handed to the disk.
++		extern volatile LONG g_nDiagDupAge1, g_nDiagDupAge10, g_nDiagDupAge60, g_nDiagDupAgeOld
++			, g_nDiagDupAgeMax, g_nDiagDupDepthMax, g_nDiagDupNoTick
++			, g_nDiagPktNew, g_nDiagPktMixed, g_nDiagPktDupOnly, g_nDiagPktOther
++			, g_nDiagPktNone; //defined in UploadClient.cpp
 +		static DWORD s_dwDiagLastTick = 0; //main thread only
 +		if (curTick >= s_dwDiagLastTick + SEC2MS(10)) {
 +			s_dwDiagLastTick = curTick;
 +			theApp.QueueDebugLogLineEx(LOG_INFO
 +				, _T("UPDIAG|queue waiting=%d uploading=%d datarate=%u maxup=%u force=%d accept=%d")
 +				_T(" | reqpending=%d reqserved=%d reqin=%ld reqq=%ld dupserved=%ld duppending=%ld reqwake=%ld")
++				_T(" | dupage=%ld/%ld/%ld/%ld dupagemax=%ldms dupdepth=%ld dupnotick=%ld")
++				_T(" | pkt=%ld/%ld/%ld/%ld/%ld")
 +				_T(" | sendschecked=%ld shortsends=%ld shortbytes=%ld")
 +				_T(" | sockets=%u/%u half=%u refused=%u | %s")
 +				, (int)waitinglist.GetCount(), (int)uploadinglist.GetCount()
@@ -691,6 +803,14 @@ index 489091a..7a9f251 100644
 +				, nDiagReqPending, nDiagReqServed
 +				, (LONG)g_nDiagReqIn, (LONG)g_nDiagReqQueued, (LONG)g_nDiagReqDupDone
 +				, (LONG)g_nDiagReqDupPending, (LONG)g_nDiagReqWake
++				//dupage: repeats by how long ago the block was served - under 1 s, under 10 s,
++				//under a minute, a minute or more. pkt: OP_REQUESTPARTS packets by shape - fresh
++				//ranges only, fresh and repeats together, repeats only, none of either, empty.
++				, (LONG)g_nDiagDupAge1, (LONG)g_nDiagDupAge10, (LONG)g_nDiagDupAge60
++				, (LONG)g_nDiagDupAgeOld, (LONG)g_nDiagDupAgeMax, (LONG)g_nDiagDupDepthMax
++				, (LONG)g_nDiagDupNoTick
++				, (LONG)g_nDiagPktNew, (LONG)g_nDiagPktMixed, (LONG)g_nDiagPktDupOnly
++				, (LONG)g_nDiagPktOther, (LONG)g_nDiagPktNone
 +				, (LONG)g_nDiagSendsChecked
 +				, (LONG)g_nDiagShortSends, (LONG)g_nDiagShortSendBytes
 +				, theApp.listensocket ? theApp.listensocket->GetOpenSockets() : 0u
@@ -704,7 +824,7 @@ index 489091a..7a9f251 100644
  	// Save used bandwidth for speed calculations
  	(void)theApp.uploadBandwidthThrottler->GetNumberOfSentBytesOverheadSinceLastCallAndReset(); //reset only
  	uint64 sentBytes = theApp.uploadBandwidthThrottler->GetNumberOfSentBytesSinceLastCallAndReset();
-@@ -529,14 +579,21 @@ void CUploadQueue::AddClientToQueue(CUpDownClient *client, bool bIgnoreTimelimit
+@@ -529,14 +596,21 @@ void CUploadQueue::AddClientToQueue(CUpDownClient *client, bool bIgnoreTimelimit
  		&& !theApp.serverconnect->IsLocalServer(client->GetServerIP(), client->GetServerPort())
  		&& GetWaitingUserCount() > 50)
  	{
@@ -727,7 +847,7 @@ index 489091a..7a9f251 100644
  	uint16 cSameIP = 0;
  	// check for duplicates
  	for (POSITION pos = waitinglist.GetHeadPosition(); pos != NULL;) {
-@@ -596,11 +653,19 @@ void CUploadQueue::AddClientToQueue(CUpDownClient *client, bool bIgnoreTimelimit
+@@ -596,11 +670,19 @@ void CUploadQueue::AddClientToQueue(CUpDownClient *client, bool bIgnoreTimelimit
  		// do not accept more than 3 clients from the same IP
  		if (thePrefs.GetVerbose())
  			DEBUG_ONLY(AddDebugLogLine(false, _T("%s's (%s) request to enter the queue was rejected, because of too many clients with the same IP"), client->GetUserName(), (LPCTSTR)ipstr(client->GetConnectIP())));
@@ -747,7 +867,7 @@ index 489091a..7a9f251 100644
  		return;
  	}
  	// done
-@@ -639,6 +704,9 @@ void CUploadQueue::AddClientToQueue(CUpDownClient *client, bool bIgnoreTimelimit
+@@ -639,6 +721,9 @@ void CUploadQueue::AddClientToQueue(CUpDownClient *client, bool bIgnoreTimelimit
  	   )
  	{
  		// block client from getting on queue
@@ -757,7 +877,7 @@ index 489091a..7a9f251 100644
  		return;
  	}
  	if (client->IsDownloading()) {
-@@ -656,6 +724,10 @@ void CUploadQueue::AddClientToQueue(CUpDownClient *client, bool bIgnoreTimelimit
+@@ -656,6 +741,10 @@ void CUploadQueue::AddClientToQueue(CUpDownClient *client, bool bIgnoreTimelimit
  	} else {
  		m_bStatisticsWaitingListDirty = true;
  		waitinglist.AddTail(client);
@@ -768,7 +888,7 @@ index 489091a..7a9f251 100644
  		client->SetUploadState(US_ONUPLOADQUEUE);
  		theApp.emuledlg->transferwnd->GetQueueList().AddClient(client, true);
  		theApp.emuledlg->transferwnd->ShowQueueCount(waitinglist.GetCount());
-@@ -702,6 +774,21 @@ bool CUploadQueue::RemoveFromUploadQueue(CUpDownClient *client, LPCTSTR pszReaso
+@@ -702,6 +791,21 @@ bool CUploadQueue::RemoveFromUploadQueue(CUpDownClient *client, LPCTSTR pszReaso
  					, (LPCTSTR)CastItoXBytes(client->GetPayloadInBuffer()), curClientStruct->m_BlockRequests_queue.GetCount()
  					, theApp.sharedfiles->GetFileByID(client->GetUploadFileID()) ? (LPCTSTR)theApp.sharedfiles->GetFileByID(client->GetUploadFileID())->GetFileName() : _T(""));
  			}
@@ -790,7 +910,7 @@ index 489091a..7a9f251 100644
  			client->m_bAddNextConnect = false;
  
  			m_csUploadListMainThrdWriteOtherThrdsRead.Lock();
-@@ -758,6 +845,11 @@ void CUploadQueue::RemoveFromWaitingQueue(POSITION pos, bool updatewindow)
+@@ -758,6 +862,11 @@ void CUploadQueue::RemoveFromWaitingQueue(POSITION pos, bool updatewindow)
  	m_bStatisticsWaitingListDirty = true;
  	CUpDownClient *todelete = waitinglist.GetAt(pos);
  	waitinglist.RemoveAt(pos);
@@ -802,7 +922,7 @@ index 489091a..7a9f251 100644
  	if (updatewindow) {
  		theApp.emuledlg->transferwnd->GetQueueList().RemoveClient(todelete);
  		theApp.emuledlg->transferwnd->ShowQueueCount(waitinglist.GetCount());
-@@ -1101,6 +1193,7 @@ UploadingToClient_Struct::~UploadingToClient_Struct()
+@@ -1101,8 +1210,10 @@ UploadingToClient_Struct::~UploadingToClient_Struct()
  	m_csBlockListsLock.Lock();
  	while (!m_BlockRequests_queue.IsEmpty())
  		delete m_BlockRequests_queue.RemoveHead();
@@ -810,3 +930,24 @@ index 489091a..7a9f251 100644
  
  	while (!m_DoneBlocks_list.IsEmpty())
  		delete m_DoneBlocks_list.RemoveHead();
++	m_DiagDoneTicks.RemoveAll(); //UPDIAG: in lockstep with the list above
+ 	m_csBlockListsLock.Unlock();
+ }
+\ No newline at end of file
+diff --git a/srchybrid/UploadQueue.h b/srchybrid/UploadQueue.h
+index 07db5a2..a4f169a 100644
+--- a/srchybrid/UploadQueue.h
++++ b/srchybrid/UploadQueue.h
+@@ -34,6 +34,12 @@ struct UploadingToClient_Struct
+ 	CUpDownClient										*m_pClient;
+ 	CTypedPtrList<CPtrList, Requested_Block_Struct*>	m_BlockRequests_queue;
+ 	CTypedPtrList<CPtrList, Requested_Block_Struct*>	m_DoneBlocks_list;
++	//UPDIAG: when each entry of m_DoneBlocks_list was moved there, kept in lockstep with it and
++	//read by walking the two together. A repeated request is dropped against that list, and the
++	//drop alone cannot say whether the peer is repeating a block served a moment ago or one
++	//served half an hour ago - which is the whole difference between protocol padding and a peer
++	//that is still waiting. This answers it. Guarded by m_csBlockListsLock like the list itself.
++	CList<DWORD, DWORD>									m_DiagDoneTicks;
+ 	CCriticalSection									m_csBlockListsLock; // don't acquire other locks while having this one in any thread other than UploadDiskIOThread or make sure deadlocks are impossible
+ 	bool												m_bIOError;
+ 	bool												m_bDisableCompression;
