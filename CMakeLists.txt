@@ -1,14 +1,23 @@
 cmake_minimum_required(VERSION 3.20)
-project(eMule VERSION 0.72 LANGUAGES CXX RC)
+project(eMule VERSION 0.60 LANGUAGES CXX RC)
 
 # ---------------------------------------------------------------------------
 # This build targets the original MFC/Windows application, as built today by
 # srchybrid/emule.vcxproj (MSVC + static MFC/ATL). It is Windows-only.
 #
-# All third-party dependencies (mbedtls, cryptopp, id3lib, zlib, miniupnpc,
-# resizablelib) are vendored as vanilla git submodules - see each
-# add_subdirectory() below and the corresponding *_build/CMakeLists.txt for
-# the ones with no CMake support of their own.
+# This branch builds eMule 0.60d rather than 0.72a. The two differ in more
+# than source: 0.60d predates the library sweep the 0.72a release carried out
+# ("updated MbedTLS to version 4.0, removed CxImage and libpng" is the whole
+# of that commit's second paragraph), so two dependencies exist here that
+# exist on no other branch - CxImage and libpng - and mbedtls is pinned to the
+# 2.28 series whose API this source actually speaks. 0.60d also ships no ARM64
+# manifest and its project file declares Win32 and x64 only, which is what the
+# CI matrix on this branch builds.
+#
+# All third-party dependencies (mbedtls, cryptopp, id3lib, zlib, libpng,
+# cximage, miniupnpc, resizablelib) are vendored as vanilla git submodules -
+# see each add_subdirectory() below and the corresponding *_build/
+# CMakeLists.txt for the ones with no CMake support of their own.
 # ---------------------------------------------------------------------------
 
 if(NOT WIN32)
@@ -19,7 +28,7 @@ endif()
 # Every dependency here is meant to link statically against the MSVC CRT
 # (matching emule.vcxproj's own UseOfMfc=Static philosophy - MSVC_RUNTIME_LIBRARY
 # is set to "MultiThreaded$<$<CONFIG:Debug>:Debug>" on every *_build target
-# below). zlib, miniupnpc and mbedtls/tf-psa-crypto have their own upstream
+# below). zlib, libpng, miniupnpc and mbedtls have their own upstream
 # CMakeLists.txt that we don't edit, and none of them set this explicitly, so
 # without this they fall back to CMake's own default (dynamic CRT, /MD) -
 # confirmed by an actual build attempt: LNK2001 on __imp_close/__imp_read/
@@ -30,7 +39,7 @@ endif()
 # policy's introduction) makes CMAKE_MSVC_RUNTIME_LIBRARY, set before any
 # target is created, the default for every target in every add_subdirectory()
 # below unless a target overrides it itself - already the case for cryptopp,
-# id3lib, resizablelib and zlibstatic.
+# id3lib, cximage, resizablelib and zlibstatic.
 cmake_policy(SET CMP0091 NEW)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
@@ -54,29 +63,30 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 # reproduction: with a CRLF working tree and core.autocrlf=false, every patch
 # here fails with "patch does not apply"; --ignore-whitespace makes all of
 # them apply in both cases. The CI workflow additionally pins
-# core.autocrlf=false so the tree matches the patches byte for byte. Patches within one directory are applied in sorted
-# filename order; give them a numeric prefix if two of them ever have to
-# touch the same hunk in a defined sequence.
+# core.autocrlf=false so the tree matches the patches byte for byte. Patches
+# within one directory are applied in sorted filename order; give them a
+# numeric prefix if two of them ever have to touch the same hunk in a defined
+# sequence.
 #
-# The numeric prefixes in emule_build/ also group the patches by why they
-# exist, which is the first thing you want to know when one of them stops
-# applying after a submodule bump:
+# emule_build/ is empty of patches on this branch. The ones on v0.72a are
+# written against 0.72a's bytes and describe 0.72a's faults; not one of them
+# applies to this tree, and carrying them across unread would say things
+# about this build that nobody has checked. Anything 0.60d turns out to need
+# is written here from measurement on 0.60d, under the same numbering:
 #   00-89  the code does not compile as-is (a dependency's API changed, or
 #          the C++ standard we build at removed the construct).
 #   90-94  the code compiles but /Wall flags it; these bring the warning
 #          count back to zero.
 #   95-96  the code compiles and is warning-clean but is not correct on
-#          every target we build (see each patch's own subject).
-#   97     the code is wrong on every target, on input a peer or a web
-#          client controls. These are the commits on the fork's
-#          v0.72a-secfix branch, offered upstream as irwir/eMule#7; a file
-#          here goes away when the same change reaches a released v0.72x.
-#   98     corrections to the shipped language resources, from the fork's
-#          v0.72a-lang branch - source data for the `languages` target
-#          rather than code, so they change no binary.
+#          every target we build, or in every environment we run it in
+#          (see each patch's own subject).
+#   97     the code is wrong on every target, on input or on timing a peer
+#          or a web client controls - the band that is worth reporting
+#          upstream.
+#   98     corrections to the shipped language resources - source data for
+#          the `languages` target rather than code, so they change no binary.
 #   99     reserved for temporary diagnostics - a patch that makes a build
-#          report something rather than fix it. Nothing lives here now;
-#          whatever lands here is meant to be deleted once it has been read.
+#          report something rather than fix it, deleted once it has been read.
 # ---------------------------------------------------------------------------
 find_package(Git REQUIRED)
 
@@ -112,61 +122,60 @@ endfunction()
 # land after the directory that consumes it has already been processed.
 # An empty (or patch-less) *_build directory is simply a no-op here, so these
 # calls stay valid whether or not that submodule currently needs anything.
-# The first four are the C++ submodules whose headers eMule actually includes:
-# eMule is the only target that compiles at C++23 (see emule_build/
-# CMakeLists.txt), but cryptopp/id3lib/resizablelib headers get pulled into
-# its translation units and are therefore parsed under that same standard.
-# miniupnp is plain C and is otherwise built vanilla (see further down); it is
-# listed here only so its one warning fix has somewhere to live.
 emule_apply_patches(emule emule_build)
 emule_apply_patches(cryptopp cryptopp_build)
 emule_apply_patches(id3lib id3lib_build)
+emule_apply_patches(cximage cximage_build)
 emule_apply_patches(resizablelib resizablelib_build)
 emule_apply_patches(miniupnp miniupnpc_build)
 
 # ---------------------------------------------------------------------------
-# mbedtls - vanilla git submodule (mbedtls/, with nested tf-psa-crypto/ and
-# framework/ submodules), pinned to v4.2.0. Never edited in place. eMule
-# needs two customizations on top of it, both supplied from outside the
-# submodule via extension points mbedTLS itself documents for this purpose,
-# so there is nothing to re-apply after updating the submodule to a newer
-# tag:
-# - mbedtls_build/emule_mbedtls_user_config.h defines MBEDTLS_THREADING_ALT,
-#   wired in below via MBEDTLS_USER_CONFIG_FILE.
-# - threading_alt.h (MBEDTLS_THREADING_ALT's actual implementation) is not
-#   duplicated here - see the include_directories() call below.
+# mbedtls - vanilla git submodule (mbedtls/), pinned to mbedtls-2.28.10 on this
+# branch rather than to the 4.2.0 that v0.72a uses. That is not a preference,
+# it is what the source asks for: 0.60d includes "mbedtls/config.h", a file
+# that exists in the 2.x series and in no later one, and WebSocket.cpp reads
+# ssl->p_bio directly, a field that 3.0 moved behind MBEDTLS_PRIVATE. Both
+# would have to be rewritten to build against 4.x - which is exactly the work
+# the 0.72a release did, and it is 0.72a's, not ours to redo here.
+#
+# What that costs is worth stating plainly: the 2.28 series reached end of
+# life at the end of 2024 and receives no further fixes. This branch exists to
+# find out whether 0.60d still builds, not to ship a client; moving it to a
+# supported mbedtls means porting the five files above, and that is a decision
+# on its own, not a side effect of this one.
+#
+# eMule needs one customization on top of the submodule, supplied from outside
+# it via an extension point mbedTLS itself documents for this purpose, so
+# there is nothing to re-apply after updating the submodule to a newer tag:
+# mbedtls_build/emule_mbedtls_user_config.h defines MBEDTLS_THREADING_ALT,
+# wired in below via MBEDTLS_USER_CONFIG_FILE. threading_alt.h (that option's
+# actual implementation) is not duplicated here - see the include_directories()
+# call below.
 # ---------------------------------------------------------------------------
 set(MBEDTLS_USER_CONFIG_FILE "${CMAKE_SOURCE_DIR}/mbedtls_build/emule_mbedtls_user_config.h"
     CACHE FILEPATH "" FORCE)
-# mbedTLS 4.0 cross-checks the legacy config against the PSA crypto config
-# and errors ("MBEDTLS_THREADING_ALT must be configured in psa/crypto_config.h")
-# if a threading option is set on only one side - confirmed by an actual
-# build attempt with only MBEDTLS_USER_CONFIG_FILE set above.
-set(TF_PSA_CRYPTO_USER_CONFIG_FILE "${CMAKE_SOURCE_DIR}/mbedtls_build/emule_psa_crypto_user_config.h"
-    CACHE FILEPATH "" FORCE)
 set(ENABLE_PROGRAMS OFF CACHE BOOL "Don't build mbedtls's own example programs" FORCE)
-
-# GEN_FILES defaults OFF on Windows (mbedtls's CMakeLists.txt assumes a
-# release tarball there, which ships its generated sources pre-built). A git
-# submodule checkout has none of them, so this must be forced ON - confirmed
-# necessary by an actual configure attempt (failed on missing
-# psa_crypto_driver_wrappers_no_static.c / error.c / ssl_debug_helpers_generated.c
-# without it). Requires Python 3 on PATH.
-set(GEN_FILES ON CACHE BOOL "Generate mbedtls's auto-generated sources (required for a submodule checkout)" FORCE)
+set(ENABLE_TESTING OFF CACHE BOOL "Don't build mbedtls's own test suites" FORCE)
+# mbedtls turns compiler warnings into errors by default, MSVC included. The
+# 2.28 series was last released against the compilers of 2024; this build uses
+# whatever toolset the runner image ships, and a warning that series never saw
+# is not a reason to fail a build we are not changing the sources of.
+set(MBEDTLS_FATAL_WARNINGS OFF CACHE BOOL "A new compiler's new warnings are not build failures here" FORCE)
 
 # threading_alt.h (eMule's own mbedtls_platform_mutex_t/condition_variable_t
 # implementation on top of Win32 CRITICAL_SECTION, consumed as an unqualified
-# #include "threading_alt.h" by both mbedtls/tf-psa-crypto's threading.c and
+# #include "threading_alt.h" by both mbedtls's threading.c and
 # srchybrid/TLSthreading.h) is not vendored in this repo: the eMule devs
 # already ship the exact same file inside the emule submodule itself, at
-# emule/mbedtls/tf-psa-crypto/include/mbedtls/threading_alt.h - a leftover
-# from the project's pre-CMake build setup. Pointing include_directories()
+# emule/mbedtls/include/mbedtls/threading_alt.h - a leftover from the
+# project's pre-CMake build setup, where the mbedtls tree was checked out at
+# that path and this file dropped into it. Pointing include_directories()
 # straight at it avoids a second copy to keep in sync. Directory-scoped (not
-# target_include_directories): threading.c, compiled deep inside
-# tf-psa-crypto's own CMake targets, needs to see it too - include_directories()
-# here is inherited by everything add_subdirectory()'d below, without having
-# to chase mbedtls's internal target names across versions.
-include_directories("${CMAKE_SOURCE_DIR}/emule/mbedtls/tf-psa-crypto/include/mbedtls")
+# target_include_directories): threading.c, compiled deep inside mbedtls's own
+# CMake targets, needs to see it too - include_directories() here is inherited
+# by everything add_subdirectory()'d below, without having to chase mbedtls's
+# internal target names across versions.
+include_directories("${CMAKE_SOURCE_DIR}/emule/mbedtls/include/mbedtls")
 
 # ---------------------------------------------------------------------------
 # Crypto++ - vanilla git submodule (cryptopp/, weidai11/cryptopp pinned to
@@ -180,15 +189,61 @@ add_subdirectory(cryptopp_build)
 # own CMakeLists.txt, so add_subdirectory() alone is enough; only the static
 # lib is needed (matches every other dependency here - MFC linked static) and
 # ZLIB_INSTALL would otherwise add install() rules we don't want for a
-# vendored submodule. Built before id3lib_build: id3lib links against this
-# zlib (zlibstatic target) instead of its own bundled zlib 1.1.4 copy - see
-# id3lib_build/CMakeLists.txt.
+# vendored submodule. Built before id3lib_build and libpng: both link against
+# this zlib (zlibstatic target) rather than bringing their own copy - id3lib
+# would otherwise use its bundled zlib 1.1.4, see id3lib_build/CMakeLists.txt.
 # ---------------------------------------------------------------------------
 set(ZLIB_BUILD_SHARED OFF CACHE BOOL "eMule only needs the static zlib lib" FORCE)
 set(ZLIB_BUILD_STATIC ON CACHE BOOL "eMule only needs the static zlib lib" FORCE)
 set(ZLIB_BUILD_TESTING OFF CACHE BOOL "Don't build zlib's own example programs" FORCE)
 set(ZLIB_INSTALL OFF CACHE BOOL "Don't add install() rules for a vendored submodule" FORCE)
 add_subdirectory(zlib)
+
+# zlib publishes ZLIB::ZLIB only when it builds the shared library, which this
+# build turns off; the static target it does build is called zlibstatic and
+# carries the aliases ZLIB::ZLIBSTATIC. libpng below asks for zlib by the
+# canonical name, so give it one that points at the copy already configured
+# above. Guarded rather than assumed, so a future zlib that publishes the
+# alias itself does not turn this into a duplicate-target error.
+if(NOT TARGET ZLIB::ZLIB)
+    add_library(ZLIB::ZLIB ALIAS zlibstatic)
+endif()
+
+# ---------------------------------------------------------------------------
+# libpng - vanilla git submodule (libpng/, pnggroup/libpng pinned to v1.6.58),
+# with its own CMakeLists.txt, used as-is. Needed by CxImage below and, one
+# step further on, by the preview images eMule 0.60d exchanges with other
+# clients.
+#
+# The one thing upstream's CMakeLists.txt does that does not fit here is
+# find_package(ZLIB REQUIRED), which would go looking for an installed zlib.
+# libpng_build/FindZLIB.cmake answers that question with the submodule
+# configured just above instead; putting that directory on CMAKE_MODULE_PATH
+# is what makes find_package() reach it before CMake's own module.
+#
+# pnglibconf.h is generated at configure time. Upstream prefers to build it
+# with awk and falls back to scripts/pnglibconf.h.prebuilt when there is no
+# awk on PATH - which is the case on the Windows runner - and that prebuilt
+# file is the stock configuration, which is what this build wants anyway.
+# ---------------------------------------------------------------------------
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/libpng_build")
+set(PNG_SHARED OFF CACHE BOOL "eMule only needs the static libpng" FORCE)
+set(PNG_STATIC ON CACHE BOOL "eMule only needs the static libpng" FORCE)
+set(PNG_FRAMEWORK OFF CACHE BOOL "Apple-only, and this build is Windows-only" FORCE)
+set(PNG_TESTS OFF CACHE BOOL "Don't build libpng's own test programs" FORCE)
+set(PNG_TOOLS OFF CACHE BOOL "Don't build libpng's own command line tools" FORCE)
+set(PNG_EXECUTABLES OFF CACHE BOOL "Deprecated spelling of PNG_TOOLS; set for older libpng" FORCE)
+set(SKIP_INSTALL_ALL ON CACHE BOOL "Don't add install() rules for a vendored submodule" FORCE)
+add_subdirectory(libpng)
+
+# ---------------------------------------------------------------------------
+# CxImage - vanilla git submodule (cximage/, avwarez/CxImage pinned to branch
+# 7.02-lite-refresh-2026, which is CxImage 7.02 "lite" with the changes a
+# modern MSVC and libpng 1.6 need), built via our own cximage_build/
+# CMakeLists.txt since the upstream repo ships no CMake support of its own.
+# Built after libpng: that is the one codec this configuration enables.
+# ---------------------------------------------------------------------------
+add_subdirectory(cximage_build)
 
 # ---------------------------------------------------------------------------
 # id3lib - vanilla git submodule (id3lib/, avwarez/id3lib pinned to v3.9.1),
@@ -223,12 +278,23 @@ add_subdirectory(miniupnp/miniupnpc)
 # ---------------------------------------------------------------------------
 add_subdirectory(resizablelib_build)
 
+# mbedtls 2.28's own CMakeLists.txt opens with cmake_minimum_required(VERSION
+# 2.8.12). CMake 3.31 answers that with a deprecation warning; CMake 4 removed
+# compatibility with anything below 3.5 outright and refuses to configure at
+# all. The runner image decides which of the two we get, and we do not edit
+# the submodule, so the documented escape hatch is set for the duration of
+# this one add_subdirectory() and taken away again: it says which policy
+# version to assume for a project that asks for an older one, and it must not
+# be left standing for the rest of the tree, where an old
+# cmake_minimum_required is something we would want to hear about.
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 add_subdirectory(mbedtls)
+unset(CMAKE_POLICY_VERSION_MINIMUM)
 
 # ---------------------------------------------------------------------------
 # eMule sources - vanilla git submodule (emule/, avwarez/eMule pinned to
-# branch v0.72a), never edited in place. Everything it needs on top of that
-# tag is supplied as patch files under emule_build/, applied by
+# branch v0.60d), never edited in place. Anything it needs on top of that
+# branch is supplied as patch files under emule_build/, applied by
 # emule_apply_patches() near the top of this file.
 # ---------------------------------------------------------------------------
 add_subdirectory(emule_build)

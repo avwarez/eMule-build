@@ -137,21 +137,20 @@ endif()
 
 add_library(cryptopp STATIC ${CRYPTOPP_SOURCES} ${CRYPTOPP_ASM_SOURCES})
 
-# C++23, matching the emule target (emule_build/CMakeLists.txt). Not cosmetic:
-# eMule's own translation units include cryptopp headers and parse them at
-# C++23, so building the library itself at the MSVC default (C++14) would mean
-# every inline function, template and class in those headers has two different
-# definitions inside one binary - an ODR violation whose visible failure mode
-# is exactly the noexcept-in-the-type-system mismatch that already showed up
-# inside eMule (see emule_build/80-noexcept-in-function-type.patch).
+# C++14, matching the emule target (emule_build/CMakeLists.txt). The standard
+# is named here rather than left to the compiler's default for a reason that
+# has nothing to do with taste: eMule's own translation units include cryptopp
+# headers and parse them at whatever standard eMule is built at, so if the two
+# ever differ, every inline function, template and class in those headers has
+# two different definitions inside one binary. That is an ODR violation, and
+# the visible failure mode is a linker error about a signature that looks
+# identical on both sides.
 #
-# Safe for a crypto library specifically because Crypto++'s own feature gates
-# key off CRYPTOPP_MSC_VERSION, not the language flag: config_cxx.h guards
-# every CRYPTOPP_CXX11/14/17 macro with "(CRYPTOPP_MSC_VERSION >= 1900) ||
-# (__cplusplus >= ...)", and no file in the submodule consults _MSVC_LANG at
-# all (verified: zero occurrences). Raising the standard therefore flips no
-# #if and changes no compiled code path here.
-target_compile_features(cryptopp PRIVATE cxx_std_23)
+# This is the same rule as on v0.72a, applied to a different number: there the
+# emule target is raised to C++23 and this line follows it up, here the emule
+# target stays at the MSVC default and this line follows it down. What must
+# not happen is for one of them to move on its own.
+target_compile_features(cryptopp PRIVATE cxx_std_14)
 
 if(CRYPTOPP_ASM_SOURCES)
     # The VS generator's MASM custom-build step (unlike ClCompile) does not

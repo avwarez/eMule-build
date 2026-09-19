@@ -48,10 +48,10 @@ configure_file("${ID3LIB_SRC_DIR}/config.h.win32" "${CMAKE_CURRENT_BINARY_DIR}/i
 
 add_library(id3lib STATIC ${ID3LIB_SOURCES})
 
-# C++23, matching the emule target - see cryptopp_build/CMakeLists.txt for why
-# the dependencies are raised along with it (ODR consistency for headers that
-# eMule's own translation units already parse at C++23).
-target_compile_features(id3lib PRIVATE cxx_std_23)
+# C++14, matching the emule target - see cryptopp_build/CMakeLists.txt for why
+# the dependencies are held to the same standard as eMule itself (ODR
+# consistency for headers that eMule's own translation units also parse).
+target_compile_features(id3lib PRIVATE cxx_std_14)
 
 target_include_directories(id3lib
     PRIVATE

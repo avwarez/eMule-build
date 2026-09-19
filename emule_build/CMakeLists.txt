@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 
 # ---------------------------------------------------------------------------
-# eMule sources live in the "emule" submodule (avwarez/eMule @ v0.72a, never
+# eMule sources live in the "emule" submodule (avwarez/eMule @ v0.60d, never
 # edited in place) at emule/srchybrid, not in this directory - this file
 # exists only so the srchybrid/CMakeLists.txt logic from the original
 # (unsplit) eMule-build layout has somewhere to live outside the submodule.
@@ -13,7 +13,7 @@ set(EMULE_SRC_DIR "${CMAKE_SOURCE_DIR}/emule/srchybrid")
 # ---------------------------------------------------------------------------
 # Source list - read directly from emule.vcxproj (<ClCompile Include="...">)
 # so this file can never drift from what the original Visual Studio project
-# actually builds. 244 files as of the v0.72a restructure.
+# actually builds. 246 files on v0.60d.
 # ---------------------------------------------------------------------------
 file(STRINGS "${EMULE_SRC_DIR}/emule.vcxproj" _clcompile_lines
      REGEX "<ClCompile Include=\"[^\"]+\"")
@@ -29,8 +29,11 @@ list(LENGTH EMULE_SOURCES _n_sources)
 message(STATUS "eMule: ${_n_sources} source files read from emule.vcxproj")
 
 # ---------------------------------------------------------------------------
-# Platform (Win32/x64/ARM64) - still needed below for the XP_BUILD/SAFESEH/
-# arch-specific compile and link options.
+# Platform - still needed below for the SAFESEH and per-file options, and for
+# naming the manifest. 0.60d's project file declares Win32 and x64 and nothing
+# else, and ships a manifest for each of those two and no other; ARM64 arrived
+# with 0.72a. A configure for a platform this branch has no manifest for stops
+# here rather than failing later at the link step with a missing file.
 # ---------------------------------------------------------------------------
 if(CMAKE_VS_PLATFORM_NAME)
     set(EMULE_PLATFORM_DIR "${CMAKE_VS_PLATFORM_NAME}")
@@ -38,8 +41,14 @@ elseif(CMAKE_GENERATOR_PLATFORM)
     set(EMULE_PLATFORM_DIR "${CMAKE_GENERATOR_PLATFORM}")
 else()
     set(EMULE_PLATFORM_DIR "x64")
-    message(WARNING "eMule: could not determine target platform (Win32/x64/ARM64) from the generator; "
+    message(WARNING "eMule: could not determine target platform (Win32/x64) from the generator; "
                      "defaulting to x64. Pass -A <platform> (Visual Studio generator) to be explicit.")
+endif()
+
+if(NOT EMULE_PLATFORM_DIR STREQUAL "Win32" AND NOT EMULE_PLATFORM_DIR STREQUAL "x64")
+    message(FATAL_ERROR
+        "eMule 0.60d builds for Win32 and x64 only - emule.vcxproj declares no other platform, "
+        "and res/ holds no emule${EMULE_PLATFORM_DIR}.manifest. ARM64 exists from 0.72a onwards.")
 endif()
 
 # $<COMPILE_LANGUAGE:RC> in target_compile_definitions() is silently ignored by
@@ -85,28 +94,25 @@ set_target_properties(emule PROPERTIES
 )
 
 # ---------------------------------------------------------------------------
-# C++23 - the point of this branch. emule.vcxproj sets no <LanguageStandard>
-# at all, so the baseline being left behind here is MSVC's own default,
-# C++14: this single line jumps three rounds of standard-library removals
-# (C++17, C++20, C++23) at once.
+# C++14, which is MSVC's own default and therefore what emule.vcxproj - which
+# sets no <LanguageStandard> at all - has always been compiled at. Named here
+# rather than left implicit so that a future toolset moving its default does
+# not silently change what this branch builds.
 #
-# Deliberately a target_compile_features() on emule and NOT a top-level
-# CMAKE_CXX_STANDARD: the latter would drag cryptopp, id3lib and
-# resizablelib along too (C++98-era codebases with no reason to move), and
-# would fight mbedtls/tf-psa-crypto, which pin their own CMAKE_CXX_STANDARD
-# 11 for their C++ bits. Scoped like this, every dependency keeps building
-# at the MSVC default and only eMule's own 244 translation units change
-# standard - which also keeps any build break attributable to one target.
-#
-# CMake maps cxx_std_23 to /std:c++23preview on toolsets that have it and to
-# /std:c++latest otherwise; both are fine here, since nothing in this build
-# depends on the standard being final rather than preview.
+# This is the one place where this branch deliberately does not follow v0.72a.
+# There, raising the standard to C++23 is the point of the exercise, and the
+# 00-89 band of emule_build/ exists to carry the source changes three rounds
+# of standard-library removals require. Those patches are written against
+# 0.72a and say nothing about this tree. Building 0.60d at its own standard
+# asks one question at a time: whether this source still compiles with a
+# current toolset and current dependencies. Raising it afterwards is a second
+# question, and it will need its own patches, measured here.
 # ---------------------------------------------------------------------------
-target_compile_features(emule PRIVATE cxx_std_23)
+target_compile_features(emule PRIVATE cxx_std_14)
 
-# KNOWN LIMITATION: emule.vcxproj targets PlatformToolset v141_xp for Win32/x64
-# (a Windows-XP-compatible VS2017 toolset) and v145 for ARM64; id3lib.vcxproj
-# wants v141, ResizableLib.vcxproj wants v140_xp. None of those toolsets are
+# KNOWN LIMITATION: emule.vcxproj targets PlatformToolset v141_xp (a
+# Windows-XP-compatible VS2017 toolset) for both of its platforms;
+# id3lib.vcxproj wants v141, ResizableLib.vcxproj wants v140_xp. None of those toolsets are
 # installed here - every target in this build instead uses whatever toolset
 # ships with the installed VS generator (confirmed: only MSVC 14.50/14.51 are
 # present, no v14x_xp/v141/v140_xp component). Accepted as-is for now; install
@@ -129,10 +135,10 @@ if(MSVC)
     set(ATLMFC_SRC_MFC "${MSVC_TOOLSET_ROOT}/ATLMFC/src/mfc")
 endif()
 
-# mbedtls/tf-psa-crypto include dirs and the MBEDTLS_USER_CONFIG_FILE define
+# mbedtls's include dirs and the MBEDTLS_USER_CONFIG_FILE define
 # (which is what makes MBEDTLS_THREADING_ALT visible here too, not just when
 # the mbedtls library itself is built) both come in transitively via linking
-# against MbedTLS::mbedtls below - it declares them PUBLIC. Only the
+# against the mbedtls target below - it declares them PUBLIC. Only the
 # threading_alt.h override directory is added explicitly, via
 # include_directories() in the top-level CMakeLists.txt.
 # Several source files include their dependency by submodule-relative path -
@@ -146,6 +152,9 @@ endif()
 # is the upstream monorepo; "miniupnpc" is one of its subdirectories, not the
 # submodule's own directory name), so eMule-build/miniupnp is on the include
 # path here too, to make that one "miniupnpc/..." segment in the #include resolve.
+# CxImage is reached the same way but needs no entry here: five source files
+# include it as "CxImage/xImage.h", and the cximage target published the
+# submodule root for exactly that - see cximage_build/CMakeLists.txt.
 target_include_directories(emule PRIVATE
     ${EMULE_SRC_DIR}
     ${CMAKE_SOURCE_DIR}
@@ -157,7 +166,9 @@ target_compile_definitions(emule PRIVATE
     SUPPORT_LARGE_FILES
     UNICODE
     _UNICODE
-    $<$<NOT:$<STREQUAL:${EMULE_PLATFORM_DIR},ARM64>>:XP_BUILD>
+    # Unconditional on this branch: both of 0.60d's platforms set it, and it
+    # is the ARM64 configuration added in 0.72a that leaves it out.
+    XP_BUILD
     $<$<CONFIG:Release>:NDEBUG>
 )
 # _DEBUG is deliberately NOT in the list above for C++ compilation: emule.vcxproj's
@@ -191,7 +202,6 @@ target_compile_options(emule PRIVATE
     # of its branches, which is not actionable in a header we do not own.
     $<$<CXX_COMPILER_ID:MSVC>:/wd4755>
     $<$<CXX_COMPILER_ID:MSVC>:/Zc:throwingNew>
-    $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<STREQUAL:${EMULE_PLATFORM_DIR},ARM64>>:/Zc:enumTypes>
     $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Debug>>:/RTC1>
     $<$<CXX_COMPILER_ID:MSVC>:/Oi>                                    # IntrinsicFunctions (both configs)
     $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Release>>:/Gy>           # FunctionLevelLinking
@@ -209,8 +219,6 @@ set_source_files_properties("${EMULE_SRC_DIR}/Parser.cpp" "${EMULE_SRC_DIR}/Scan
 
 # Scanner.cpp per-file PreprocessorDefinitions from the vcxproj: only Win32
 # gets _USE_32BIT_TIME_T; both Win32 and x64 get _CRT_SECURE_NO_DEPRECATE.
-# ARM64 gets neither - the vcxproj has no ARM64 condition for this file at all
-# (never updated when the ARM64 platform was added), replicated as-is.
 set_source_files_properties("${EMULE_SRC_DIR}/Scanner.cpp" PROPERTIES
     COMPILE_DEFINITIONS "$<$<STREQUAL:${EMULE_PLATFORM_DIR},Win32>:_USE_32BIT_TIME_T;>$<$<OR:$<STREQUAL:${EMULE_PLATFORM_DIR},Win32>,$<STREQUAL:${EMULE_PLATFORM_DIR},x64>>:_CRT_SECURE_NO_DEPRECATE>"
 )
@@ -236,8 +244,9 @@ target_link_libraries(emule PRIVATE
     version.lib
     winmm.lib
     ws2_32.lib
-    MbedTLS::mbedtls
+    mbedtls
     cryptopp
+    cximage
     id3lib
     zlibstatic
     miniupnpc::miniupnpc
@@ -246,7 +255,7 @@ target_link_libraries(emule PRIVATE
 
 target_link_options(emule PRIVATE
     /DELAYLOAD:gdiplus.dll
-    /DELAYLOAD:msimg32.dll
+    # 0.60d delay-loads three DLLs; msimg32.dll joins the list in 0.72a.
     /DELAYLOAD:oleacc.dll
     /DELAYLOAD:ws2_32.dll
     /NODEFAULTLIB:mpr.lib

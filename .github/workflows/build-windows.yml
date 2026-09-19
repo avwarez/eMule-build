@@ -9,19 +9,20 @@ on:
         default: false
   push:
     branches:
-      - v0.72a
+      # This branch only. GitHub runs the copy of this file that the pushed
+      # branch carries, so v0.72a is triggered by its own copy; naming it
+      # here would do nothing except invite the two lists to drift.
+      - v0.60d
 
-# Branches whose pushes publish a public pre-release on their own. There is one
-# line of development: v0.72a-cpp23 and v0.72a-cpp23-fix were folded into
-# v0.72a on 2026-09-01 and deleted (their last heads are kept as the
-# archive/* tags). Consumed by the "Create GitHub Release" step below; a branch
-# added to the push trigger without being added here builds and leaves the
-# per-platform zips as run artifacts, but never reaches the Releases page -
-# which is the safe direction to get it wrong in, and the right shape for a
-# topic branch. To publish from one anyway, run the workflow manually on it
-# with publish=true.
+# Branches whose pushes publish a public pre-release on their own. Empty here,
+# and meant to stay empty. This branch exists to find out whether the 0.60d
+# source still builds against current dependencies and a current toolset;
+# nothing built from it is offered to anyone. The per-platform zips are still
+# assembled and attached to the run - that is what makes a build verifiable -
+# they just never reach the Releases page. Consumed by the "Create GitHub
+# Release" step below.
 env:
-  AUTO_PUBLISH_BRANCHES: '["v0.72a"]'
+  AUTO_PUBLISH_BRANCHES: '[]'
 
 # Two pushes to the same branch in quick succession would otherwise run two
 # full matrices in parallel and each publish their own release for it -
@@ -38,7 +39,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform: [x64, Win32, ARM64]
+        # 0.60d's emule.vcxproj declares Win32 and x64 and ships a manifest
+        # for each of them; ARM64 arrives with 0.72a. emule_build/CMakeLists.txt
+        # refuses any other platform at configure time rather than failing at
+        # the link step on a manifest that does not exist.
+        platform: [x64, Win32]
         configuration: [Debug, Release]
 
     steps:
@@ -69,30 +74,12 @@ jobs:
           git config --get core.autocrlf
           python -c "d=open('emule/srchybrid/QArray.h','rb').read(); print('QArray.h CR count:', d.count(b'\r'), '| ends with newline:', d.endswith(b'\n'))"
 
-      - name: Set up Python
-        # Pin an exact interpreter and put it first on PATH, so the "pip
-        # install" below and CMake's own find_package(Python3) (used to run
-        # mbedtls/tf-psa-crypto's code-gen scripts) resolve to the SAME
-        # Python. Without this, plain "pip install jsonschema" installed into
-        # a different interpreter than the one CMake found on its own
-        # (C:/hostedtoolcache/windows/Python/3.14.6/x64/python3.exe) -
-        # confirmed by an actual run: the install step reported success, but
-        # the build still failed with ModuleNotFoundError.
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.x"
-
-      - name: Install mbedtls code-gen Python dependencies
-        # Installed from mbedtls's own requirements file rather than named
-        # ad-hoc, so this tracks whatever upstream actually needs instead of
-        # us guessing/discovering packages one ModuleNotFoundError at a time.
-        # Verified which scripts our exact build config runs (GEN_FILES=ON,
-        # ENABLE_TESTING=OFF on MSVC): only
-        # tf-psa-crypto/scripts/generate_driver_wrappers.py needs third-party
-        # packages (jsonschema, jinja2) - everything else invoked
-        # (generate_config_checks.py, generate_ssl_debug_helpers.py) is
-        # stdlib-only. driver.requirements.txt is exactly those two packages.
-        run: pip install -r mbedtls/tf-psa-crypto/scripts/driver.requirements.txt
+      # No Python step on this branch. v0.72a needs one because mbedtls 4
+      # generates part of its own source at build time and two of those
+      # scripts want third-party packages; the 2.28 series this branch pins
+      # ships every one of those files in the repository and runs no
+      # generator, so there is nothing to install and nothing to pin an
+      # interpreter for.
 
       - name: Configure (CMake)
         # No -G: let CMake auto-detect whatever Visual Studio version is
