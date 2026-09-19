@@ -88,9 +88,9 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #   99     reserved for temporary diagnostics - a patch that makes a build
 #          report something rather than fix it, deleted once it has been read.
 #
-# Four files so far, all in the first band, and every one of them is a place
-# where something outside this source moved after 0.60d was released. Three of
-# the four have a later eMule release as their reference: the same problem
+# Five files so far, all in the first band, and every one of them is a place
+# where something outside this source moved after 0.60d was released. Four of
+# the five have a later eMule release as their reference: the same problem
 # reached the eMule devs in time for 0.72a and the fix here is theirs, copied
 # rather than invented.
 #
@@ -138,6 +138,18 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          they get a UTF-8 copy instead. eMule-build already carries the
 #          second of these as a patch on v0.72a, where it is spelled the same
 #          way, because the same two lines are still there.
+#
+#   40-miniupnpc-getvalidigd-arity gives UPNP_GetValidIGD() the two arguments
+#          it gained. The call used to hand it a buffer for the address of
+#          this host and nothing else; miniupnpc now also reports the IGD's
+#          public address, through a second buffer and its size, and a call
+#          with the old five arguments does not compile. 0.72a passes a
+#          m_achWanIP member for it, so this adds the same member and passes
+#          it the same way. It leaves m_achLanIP at the sixteen bytes 0.60d
+#          declares, where 0.72a widened it to forty: both sizes are handed to
+#          the library, which truncates rather than overruns, and sixteen is
+#          exactly an IPv4 literal - which is all this code can receive, since
+#          the upnpDiscover() call above it asks for IPv4 only.
 # ---------------------------------------------------------------------------
 find_package(Git REQUIRED)
 
