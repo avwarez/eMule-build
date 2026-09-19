@@ -1,0 +1,36 @@
+diff --git a/srchybrid/UPnPImplMiniLib.cpp b/srchybrid/UPnPImplMiniLib.cpp
+index 9c41ae1..6c6b006 100644
+--- a/srchybrid/UPnPImplMiniLib.cpp
++++ b/srchybrid/UPnPImplMiniLib.cpp
+@@ -51,6 +51,7 @@ CUPnPImplMiniLib::CUPnPImplMiniLib()
+ 	m_nOldTCPPort = 0;
+ 	m_nOldTCPWebPort = 0;
+ 	m_achLanIP[0] = 0;
++	m_achWanIP[0] = 0;
+ }
+ 
+ CUPnPImplMiniLib::~CUPnPImplMiniLib()
+@@ -242,7 +243,10 @@ int CUPnPImplMiniLib::CStartDiscoveryThread::Run()
+ 			m_pOwner->m_pIGDData = new IGDdatas();
+ 
+ 			m_pOwner->m_achLanIP[0] = 0;
+-			int iResult = UPNP_GetValidIGD(structDeviceList, m_pOwner->m_pURLs, m_pOwner->m_pIGDData, m_pOwner->m_achLanIP, sizeof m_pOwner->m_achLanIP);
++			m_pOwner->m_achWanIP[0] = 0;
++			int iResult = UPNP_GetValidIGD(structDeviceList, m_pOwner->m_pURLs, m_pOwner->m_pIGDData
++							, m_pOwner->m_achLanIP, sizeof m_pOwner->m_achLanIP
++							, m_pOwner->m_achWanIP, sizeof m_pOwner->m_achWanIP);
+ 			freeUPNPDevlist(structDeviceList);
+ 			bool bNotFound = false;
+ 			switch (iResult) {
+diff --git a/srchybrid/UPnPImplMiniLib.h b/srchybrid/UPnPImplMiniLib.h
+index 0462d28..b652d5f 100644
+--- a/srchybrid/UPnPImplMiniLib.h
++++ b/srchybrid/UPnPImplMiniLib.h
+@@ -59,6 +59,7 @@ private:
+ 	void StartThread();
+ 	bool m_bSucceededOnce;
+ 	char m_achLanIP[16];
++	char m_achWanIP[40];
+ 
+ 	UPNPUrls *m_pURLs;
+ 	IGDdatas *m_pIGDData;
