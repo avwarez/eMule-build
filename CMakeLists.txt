@@ -68,11 +68,11 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 # numeric prefix if two of them ever have to touch the same hunk in a defined
 # sequence.
 #
-# emule_build/ is empty of patches on this branch. The ones on v0.72a are
-# written against 0.72a's bytes and describe 0.72a's faults; not one of them
-# applies to this tree, and carrying them across unread would say things
-# about this build that nobody has checked. Anything 0.60d turns out to need
-# is written here from measurement on 0.60d, under the same numbering:
+# emule_build/ started empty on this branch. The patches on v0.72a are written
+# against 0.72a's bytes and describe 0.72a's faults; not one of them applies to
+# this tree, and carrying them across unread would say things about this build
+# that nobody has checked. What 0.60d turns out to need is written here from
+# what building 0.60d actually reports, under the same numbering:
 #   00-89  the code does not compile as-is (a dependency's API changed, or
 #          the C++ standard we build at removed the construct).
 #   90-94  the code compiles but /Wall flags it; these bring the warning
@@ -87,6 +87,57 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          the `languages` target rather than code, so they change no binary.
 #   99     reserved for temporary diagnostics - a patch that makes a build
 #          report something rather than fix it, deleted once it has been read.
+#
+# Four files so far, all in the first band, and every one of them is a place
+# where something outside this source moved after 0.60d was released. Three of
+# the four have a later eMule release as their reference: the same problem
+# reached the eMule devs in time for 0.72a and the fix here is theirs, copied
+# rather than invented.
+#
+#   00-miniupnpc-include-path corrects where three headers are looked for.
+#          0.60d asks for "miniupnpc\miniupnpc.h" and its two neighbours;
+#          miniupnpc moved its public headers into an include/ subdirectory,
+#          and the pinned 2.3.3 has them at miniupnpc/include/miniupnpc.h with
+#          nothing at the old path. 0.72a's copy of this file already spells it
+#          "miniupnpc\include\miniupnpc.h", so this patch is that change and
+#          nothing else, and it goes away the day 0.60d stops being built
+#          against a miniupnpc this new.
+#
+#   10-mfc-interface-part-noexcept takes the noexcept off nine method
+#          definitions - and off exactly those nine. An MFC interface part
+#          declares QueryInterface, AddRef and Release itself, from inside the
+#          BEGIN_INTERFACE_PART macro, and from VS2022 17.7 onwards it declares
+#          them without an exception specification; 0.60d defines all three
+#          with noexcept, which is a different exception specification from the
+#          declaration and therefore C2382. Every other method of those same
+#          interface parts is declared by eMule's own STDMETHOD lines, whose
+#          spelling the definitions match, and those are left alone. The fix is
+#          not a deletion but the macro 0.72a introduced for this, NOEXCEPT,
+#          defined in emule_site_config.h to expand to noexcept below 17.7 and
+#          to nothing from 17.7 on - taken verbatim, so the file still builds
+#          on the older toolset it was written for.
+#
+#   20-mediainfo-floating-point-abs replaces six calls to abs() whose argument
+#          is a double or a float. Integer abs() overloads for long and
+#          __int64 were added to the UCRT's stdlib.h, and a floating-point
+#          argument is now an ambiguous call rather than a silent conversion.
+#          The four double sites become fabs and the two float sites become
+#          fabsf with the division done in float, which is what 0.72a does at
+#          the same six places. Note what the old code actually computed: abs()
+#          on a ratio truncated it to an integer before taking its magnitude,
+#          so every aspect ratio between -1 and 1 came out as 0. The compiler
+#          error is the reason to touch these lines; it is not the whole of
+#          what was wrong with them.
+#
+#   30-mbedtls-api-mismatches fixes three calls that do not compile against
+#          any released mbedtls, this one or the one 0.60d shipped against.
+#          mbedtls_pk_rsa() takes the context by value and is handed a
+#          pointer - the fix is one character. mbedtls_x509_crt_parse_file()
+#          and mbedtls_pk_parse_keyfile() take a const char* and are handed
+#          the CString the preferences hold, which in a Unicode build is wide;
+#          they get a UTF-8 copy instead. eMule-build already carries the
+#          second of these as a patch on v0.72a, where it is spelled the same
+#          way, because the same two lines are still there.
 # ---------------------------------------------------------------------------
 find_package(Git REQUIRED)
 

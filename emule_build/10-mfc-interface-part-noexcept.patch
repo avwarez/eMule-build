@@ -1,0 +1,93 @@
+diff --git a/srchybrid/HTRichEditCtrl.cpp b/srchybrid/HTRichEditCtrl.cpp
+index 66b3c8e..e62cbef 100644
+--- a/srchybrid/HTRichEditCtrl.cpp
++++ b/srchybrid/HTRichEditCtrl.cpp
+@@ -932,19 +932,19 @@ CBitmapDataObject::CBitmapDataObject(HBITMAP hBitmap)
+ #pragma warning(disable:4100) // unreferenced parameter
+ #pragma warning(disable:4555) // expression has no effect; expected expression with side-effect (because of the 'METHOD_PROLOGUE' macro)
+ 
+-STDMETHODIMP CBitmapDataObject::XDataObject::QueryInterface(REFIID riid, void **ppvObj) noexcept
++STDMETHODIMP CBitmapDataObject::XDataObject::QueryInterface(REFIID riid, void **ppvObj) NOEXCEPT
+ {
+ 	METHOD_PROLOGUE(CBitmapDataObject, DataObject);
+ 	return (HRESULT)pThis->ExternalQueryInterface(&riid, ppvObj);
+ }
+ 
+-STDMETHODIMP_(ULONG) CBitmapDataObject::XDataObject::AddRef() noexcept
++STDMETHODIMP_(ULONG) CBitmapDataObject::XDataObject::AddRef() NOEXCEPT
+ {
+ 	METHOD_PROLOGUE(CBitmapDataObject, DataObject);
+ 	return pThis->ExternalAddRef();
+ }
+ 
+-STDMETHODIMP_(ULONG) CBitmapDataObject::XDataObject::Release() noexcept
++STDMETHODIMP_(ULONG) CBitmapDataObject::XDataObject::Release() NOEXCEPT
+ {
+ 	METHOD_PROLOGUE(CBitmapDataObject, DataObject);
+ 	return pThis->ExternalRelease();
+diff --git a/srchybrid/IESecurity.cpp b/srchybrid/IESecurity.cpp
+index 8663b13..9fd514e 100644
+--- a/srchybrid/IESecurity.cpp
++++ b/srchybrid/IESecurity.cpp
+@@ -136,19 +136,19 @@ void DumpIID(REFIID iid, LPCTSTR pszClassName)
+ #pragma warning(push)
+ #pragma warning(disable:4555) // expression has no effect; expected expression with side-effect (because of the 'METHOD_PROLOGUE' macro)
+ 
+-STDMETHODIMP CMuleBrowserControlSite::XInternetSecurityManager::QueryInterface(REFIID riid, void **ppvObj) noexcept
++STDMETHODIMP CMuleBrowserControlSite::XInternetSecurityManager::QueryInterface(REFIID riid, void **ppvObj) NOEXCEPT
+ {
+ 	METHOD_PROLOGUE(CMuleBrowserControlSite, InternetSecurityManager);
+ 	return (HRESULT)pThis->ExternalQueryInterface(&riid, ppvObj);
+ }
+ 
+-STDMETHODIMP_(ULONG) CMuleBrowserControlSite::XInternetSecurityManager::AddRef() noexcept
++STDMETHODIMP_(ULONG) CMuleBrowserControlSite::XInternetSecurityManager::AddRef() NOEXCEPT
+ {
+ 	METHOD_PROLOGUE(CMuleBrowserControlSite, InternetSecurityManager);
+ 	return pThis->ExternalAddRef();
+ }
+ 
+-STDMETHODIMP_(ULONG) CMuleBrowserControlSite::XInternetSecurityManager::Release() noexcept
++STDMETHODIMP_(ULONG) CMuleBrowserControlSite::XInternetSecurityManager::Release() NOEXCEPT
+ {
+ 	METHOD_PROLOGUE(CMuleBrowserControlSite, InternetSecurityManager);
+ 	return pThis->ExternalRelease();
+@@ -267,19 +267,19 @@ STDMETHODIMP CMuleBrowserControlSite::XInternetSecurityManager::GetZoneMappings(
+ // IServiceProvider
+ //
+ 
+-STDMETHODIMP_(ULONG) CMuleBrowserControlSite::XServiceProvider::AddRef() noexcept
++STDMETHODIMP_(ULONG) CMuleBrowserControlSite::XServiceProvider::AddRef() NOEXCEPT
+ {
+ 	METHOD_PROLOGUE(CMuleBrowserControlSite, ServiceProvider);
+ 	return pThis->ExternalAddRef();
+ }
+ 
+-STDMETHODIMP_(ULONG) CMuleBrowserControlSite::XServiceProvider::Release() noexcept
++STDMETHODIMP_(ULONG) CMuleBrowserControlSite::XServiceProvider::Release() NOEXCEPT
+ {
+ 	METHOD_PROLOGUE(CMuleBrowserControlSite, ServiceProvider);
+ 	return pThis->ExternalRelease();
+ }
+ 
+-STDMETHODIMP CMuleBrowserControlSite::XServiceProvider::QueryInterface(REFIID riid, void **ppvObj) noexcept
++STDMETHODIMP CMuleBrowserControlSite::XServiceProvider::QueryInterface(REFIID riid, void **ppvObj) NOEXCEPT
+ {
+ 	METHOD_PROLOGUE(CMuleBrowserControlSite, ServiceProvider);
+ 	return (HRESULT)pThis->ExternalQueryInterface(&riid, ppvObj);
+diff --git a/srchybrid/emule_site_config.h b/srchybrid/emule_site_config.h
+index 7277dae..c036748 100644
+--- a/srchybrid/emule_site_config.h
++++ b/srchybrid/emule_site_config.h
+@@ -13,6 +13,11 @@
+ #define _WIN32_WINNT _WIN32_WINNT_WINXP
+ #define NTDDI_VERSION NTDDI_WINXP
+ #endif
++#if _MSC_VER<1937 //before VS2022 17.7
++#define NOEXCEPT noexcept
++#else
++#define NOEXCEPT
++#endif
+ 
+ //////////////////////////////////////////////////////////////////////////////
+ // Visual Studio 2003

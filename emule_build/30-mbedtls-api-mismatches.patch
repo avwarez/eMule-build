@@ -1,0 +1,34 @@
+diff --git a/srchybrid/PPgWebServer.cpp b/srchybrid/PPgWebServer.cpp
+index 0672ec6..f9e71fb 100644
+--- a/srchybrid/PPgWebServer.cpp
++++ b/srchybrid/PPgWebServer.cpp
+@@ -97,7 +97,7 @@ int KeyCreate(mbedtls_pk_context *key, mbedtls_ctr_drbg_context *ctr_drbg, LPCTS
+ 		pmsg = _T("mbedtls_pk_setup");
+ 		goto exit;
+ 	}
+-	ret = mbedtls_rsa_gen_key(mbedtls_pk_rsa(key), mbedtls_ctr_drbg_random, ctr_drbg, 2048u, 65537);
++	ret = mbedtls_rsa_gen_key(mbedtls_pk_rsa(*key), mbedtls_ctr_drbg_random, ctr_drbg, 2048u, 65537);
+ 	if (ret) {
+ 		pmsg = _T("mbedtls_rsa_gen_key");
+ 		goto exit;
+diff --git a/srchybrid/WebSocket.cpp b/srchybrid/WebSocket.cpp
+index c407c94..21f56c1 100644
+--- a/srchybrid/WebSocket.cpp
++++ b/srchybrid/WebSocket.cpp
+@@ -509,10 +509,14 @@ int StartSSL()
+ 	mbedtls_ssl_config_init(&conf);
+ 	mbedtls_ctr_drbg_init(&ctr_drbg);
+ 	mbedtls_entropy_init(&entropy);
+-	int ret = mbedtls_x509_crt_parse_file(&srvcert, thePrefs.GetWebCertPath());
++	// mbedtls_x509_crt_parse_file()/mbedtls_pk_parse_keyfile() want a
++	// const char*; thePrefs.GetWebCertPath()/GetWebKeyPath() are CString.
++	CStringA pszCertPath(StrToUtf8(thePrefs.GetWebCertPath()));
++	int ret = mbedtls_x509_crt_parse_file(&srvcert, pszCertPath);
+ 	if (!ret) {
+ 		mbedtls_pk_init(&pkey);
+-		ret = mbedtls_pk_parse_keyfile(&pkey, thePrefs.GetWebKeyPath(), NULL);
++		CStringA pszKeyPath(StrToUtf8(thePrefs.GetWebKeyPath()));
++		ret = mbedtls_pk_parse_keyfile(&pkey, pszKeyPath, NULL);
+ 		if (!ret) {
+ 			ret = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy, (unsigned char*)pers, strlen(pers));
+ 			if (!ret) {
