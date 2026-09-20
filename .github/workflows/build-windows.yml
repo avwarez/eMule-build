@@ -39,11 +39,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 0.60d's emule.vcxproj declares Win32 and x64 and ships a manifest
-        # for each of them; ARM64 arrives with 0.72a. emule_build/CMakeLists.txt
-        # refuses any other platform at configure time rather than failing at
-        # the link step on a manifest that does not exist.
-        platform: [x64, Win32]
+        # 0.60d's emule.vcxproj declares Win32 and x64 only, but ARM64 is
+        # built here too: it is the platform this codebase is actually run on,
+        # Wine 11 on aarch64 running an ARM64 PE natively. The pieces 0.60d's
+        # project file has no ARM64 configuration for live in the build system
+        # instead - see emule_build/res/emuleARM64.manifest and the ARM64 note
+        # around add_subdirectory(libpng) in the top-level CMakeLists.txt.
+        platform: [x64, Win32, ARM64]
         configuration: [Debug, Release]
 
     steps:

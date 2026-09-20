@@ -31,9 +31,12 @@ message(STATUS "eMule: ${_n_sources} source files read from emule.vcxproj")
 # ---------------------------------------------------------------------------
 # Platform - still needed below for the SAFESEH and per-file options, and for
 # naming the manifest. 0.60d's project file declares Win32 and x64 and nothing
-# else, and ships a manifest for each of those two and no other; ARM64 arrived
-# with 0.72a. A configure for a platform this branch has no manifest for stops
-# here rather than failing later at the link step with a missing file.
+# else; ARM64 is built here anyway, because it is the platform this codebase
+# is actually run on (Wine 11 on aarch64 runs an ARM64 PE natively, and only
+# an ARM64 PE natively). The ARM64 pieces the project file would have carried
+# live in this build system instead - see the manifest below. A configure for
+# any other platform stops here rather than failing later at the link step
+# with a missing file.
 # ---------------------------------------------------------------------------
 if(CMAKE_VS_PLATFORM_NAME)
     set(EMULE_PLATFORM_DIR "${CMAKE_VS_PLATFORM_NAME}")
@@ -41,14 +44,32 @@ elseif(CMAKE_GENERATOR_PLATFORM)
     set(EMULE_PLATFORM_DIR "${CMAKE_GENERATOR_PLATFORM}")
 else()
     set(EMULE_PLATFORM_DIR "x64")
-    message(WARNING "eMule: could not determine target platform (Win32/x64) from the generator; "
+    message(WARNING "eMule: could not determine target platform (Win32/x64/ARM64) from the generator; "
                      "defaulting to x64. Pass -A <platform> (Visual Studio generator) to be explicit.")
 endif()
 
-if(NOT EMULE_PLATFORM_DIR STREQUAL "Win32" AND NOT EMULE_PLATFORM_DIR STREQUAL "x64")
+if(NOT EMULE_PLATFORM_DIR STREQUAL "Win32"
+   AND NOT EMULE_PLATFORM_DIR STREQUAL "x64"
+   AND NOT EMULE_PLATFORM_DIR STREQUAL "ARM64")
     message(FATAL_ERROR
-        "eMule 0.60d builds for Win32 and x64 only - emule.vcxproj declares no other platform, "
-        "and res/ holds no emule${EMULE_PLATFORM_DIR}.manifest. ARM64 exists from 0.72a onwards.")
+        "eMule 0.60d builds for Win32, x64 and ARM64 - there is no manifest for "
+        "'${EMULE_PLATFORM_DIR}' and no configuration that was ever tried for it.")
+endif()
+
+# 0.60d ships res/emuleWin32.manifest and res/emulex64.manifest and nothing
+# else; res/emuleARM64.manifest arrives with 0.72a. Ours lives here rather
+# than in a patch, because a manifest is build output, not an eMule source
+# change: it is derived from 0.60d's own x64 manifest with
+# processorArchitecture set to arm64 and the Vista and Windows 7 supportedOS
+# entries dropped, Windows on ARM64 having started at Windows 10. That is the
+# same derivation 0.72a's own ARM64 manifest is - byte for byte the same
+# length, 1063. The one thing not carried over is the typo: 0.60d's x64
+# manifest says processorArchitecture="ia64", which is inert (the binary has
+# run for years) but wrong.
+if(EMULE_PLATFORM_DIR STREQUAL "ARM64")
+    set(EMULE_MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/res/emuleARM64.manifest")
+else()
+    set(EMULE_MANIFEST "${EMULE_SRC_DIR}/res/emule${EMULE_PLATFORM_DIR}.manifest")
 endif()
 
 # $<COMPILE_LANGUAGE:RC> in target_compile_definitions() is silently ignored by
@@ -166,8 +187,13 @@ target_compile_definitions(emule PRIVATE
     SUPPORT_LARGE_FILES
     UNICODE
     _UNICODE
-    # Unconditional on this branch: both of 0.60d's platforms set it, and it
-    # is the ARM64 configuration added in 0.72a that leaves it out.
+    # Unconditional here, ARM64 included, and that is deliberate. Both
+    # platforms 0.60d's project file declares set it; 0.72a leaves it out on
+    # ARM64 alone. We have no evidence that it has to come out - only that
+    # upstream took it out - and XP_BUILD is not a local #ifdef: it pins
+    # _WIN32_WINNT and NTDDI_VERSION to Windows XP for the whole codebase, so
+    # removing it is the widest-reaching change available here. Left in until
+    # a build says otherwise, which is cheaper than assuming either way.
     XP_BUILD
     $<$<CONFIG:Release>:NDEBUG>
 )
@@ -219,6 +245,9 @@ set_source_files_properties("${EMULE_SRC_DIR}/Parser.cpp" "${EMULE_SRC_DIR}/Scan
 
 # Scanner.cpp per-file PreprocessorDefinitions from the vcxproj: only Win32
 # gets _USE_32BIT_TIME_T; both Win32 and x64 get _CRT_SECURE_NO_DEPRECATE.
+# ARM64 gets neither, because the vcxproj has no ARM64 condition for this file
+# to replicate - 0.72a, whose project file does declare ARM64, never added one
+# either, and builds green without it.
 set_source_files_properties("${EMULE_SRC_DIR}/Scanner.cpp" PROPERTIES
     COMPILE_DEFINITIONS "$<$<STREQUAL:${EMULE_PLATFORM_DIR},Win32>:_USE_32BIT_TIME_T;>$<$<OR:$<STREQUAL:${EMULE_PLATFORM_DIR},Win32>,$<STREQUAL:${EMULE_PLATFORM_DIR},x64>>:_CRT_SECURE_NO_DEPRECATE>"
 )
@@ -264,7 +293,7 @@ target_link_options(emule PRIVATE
     /NODEFAULTLIB:sensapi.lib
     /NODEFAULTLIB:vfw32.lib
     $<$<STREQUAL:${EMULE_PLATFORM_DIR},Win32>:/SAFESEH>
-    "/MANIFESTINPUT:${EMULE_SRC_DIR}/res/emule${EMULE_PLATFORM_DIR}.manifest"
+    "/MANIFESTINPUT:${EMULE_MANIFEST}"
     $<$<CONFIG:Release>:/OPT:REF>                                     # OptimizeReferences=true (Release only; Debug's explicit "false" is CMake's default anyway)
     $<$<CONFIG:Release>:/OPT:ICF>                                     # EnableCOMDATFolding=true (Release only)
 )

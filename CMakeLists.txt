@@ -10,9 +10,12 @@ project(eMule VERSION 0.60 LANGUAGES CXX RC)
 # ("updated MbedTLS to version 4.0, removed CxImage and libpng" is the whole
 # of that commit's second paragraph), so two dependencies exist here that
 # exist on no other branch - CxImage and libpng - and mbedtls is pinned to the
-# 2.28 series whose API this source actually speaks. 0.60d also ships no ARM64
-# manifest and its project file declares Win32 and x64 only, which is what the
-# CI matrix on this branch builds.
+# 2.28 series whose API this source actually speaks. 0.60d's project file also
+# declares Win32 and x64 only and ships no ARM64 manifest, but the CI matrix
+# on this branch builds ARM64 all the same: it is the platform this codebase
+# is actually run on, since Wine 11 on aarch64 runs an ARM64 PE natively and
+# nothing else natively. What 0.60d has no ARM64 configuration for is supplied
+# by this build system instead.
 #
 # All third-party dependencies (mbedtls, cryptopp, id3lib, zlib, libpng,
 # cximage, miniupnpc, resizablelib) are vendored as vanilla git submodules -
@@ -288,8 +291,25 @@ endif()
 # with awk and falls back to scripts/pnglibconf.h.prebuilt when there is no
 # awk on PATH - which is the case on the Windows runner - and that prebuilt
 # file is the stock configuration, which is what this build wants anyway.
+#
+# PNG_HARDWARE_OPTIMIZATIONS on ARM64: libpng picks its SIMD sources from
+# PNG_TARGET_ARCHITECTURE, which is CMAKE_SYSTEM_PROCESSOR lowercased - and
+# CMAKE_SYSTEM_PROCESSOR is not the target. Outside a toolchain file
+# CMakeDetermineSystem.cmake copies CMAKE_HOST_SYSTEM_PROCESSOR into it and
+# -A ARM64 never touches it, so on an x64 runner it reads "AMD64" whatever we
+# are building. libpng would therefore take its Intel branch for an ARM64
+# build: intel/filter_sse2_intrinsics.c includes <immintrin.h>, which MSVC
+# does not ship for ARM64, and pngpriv.h would point PNG_FILTER_OPTIMIZATIONS
+# at png_init_filter_functions_sse2, which would then have nothing to link
+# against. Turning the whole SIMD layer off is upstream's own switch for it
+# and leaves the plain C filters, which are correct everywhere; PNG here
+# decodes toolbar icons and preview images, not a hot path. Restricted to
+# ARM64 so Win32 and x64 configure exactly as they do today.
 # ---------------------------------------------------------------------------
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/libpng_build")
+if(CMAKE_VS_PLATFORM_NAME STREQUAL "ARM64")
+    set(PNG_HARDWARE_OPTIMIZATIONS OFF CACHE BOOL "No SIMD: libpng cannot see the real target architecture here" FORCE)
+endif()
 set(PNG_SHARED OFF CACHE BOOL "eMule only needs the static libpng" FORCE)
 set(PNG_STATIC ON CACHE BOOL "eMule only needs the static libpng" FORCE)
 set(PNG_FRAMEWORK OFF CACHE BOOL "Apple-only, and this build is Windows-only" FORCE)
