@@ -91,11 +91,12 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #   99     reserved for temporary diagnostics - a patch that makes a build
 #          report something rather than fix it, deleted once it has been read.
 #
-# Five files so far, all in the first band, and every one of them is a place
-# where something outside this source moved after 0.60d was released. Four of
-# the five have a later eMule release as their reference: the same problem
-# reached the eMule devs in time for 0.72a and the fix here is theirs, copied
-# rather than invented.
+# Eight files so far. Five are in the first band, and every one of them is a
+# place where something outside this source moved after 0.60d was released;
+# four of those five have a later eMule release as their reference, the same
+# problem having reached the eMule devs in time for 0.72a, so the fix here is
+# theirs, copied rather than invented. The other three are band 95: they exist
+# because this build targets ARM64, which 0.60d's project file never did.
 #
 #   00-miniupnpc-include-path corrects where three headers are looked for.
 #          0.60d asks for "miniupnpc\miniupnpc.h" and its two neighbours;
@@ -153,6 +154,43 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          the library, which truncates rather than overruns, and sixteen is
 #          exactly an IPv4 literal - which is all this code can receive, since
 #          the upnpDiscover() call above it asks for IPv4 only.
+#
+#   95-atomic-cross-thread-flags replaces `volatile` with std::atomic on the
+#          six fields one thread writes and another reads: two in PartFile.h,
+#          the AICH hashing counter in SharedFilesCtrl.h, the UPnP forwarding
+#          tristate, and Kademlia's two loader flags. On x86 MSVC defaults to
+#          /volatile:ms, where a volatile access carries acquire/release
+#          semantics; on ARM64 the default is /volatile:iso, where it carries
+#          none, and the compiler says so - this build reports C4746 ("volatile
+#          access is subject to /volatile:<iso|ms> setting") 202 times on ARM64
+#          and not once on x64 or Win32. 0.72a chose to silence that warning
+#          in Stdafx.h under #ifdef _M_ARM64; the same six fields it leaves
+#          volatile are the ones changed here, which is the half of the
+#          question the warning is actually about. The remaining twelve
+#          volatile declarations in srchybrid are untouched: whether they are
+#          shared across threads has not been established here.
+#
+#   95b-arm64-version-string makes the binary say which architecture it is.
+#          VERSION_X64 has two branches, x64 and everything-else, so an ARM64
+#          build reported an empty platform - and this branch builds three
+#          architectures whose logs are read side by side. Renamed to
+#          VERSION_PLATFORM with an _M_ARM64 branch, which is exactly what
+#          0.72a's Version.h does; the macro feeds CemuleApp::m_sPlatform and
+#          has one other use in the tree.
+#
+#   96-unaligned-memfile-access replaces the pointer-cast reads and writes in
+#          CSafeMemFile with memcpy. m_lpBuffer is a byte buffer at an offset
+#          no one aligns, so *(uint32*)&m_lpBuffer[m_nPosition] is an access
+#          whose alignment the compiler is entitled to assume and the data
+#          does not guarantee. Eight sites, where 0.72a's own patch has six:
+#          ReadHash16 and WriteHash16 are the two extra, and they are worse
+#          than the rest, because there the *other* side is unaligned too -
+#          they are called with uchar[16] members and locals, of alignment
+#          one, and cast them to uint32* to move four words. 0.72a no longer
+#          has those two sites at all; upstream rewrote both to go through
+#          md4cpy() by the time of that release. memcpy is used here rather
+#          than md4cpy to keep the change inside this file and to read the
+#          same way as the six sibling hunks.
 # ---------------------------------------------------------------------------
 find_package(Git REQUIRED)
 

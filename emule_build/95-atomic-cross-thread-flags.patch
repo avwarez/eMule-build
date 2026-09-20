@@ -1,0 +1,95 @@
+diff --git a/srchybrid/PartFile.h b/srchybrid/PartFile.h
+index aee4d34..f9dd07d 100644
+--- a/srchybrid/PartFile.h
++++ b/srchybrid/PartFile.h
+@@ -14,6 +14,7 @@
+ //along with this program; if not, write to the Free Software
+ //Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ #pragma once
++#include <atomic>
+ #include "KnownFile.h"
+ #include "DeadSourceList.h"
+ #include "CorruptionBlackBox.h"
+@@ -372,7 +373,7 @@ private:
+ 	time_t	m_nDlActiveTime;
+ 	time_t	m_tLastModified;	// last file modification time (NT's version of UTC), to be used for stats only!
+ 	time_t	m_tCreated;			// file creation time (NT's version of UTC), to be used for stats only!
+-	volatile WPARAM m_uFileOpProgress;
++	std::atomic<WPARAM> m_uFileOpProgress;
+ 	DWORD	lastSwapForSourceExchangeTick; // ZZ:DownloadManaager
+ 	DWORD	m_lastRefreshedDLDisplay;
+ 	DWORD	m_nLastBufferFlushTime;
+@@ -389,7 +390,7 @@ private:
+ 	uint32	m_uPartsSavedDueICH;
+ 	uint32	m_datarate;
+ 	EPartFileStatus	status;
+-	volatile EPartFileOp m_eFileOp;
++	std::atomic<EPartFileOp> m_eFileOp;
+ 	byte	m_refresh; //delay counter for display
+ 	uint8	m_iDownPriority;
+ 	bool	m_paused;
+diff --git a/srchybrid/SharedFilesCtrl.h b/srchybrid/SharedFilesCtrl.h
+index 364ed99..7c027d5 100644
+--- a/srchybrid/SharedFilesCtrl.h
++++ b/srchybrid/SharedFilesCtrl.h
+@@ -15,6 +15,7 @@
+ //along with this program; if not, write to the Free Software
+ //Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ #pragma once
++#include <atomic>
+ #include "MuleListCtrl.h"
+ #include "TitleMenu.h"
+ #include "ListCtrlItemWalk.h"
+@@ -73,7 +74,7 @@ protected:
+ 	bool			m_aSortBySecondValue[4];
+ 	CImageList		m_ImageList;
+ 	CDirectoryItem	*m_pDirectoryFilter;
+-	volatile INT_PTR	nAICHHashing;
++	std::atomic<INT_PTR>	nAICHHashing;
+ 	CToolTipCtrlX	*m_pToolTip;
+ 	CTypedPtrList<CPtrList, CShareableFile*>	liTempShareableFilesInDir;
+ 	CShareableFile	*m_pHighlightedItem;
+diff --git a/srchybrid/UPnPImpl.h b/srchybrid/UPnPImpl.h
+index 2dc88eb..45572d5 100644
+--- a/srchybrid/UPnPImpl.h
++++ b/srchybrid/UPnPImpl.h
+@@ -16,6 +16,7 @@
+ //Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ 
+ #pragma once
++#include <atomic>
+ #include <exception>
+ 
+ enum TRISTATE
+@@ -76,7 +77,7 @@ public:
+ // Implementation
+ protected:
+ 	void SendResultMessage();
+-	volatile TRISTATE m_bUPnPPortsForwarded;
++	std::atomic<TRISTATE> m_bUPnPPortsForwarded;
+ 	uint16 m_nOldTCPPort;
+ 	uint16 m_nOldTCPWebPort;
+ 	uint16 m_nOldUDPPort;
+diff --git a/srchybrid/kademlia/kademlia/Indexed.h b/srchybrid/kademlia/kademlia/Indexed.h
+index b5e4b49..70de033 100644
+--- a/srchybrid/kademlia/kademlia/Indexed.h
++++ b/srchybrid/kademlia/kademlia/Indexed.h
+@@ -27,6 +27,7 @@ their client on the eMule forum.
+ */
+ 
+ #pragma once
++#include <atomic>
+ #include "kademlia/routing/Maps.h"
+ 
+ struct SSearchTerm
+@@ -101,8 +102,8 @@ namespace Kademlia
+ 		CSrcHashMap m_mapNotes;
+ 		CLoadMap	m_mapLoad;
+ 		CMutex		m_mutSync;
+-		volatile bool	m_bAbortLoading; // signals the loading thread to abort
+-		volatile bool	m_bDataLoaded;
++		std::atomic<bool>	m_bAbortLoading; // signals the loading thread to abort
++		std::atomic<bool>	m_bDataLoaded;
+ 		static CString	m_sSourceFileName;
+ 		static CString	m_sKeyFileName;
+ 		static CString	m_sLoadFileName;
