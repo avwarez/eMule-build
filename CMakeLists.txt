@@ -91,12 +91,14 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #   99     reserved for temporary diagnostics - a patch that makes a build
 #          report something rather than fix it, deleted once it has been read.
 #
-# Eight files so far. Five are in the first band, and every one of them is a
+# Nine files so far. Five are in the first band, and every one of them is a
 # place where something outside this source moved after 0.60d was released;
 # four of those five have a later eMule release as their reference, the same
 # problem having reached the eMule devs in time for 0.72a, so the fix here is
-# theirs, copied rather than invented. The other three are band 95: they exist
-# because this build targets ARM64, which 0.60d's project file never did.
+# theirs, copied rather than invented. Three of the other four are band 95 and
+# exist because this build targets ARM64, which 0.60d's project file never
+# did; the last is 96b, which compensates for the platform this binary runs
+# on.
 #
 #   00-miniupnpc-include-path corrects where three headers are looked for.
 #          0.60d asks for "miniupnpc\miniupnpc.h" and its two neighbours;
@@ -191,6 +193,32 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          md4cpy() by the time of that release. memcpy is used here rather
 #          than md4cpy to keep the change inside this file and to read the
 #          same way as the six sibling hunks.
+#
+#   96b-webserver-accept-readiness watches the web interface's listening
+#          socket with select() instead of arming it with
+#          WSAEventSelect(FD_ACCEPT) and waiting on the event with no timeout.
+#          FD_ACCEPT is an edge: delivery disables it and only accept()
+#          enables it again, so one missed delivery parks that thread in a
+#          wait nothing can end - there is no timeout to expire, and accept(),
+#          the one call that would re-arm it, is never reached. Nothing
+#          creates the thread a second time, so the web interface then stays
+#          silent for the rest of the run while connections collect in the
+#          backlog. select() reports the socket's present state rather than a
+#          transition, so there is no edge to miss; one connection is taken
+#          per report instead of draining, which also stops accept() from
+#          being called with nothing waiting. The patch is 0.72a's, re-derived
+#          against 0.60d's own bytes rather than copied - the allowed-IP block
+#          is written differently in the two releases - and it carries one
+#          thing beyond the rewrite: rejecting a connection used to `break`
+#          out of the drain loop, abandoning whatever else was queued, and now
+#          continues.
+#
+#          THIS IS A PLATFORM COMPENSATION, NOT AN eMULE DEFECT, and the
+#          distinction is the whole reason band 95-96 is separate from 97:
+#          the original code is correct on real Winsock - measured, 18 clean
+#          control runs - and only fails under Wine, which loses roughly one
+#          FD_ACCEPT edge in a hundred when the re-arming accept() is the one
+#          that fails. It must never be reported upstream as an eMule bug.
 # ---------------------------------------------------------------------------
 find_package(Git REQUIRED)
 

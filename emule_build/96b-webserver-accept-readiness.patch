@@ -1,0 +1,152 @@
+diff --git a/srchybrid/WebSocket.cpp b/srchybrid/WebSocket.cpp
+index 21f56c1..f61f482 100644
+--- a/srchybrid/WebSocket.cpp
++++ b/srchybrid/WebSocket.cpp
+@@ -443,53 +443,105 @@ UINT AFX_CDECL WebSocketListeningFunc(LPVOID pThis)
+ 		stAddr.sin_addr.s_addr = thePrefs.GetBindAddrA() ? inet_addr(thePrefs.GetBindAddrA()) : INADDR_ANY;
+ 
+ 		if (!bind(hSocket, (LPSOCKADDR)&stAddr, sizeof stAddr) && !listen(hSocket, SOMAXCONN)) {
+-			HANDLE hEvent = CreateEvent(NULL, FALSE, TRUE, NULL);
+-			if (hEvent) {
+-				if (!WSAEventSelect(hSocket, hEvent, FD_ACCEPT)) {
+-					HANDLE pWait[] = {hEvent, s_hTerminate};
+-					while (WAIT_OBJECT_0 == ::WaitForMultipleObjects(2, pWait, FALSE, INFINITE)) {
+-						for (;;) {
+-							SOCKADDR_IN their_addr;
+-							int sin_size = (int)sizeof(SOCKADDR_IN);
+-
+-							SOCKET hAccepted = accept(hSocket, (LPSOCKADDR)&their_addr, &sin_size);
+-							if (INVALID_SOCKET == hAccepted)
+-								break;
++			// The listening socket is watched with select() instead of being armed
++			// with WSAEventSelect(FD_ACCEPT) and waited on. Both report the same
++			// thing, but not in the same way. FD_ACCEPT is an edge: it is delivered
++			// once, delivery disables it, and only accept() enables it again. One
++			// missed delivery therefore parks this thread in a wait that nothing can
++			// end - not a timeout, because there was none, and not accept(), because
++			// it is never reached - and the web interface stops answering for the
++			// rest of the run while connections pile up in the backlog. Nothing
++			// creates this thread a second time, so that state is permanent.
++			// select() reports the socket's current state rather than a transition,
++			// so there is no edge to miss and nothing to re-arm.
++			//
++			// One connection is taken per report, not a drain loop: when more are
++			// queued select() says so again on the next pass. That also stops
++			// accept() from being called with nothing waiting, which the drain loop
++			// did on every single pass.
++			// The last accept error reported and when, so that a condition which
++			// lasts is written to the log once rather than four times a second.
++			int iLastAcceptError = 0;
++			DWORD dwLastAcceptErrorTick = 0;
++			u_long ulNonBlock = 1;
++			if (!ioctlsocket(hSocket, FIONBIO, &ulNonBlock))
++				for (;;) {
++					if (::WaitForSingleObject(s_hTerminate, 0) != WAIT_TIMEOUT)
++						break;
+ 
+-							if (!thePrefs.GetAllowedRemoteAccessIPs().IsEmpty()) {
+-								bool bAllowedIP = false;
+-								for (int i = 0; i < thePrefs.GetAllowedRemoteAccessIPs().GetCount(); ++i) {
+-									if (their_addr.sin_addr.s_addr == thePrefs.GetAllowedRemoteAccessIPs()[i]) {
+-										bAllowedIP = true;
+-										break;
+-									}
+-								}
+-								if (!bAllowedIP) {
+-									LogWarning(_T("Web Interface: Rejected connection attempt from %s"), (LPCTSTR)ipstr(their_addr.sin_addr.s_addr));
+-									VERIFY(!closesocket(hAccepted));
+-									break;
+-								}
++					fd_set stReadable;
++					FD_ZERO(&stReadable);
++					FD_SET(hSocket, &stReadable);
++					// Bounded only so that termination is noticed without a second
++					// waitable object to watch alongside the socket. The value sets
++					// how quickly this thread reacts to shutdown, never whether an
++					// incoming connection is seen.
++					timeval stTimeout = {0, 250 * 1000};
++					const int iReady = select(0, &stReadable, NULL, NULL, &stTimeout);
++					if (iReady == SOCKET_ERROR)
++						break;
++					if (iReady == 0)
++						continue;
++
++					SOCKADDR_IN their_addr;
++					int sin_size = (int)sizeof(SOCKADDR_IN);
++
++					SOCKET hAccepted = accept(hSocket, (LPSOCKADDR)&their_addr, &sin_size);
++					if (INVALID_SOCKET == hAccepted) {
++						// select() reported the socket readable, so an accept that takes
++						// nothing is the ordinary race - another taker, or a peer that gave
++						// up in between - and the next pass waits in select() as usual. Any
++						// other error left the connection that made the socket readable where
++						// it was: select() reports it again at once, so returning straight to
++						// the top would spin this thread for as long as the condition lasts.
++						// Running out of descriptors is the case that matters, and waiting is
++						// the only useful answer to it - the same wait a pass with nothing to
++						// accept costs anyway.
++						const int iAcceptError = ::WSAGetLastError();
++						if (iAcceptError != WSAEWOULDBLOCK) {
++							const DWORD dwNow = ::GetTickCount();
++							if (iAcceptError != iLastAcceptError || dwNow - dwLastAcceptErrorTick >= 60000) {
++								iLastAcceptError = iAcceptError;
++								dwLastAcceptErrorTick = dwNow;
++								LogWarning(_T("Web Interface: Cannot accept a connection - %s"), (LPCTSTR)GetErrorMessage(iAcceptError, 1));
+ 							}
+-
+-							if (thePrefs.GetWSIsEnabled()) {
+-								SocketData *pData = new SocketData;
+-								pData->pThis = pThis;
+-								pData->hSocket = hAccepted;
+-								pData->incomingaddr = their_addr.sin_addr;
+-								// - do NOT use Windows API 'CreateThread' to create a thread which uses MFC/CRT -> lot of mem leaks!
+-								// - 'AfxBeginThread' is excessive for our needs.
+-								CWinThread *pAcceptThread = new CWinThread(WebSocketAcceptedFunc, (LPVOID)pData);
+-								if (!pAcceptThread->CreateThread()) {
+-									delete pAcceptThread;
+-									VERIFY(!closesocket(hAccepted));
+-								}
+-							} else
+-								VERIFY(!closesocket(hAccepted));
++							::Sleep(250);
+ 						}
++						continue;
+ 					}
++					// A connection was taken, so the next failure starts a new spell.
++					iLastAcceptError = 0;
++
++					if (!thePrefs.GetAllowedRemoteAccessIPs().IsEmpty()) {
++						bool bAllowedIP = false;
++						for (int i = 0; i < thePrefs.GetAllowedRemoteAccessIPs().GetCount(); ++i) {
++							if (their_addr.sin_addr.s_addr == thePrefs.GetAllowedRemoteAccessIPs()[i]) {
++								bAllowedIP = true;
++								break;
++							}
++						}
++						if (!bAllowedIP) {
++							LogWarning(_T("Web Interface: Rejected connection attempt from %s"), (LPCTSTR)ipstr(their_addr.sin_addr.s_addr));
++							VERIFY(!closesocket(hAccepted));
++							continue;
++						}
++					}
++
++					if (thePrefs.GetWSIsEnabled()) {
++						SocketData *pData = new SocketData;
++						pData->pThis = pThis;
++						pData->hSocket = hAccepted;
++						pData->incomingaddr = their_addr.sin_addr;
++						// - do NOT use Windows API 'CreateThread' to create a thread which uses MFC/CRT -> lot of mem leaks!
++						// - 'AfxBeginThread' is excessive for our needs.
++						CWinThread *pAcceptThread = new CWinThread(WebSocketAcceptedFunc, (LPVOID)pData);
++						if (!pAcceptThread->CreateThread()) {
++							delete pAcceptThread;
++							VERIFY(!closesocket(hAccepted));
++						}
++					} else
++						VERIFY(!closesocket(hAccepted));
+ 				}
+-				VERIFY(::CloseHandle(hEvent));
+-			}
+ 		}
+ 		VERIFY(!closesocket(hSocket));
+ 	}
