@@ -1,0 +1,19 @@
+diff --git a/misc.h b/misc.h
+index f6e5b076..b859712d 100644
+--- a/misc.h
++++ b/misc.h
+@@ -1660,7 +1660,13 @@ template<> inline void SecureWipeBuffer(word64 *buf, size_t n)
+ 
+ #endif	// CRYPTOPP_BOOL_X64 || CRYPTOPP_BOOL_X86
+ 
+-#if !defined(CRYPTOPP_DISABLE_ASM) && (CRYPTOPP_MSC_VERSION >= 1700) && defined(_M_ARM)
++// C4746: MSVC builds ARM64 with /volatile:iso and flags every plain volatile
++// access there, which is what the generic SecureWipeBuffer() above performs.
++// These specializations already store through the __iso_volatile_store
++// intrinsics the warning asks for, but were limited to 32-bit ARM: _M_ARM is
++// not defined for ARM64, which has _M_ARM64 instead. The stores are volatile
++// in both forms, so the wipe survives optimization exactly as before.
++#if !defined(CRYPTOPP_DISABLE_ASM) && (CRYPTOPP_MSC_VERSION >= 1700) && (defined(_M_ARM) || defined(_M_ARM64))
+ template<> inline void SecureWipeBuffer(byte *buf, size_t n)
+ {
+ 	char *p = reinterpret_cast<char*>(buf+n);
