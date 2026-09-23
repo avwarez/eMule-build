@@ -1,5 +1,92 @@
+diff --git a/srchybrid/ArchiveRecovery.h b/srchybrid/ArchiveRecovery.h
+index e1b68f4..c8fbd2e 100644
+--- a/srchybrid/ArchiveRecovery.h
++++ b/srchybrid/ArchiveRecovery.h
+@@ -15,6 +15,7 @@
+ //along with this program; if not, write to the Free Software
+ //Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ #pragma once
++#include <atomic>
+ 
+ class CPartFile;
+ class CShareableFile;
+@@ -401,7 +402,7 @@ struct archiveScannerThreadParams_s
+ 	HWND			ownerHwnd;
+ 	HWND			progressHwnd;
+ 	unsigned		curProgress;
+-	volatile bool	m_bIsValid;
++	std::atomic<bool>	m_bIsValid;
+ };
+ 
+ class CArchiveRecovery
+diff --git a/srchybrid/HttpDownloadDlg.h b/srchybrid/HttpDownloadDlg.h
+index 4546c1c..f854467 100644
+--- a/srchybrid/HttpDownloadDlg.h
++++ b/srchybrid/HttpDownloadDlg.h
+@@ -11,6 +11,7 @@ All rights reserved.
+ 
+ ////////////////////////////////// Macros ///////////////////////////
+ #pragma once
++#include <atomic>
+ #include <afxinet.h>
+ 
+ 
+@@ -93,6 +94,6 @@ protected:
+ 	static ULONGLONG sm_ullWinInetVer;
+ 	DWORD			m_dwServiceType;
+ 	INTERNET_PORT	m_nPort;
+-	volatile bool	m_bAbort;
++	std::atomic<bool>	m_bAbort;
+ 	bool			m_bSafeToClose;
+ };
+\ No newline at end of file
+diff --git a/srchybrid/LastCommonRouteFinder.cpp b/srchybrid/LastCommonRouteFinder.cpp
+index 20e9add..35d11dc 100644
+--- a/srchybrid/LastCommonRouteFinder.cpp
++++ b/srchybrid/LastCommonRouteFinder.cpp
+@@ -603,7 +603,7 @@ UINT LastCommonRouteFinder::RunInternal()
+ 				prefsLocker.Unlock();
+ 
+ 				DWORD diffTick = ::GetTickCount();
+-				if (::InterlockedExchange8(&m_initiateFastReactionPeriod, 0)) {
++				if (m_initiateFastReactionPeriod.exchange(0)) {
+ 					const CString &s(GetResString(IDS_USS_MANUALUPLOADLIMITDETECTED));
+ 					theApp.QueueDebugLogLine(false, s);
+ 					theApp.QueueLogLine(true, s);
+diff --git a/srchybrid/LastCommonRouteFinder.h b/srchybrid/LastCommonRouteFinder.h
+index 7e731c2..1f7fe83 100644
+--- a/srchybrid/LastCommonRouteFinder.h
++++ b/srchybrid/LastCommonRouteFinder.h
+@@ -15,6 +15,7 @@
+ //along with this program; if not, write to the Free Software
+ //Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ #pragma once
++#include <atomic>
+ 
+ class CServer;
+ class CUpDownClient;
+@@ -62,7 +63,7 @@ public:
+ 	bool AcceptNewClient() const				{ return acceptNewClient || !m_enabled; }
+ 
+ 	bool SetPrefs(const CurrentParamStruct &cur);
+-	void InitiateFastReactionPeriod()			{ ::InterlockedExchange8(&m_initiateFastReactionPeriod, 1); }
++	void InitiateFastReactionPeriod()			{ m_initiateFastReactionPeriod.exchange(1); }
+ 
+ 	uint32 GetUpload() const					{ return m_upload; }
+ private:
+@@ -107,8 +108,8 @@ private:
+ 	uint32 m_lowestPing;
+ 	UINT   m_uState;
+ 
+-	volatile CHAR m_initiateFastReactionPeriod;
+-	volatile bool m_bRun;
++	std::atomic<CHAR> m_initiateFastReactionPeriod;
++	std::atomic<bool> m_bRun;
+ 	bool m_enabled;
+ 	bool m_bUseMillisecondPingTolerance;
+ 	bool acceptNewClient;
 diff --git a/srchybrid/PartFile.h b/srchybrid/PartFile.h
-index f907c20..2f992e9 100644
+index f907c20..e8d27d2 100644
 --- a/srchybrid/PartFile.h
 +++ b/srchybrid/PartFile.h
 @@ -15,6 +15,7 @@
@@ -10,6 +97,17 @@ index f907c20..2f992e9 100644
  #include "KnownFile.h"
  #include "DeadSourceList.h"
  #include "CorruptionBlackBox.h"
+@@ -340,8 +341,8 @@ public:
+ 	uint16	src_stats[4];
+ 	uint16	net_stats[3];
+ 	uint8	m_TotalSearchesKad;
+-	volatile bool m_bPreviewing;
+-	volatile bool m_bRecoveringArchive; // Is archive recovery in progress
++	std::atomic<bool> m_bPreviewing;
++	std::atomic<bool> m_bRecoveringArchive; // Is archive recovery in progress
+ 	bool	m_bLocalSrcReqQueued;
+ 	bool	srcarevisible;				// used for downloadlistctrl
+ 	bool	m_bMD4HashsetNeeded;
 @@ -384,7 +385,7 @@ private:
  	time_t	m_nDlActiveTime;
  	time_t	m_tLastModified;	// last file modification time (NT's version of UTC), to be used for stats only!
@@ -28,6 +126,58 @@ index f907c20..2f992e9 100644
  	byte	m_refresh; //delay counter for display
  	uint8	m_iDownPriority;
  	bool	m_paused;
+diff --git a/srchybrid/PartFileWriteThread.cpp b/srchybrid/PartFileWriteThread.cpp
+index 7a762d2..91e41d5 100644
+--- a/srchybrid/PartFileWriteThread.cpp
++++ b/srchybrid/PartFileWriteThread.cpp
+@@ -82,7 +82,7 @@ UINT CPartFileWriteThread::RunInternal()
+ 			m_lockFlushList.Lock();
+ 			while (!m_FlushList.IsEmpty())
+ 				m_listToWrite.AddTail(m_FlushList.RemoveHead());
+-			InterlockedExchange8(&m_bNewData, 0);
++			m_bNewData.exchange(0);
+ 			m_lockFlushList.Unlock();
+ 		}
+ 		//start new writes
+@@ -98,7 +98,7 @@ UINT CPartFileWriteThread::RunInternal()
+ 		if (!completionKey) //thread termination
+ 			break;
+ 		m_Run = RUN_IDLE;
+-		if (InterlockedExchange8(&m_bNewData, 0) && m_listPendingIO.IsEmpty())
++		if (m_bNewData.exchange(0) && m_listPendingIO.IsEmpty())
+ 			PostQueuedCompletionStatus(m_hPort, 0, WAKEUP, NULL);
+ 	}
+ 	m_Run = RUN_STOP;
+@@ -231,5 +231,5 @@ void CPartFileWriteThread::WakeUpCall()
+ 	if (m_Run == RUN_IDLE && m_listPendingIO.IsEmpty())
+ 		PostQueuedCompletionStatus(m_hPort, 0, WAKEUP, NULL);
+ 	else
+-		InterlockedExchange8(&m_bNewData, 1);
++		m_bNewData.exchange(1);
+ }
+\ No newline at end of file
+diff --git a/srchybrid/PartFileWriteThread.h b/srchybrid/PartFileWriteThread.h
+index 901748f..d16a5b5 100644
+--- a/srchybrid/PartFileWriteThread.h
++++ b/srchybrid/PartFileWriteThread.h
+@@ -15,6 +15,7 @@
+ //along with this program; if not, write to the Free Software
+ //Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ #pragma once
++#include <atomic>
+ 
+ struct PartFileBufferedData;
+ 
+@@ -63,6 +64,6 @@ private:
+ 
+ 	CEvent	m_eventThreadEnded;
+ 	HANDLE	m_hPort;
+-	volatile char m_Run; //0 - not running; 1 - idle; 2 - processing
+-	volatile char m_bNewData;
++	std::atomic<char> m_Run; //0 - not running; 1 - idle; 2 - processing
++	std::atomic<char> m_bNewData;
+ };
+\ No newline at end of file
 diff --git a/srchybrid/SharedFilesCtrl.h b/srchybrid/SharedFilesCtrl.h
 index 9296e85..1a0e163 100644
 --- a/srchybrid/SharedFilesCtrl.h
@@ -49,6 +199,20 @@ index 9296e85..1a0e163 100644
  	CToolTipCtrlX	*m_pToolTip;
  	CTypedPtrList<CPtrList, CShareableFile*>	liTempShareableFilesInDir;
  	CShareableFile	*m_pHighlightedItem;
+diff --git a/srchybrid/Stdafx.h b/srchybrid/Stdafx.h
+index 4e980f9..bdd40ab 100644
+--- a/srchybrid/Stdafx.h
++++ b/srchybrid/Stdafx.h
+@@ -122,9 +122,6 @@
+ #if _MSC_VER>=1400
+ #pragma warning(disable:4738) // storing 32-bit float result in memory, possible loss of performance
+ #endif
+-#ifdef _M_ARM64
+-#pragma warning(disable:4746) // volatile access of '<expression>' is subject to /volatile:[iso|ms] setting
+-#endif
+ #pragma warning(disable:4820) // <n> bytes padding added after member <member>
+ #pragma warning(disable:4917) // a GUID can only be associated with a class, interface or namespace
+ #if _MSC_VER>=1900
 diff --git a/srchybrid/UPnPImpl.h b/srchybrid/UPnPImpl.h
 index 16cec42..bf802f4 100644
 --- a/srchybrid/UPnPImpl.h
@@ -70,6 +234,99 @@ index 16cec42..bf802f4 100644
  	uint16 m_nOldTCPPort;
  	uint16 m_nOldTCPWebPort;
  	uint16 m_nOldUDPPort;
+diff --git a/srchybrid/UPnPImplMiniLib.h b/srchybrid/UPnPImplMiniLib.h
+index a556108..8479edd 100644
+--- a/srchybrid/UPnPImplMiniLib.h
++++ b/srchybrid/UPnPImplMiniLib.h
+@@ -15,6 +15,7 @@
+ //along with this program; if not, write to the Free Software
+ //Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ #pragma once
++#include <atomic>
+ #include "UPnPImpl.h"
+ 
+ struct UPNPUrls;
+@@ -67,5 +68,5 @@ private:
+ 	char m_achWanIP[40];
+ 
+ 	bool m_bSucceededOnce;
+-	volatile bool m_bAbortDiscovery;
++	std::atomic<bool> m_bAbortDiscovery;
+ };
+\ No newline at end of file
+diff --git a/srchybrid/UploadBandwidthThrottler.h b/srchybrid/UploadBandwidthThrottler.h
+index 4a59467..1bd1d4a 100644
+--- a/srchybrid/UploadBandwidthThrottler.h
++++ b/srchybrid/UploadBandwidthThrottler.h
+@@ -15,6 +15,7 @@
+ //along with this program; if not, write to the Free Software
+ //Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ #pragma once
++#include <atomic>
+ 
+ #include <list>
+ #include "ThrottledSocket.h" // ZZ:UploadBandWithThrottler (UDP)
+@@ -77,5 +78,5 @@ private:
+ 	uint64 m_SentBytesSinceLastCallOverhead;
+ 	INT_PTR m_highestNumberOfFullyActivatedSlots;
+ 
+-	volatile bool m_bRun;
++	std::atomic<bool> m_bRun;
+ };
+\ No newline at end of file
+diff --git a/srchybrid/UploadDiskIOThread.cpp b/srchybrid/UploadDiskIOThread.cpp
+index e72b5cd..5bfb746 100644
+--- a/srchybrid/UploadDiskIOThread.cpp
++++ b/srchybrid/UploadDiskIOThread.cpp
+@@ -101,7 +101,7 @@ UINT CUploadDiskIOThread::RunInternal()
+ 		pcsUploadListRead->Lock();
+ 		for (POSITION pos = rUploadList.GetHeadPosition(); pos != NULL;)
+ 			StartCreateNextBlockPackage(rUploadList.GetNext(pos));
+-		InterlockedExchange8(&m_bNewData, 0);
++		m_bNewData.exchange(0);
+ 		pcsUploadListRead->Unlock();
+ 
+ 		//check completed I/O
+@@ -120,7 +120,7 @@ UINT CUploadDiskIOThread::RunInternal()
+ 			theApp.uploadBandwidthThrottler->NewUploadDataAvailable();
+ 			m_bSignalThrottler = false;
+ 		}
+-		if (InterlockedExchange8(&m_bNewData, 0) && m_listPendingIO.IsEmpty())
++		if (m_bNewData.exchange(0) && m_listPendingIO.IsEmpty())
+ 			PostQueuedCompletionStatus(m_hPort, 0, WAKEUP, NULL);
+ 	}
+ 	m_Run = RUN_STOP;
+@@ -484,5 +484,5 @@ void CUploadDiskIOThread::WakeUpCall()
+ 	if (m_Run == RUN_IDLE && m_listPendingIO.IsEmpty())
+ 		PostQueuedCompletionStatus(m_hPort, 0, WAKEUP, NULL);
+ 	else
+-		InterlockedExchange8(&m_bNewData, 1);
++		m_bNewData.exchange(1);
+ }
+\ No newline at end of file
+diff --git a/srchybrid/UploadDiskIOThread.h b/srchybrid/UploadDiskIOThread.h
+index 710756c..13d2bcc 100644
+--- a/srchybrid/UploadDiskIOThread.h
++++ b/srchybrid/UploadDiskIOThread.h
+@@ -15,6 +15,7 @@
+ //along with this program; if not, write to the Free Software
+ //Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ #pragma once
++#include <atomic>
+ 
+ class Packet;
+ class CUpDownClient;
+@@ -65,7 +66,7 @@ private:
+ #ifdef _DEBUG
+ 	uint64		dbgDataReadPending;
+ #endif
+-	volatile char m_Run; //0 - not running; 1 - idle; 2 - processing
+-	volatile char m_bNewData;
++	std::atomic<char> m_Run; //0 - not running; 1 - idle; 2 - processing
++	std::atomic<char> m_bNewData;
+ 	bool		m_bSignalThrottler;
+ };
+\ No newline at end of file
 diff --git a/srchybrid/kademlia/kademlia/Indexed.h b/srchybrid/kademlia/kademlia/Indexed.h
 index f5cb612..976db6f 100644
 --- a/srchybrid/kademlia/kademlia/Indexed.h
@@ -93,3 +350,37 @@ index f5cb612..976db6f 100644
  		static CString	m_sSourceFileName;
  		static CString	m_sKeyFileName;
  		static CString	m_sLoadFileName;
+diff --git a/srchybrid/kademlia/kademlia/Kademlia.cpp b/srchybrid/kademlia/kademlia/Kademlia.cpp
+index 096e34c..cb719c7 100644
+--- a/srchybrid/kademlia/kademlia/Kademlia.cpp
++++ b/srchybrid/kademlia/kademlia/Kademlia.cpp
+@@ -71,7 +71,7 @@ time_t		CKademlia::m_tBootstrap;
+ time_t		CKademlia::m_tConsolidate;
+ time_t		CKademlia::m_tExternPortLookup;
+ time_t		CKademlia::m_tLANModeCheck = 0;
+-volatile bool	CKademlia::m_bRunning = false;
++std::atomic<bool>	CKademlia::m_bRunning = false;
+ bool		CKademlia::m_bLANMode = false;
+ CList<uint32> CKademlia::m_liStatsEstUsersProbes;
+ _ContactList CKademlia::s_liBootstrapList;
+diff --git a/srchybrid/kademlia/kademlia/Kademlia.h b/srchybrid/kademlia/kademlia/Kademlia.h
+index 7259b00..5233843 100644
+--- a/srchybrid/kademlia/kademlia/Kademlia.h
++++ b/srchybrid/kademlia/kademlia/Kademlia.h
+@@ -28,6 +28,7 @@ Any mod that changes anything within the Kademlia side will not be allowed to ad
+ their client on the eMule forum.
+ */
+ #pragma once
++#include <atomic>
+ #include "kademlia/routing/Maps.h"
+ 
+ class CSharedFileList;
+@@ -99,7 +100,7 @@ namespace Kademlia
+ 		static time_t m_tConsolidate;
+ 		static time_t m_tExternPortLookup;
+ 		static time_t m_tLANModeCheck;
+-		static volatile bool m_bRunning;
++		static std::atomic<bool> m_bRunning;
+ 		static CList<uint32> m_liStatsEstUsersProbes;
+ 		static bool m_bLANMode;
+ 		static bool	m_bootstrapping; // used for GUI
