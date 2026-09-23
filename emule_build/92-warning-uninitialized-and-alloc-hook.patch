@@ -12,39 +12,62 @@ index 853c775..dece069 100644
  	bool bTimerValid = QueryPerformanceFrequency(&nFrequency);
  	if (bTimerValid)
 diff --git a/srchybrid/Emule.cpp b/srchybrid/Emule.cpp
-index 9bda13f..b16b9ad 100644
+index 9bda13f..a08beb3 100644
 --- a/srchybrid/Emule.cpp
 +++ b/srchybrid/Emule.cpp
-@@ -620,8 +620,10 @@ BOOL CemuleApp::InitInstance()
- 
- 	::CloseHandle(m_hMutexOneInstance);
+@@ -100,7 +100,11 @@ bool g_bLowColorDesktop = false;
  #ifdef _DEBUG
--	if (g_pfnPrevCrtAllocHook)
-+	if (g_pfnPrevCrtAllocHook) {
-+		#pragma warning(suppress: 5039)	// _CrtSetAllocHook is extern "C"; the CRT's previous hook is not ours to qualify
- 		_CrtSetAllocHook(g_pfnPrevCrtAllocHook);
-+	}
+ static CMemoryState oldMemState, newMemState, diffMemState;
  
- 	newMemState.Checkpoint();
- 	if (diffMemState.Difference(oldMemState, newMemState)) {
-@@ -672,10 +674,12 @@ int eMuleAllocHook(int mode, void *pUserData, size_t nSize, int nBlockUse, long
- 	if (!g_allocations.Lookup(pszFileName, count))
- 		count = 0;
- 	if (mode == _HOOK_ALLOC) {
-+		#pragma warning(suppress: 5039)	// _CrtSetAllocHook is extern "C"; the CRT's previous hook is not ours to qualify
- 		_CrtSetAllocHook(g_pfnPrevCrtAllocHook);
- 		g_allocations[pszFileName] = count + 1;
- 		_CrtSetAllocHook(&eMuleAllocHook);
- 	} else if (mode == _HOOK_FREE) {
-+		#pragma warning(suppress: 5039)	// _CrtSetAllocHook is extern "C"; the CRT's previous hook is not ours to qualify
- 		_CrtSetAllocHook(g_pfnPrevCrtAllocHook);
- 		g_allocations[pszFileName] = count - 1;
- 		_CrtSetAllocHook(&eMuleAllocHook);
+-_CRT_ALLOC_HOOK g_pfnPrevCrtAllocHook = NULL;
++// The CRT calls an allocation hook from C code, so a hook must never throw. The
++// previous hook is kept in a noexcept type that says so: it goes back to the
++// extern "C" _CrtSetAllocHook, and C5039 asks for exactly that guarantee.
++typedef int (__cdecl *NoThrowCrtAllocHook)(int, void*, size_t, int, long, const unsigned char*, int) noexcept;
++NoThrowCrtAllocHook g_pfnPrevCrtAllocHook = NULL;
+ CMap<const unsigned char*, const unsigned char*, UINT, UINT> g_allocations;
+ int eMuleAllocHook(int mode, void *pUserData, size_t nSize, int nBlockUse, long lRequest, const unsigned char *pszFileName, int nLine) noexcept;
+ 
+@@ -415,7 +419,7 @@ BOOL CemuleApp::InitInstance()
+ 	oldMemState.Checkpoint();
+ 	// Installing that memory debug code works fine in Debug builds when running within VS Debugger,
+ 	// but some other test applications don't like that all....
+-	//g_pfnPrevCrtAllocHook = _CrtSetAllocHook(&eMuleAllocHook);
++	//g_pfnPrevCrtAllocHook = (NoThrowCrtAllocHook)_CrtSetAllocHook(&eMuleAllocHook);
+ #endif
+ 	//afxMemDF = allocMemDF | delayFreeMemDF;
+ 
+diff --git a/srchybrid/Statistics.cpp b/srchybrid/Statistics.cpp
+index 2d830e5..4a0dd9b 100644
+--- a/srchybrid/Statistics.cpp
++++ b/srchybrid/Statistics.cpp
+@@ -26,7 +26,7 @@ static char THIS_FILE[] = __FILE__;
+ #endif
+ 
+ #ifdef _DEBUG
+-extern _CRT_ALLOC_HOOK g_pfnPrevCrtAllocHook;
++extern int (__cdecl *g_pfnPrevCrtAllocHook)(int, void*, size_t, int, long, const unsigned char*, int) noexcept;
+ #endif
+ 
+ #define MAXAVERAGETIME	SEC2MS(40)
+diff --git a/srchybrid/StatisticsDlg.cpp b/srchybrid/StatisticsDlg.cpp
+index 0861110..b8a7b78 100644
+--- a/srchybrid/StatisticsDlg.cpp
++++ b/srchybrid/StatisticsDlg.cpp
+@@ -42,7 +42,7 @@ static char THIS_FILE[] = __FILE__;
+ #endif
+ 
+ #ifdef _DEBUG
+-extern _CRT_ALLOC_HOOK g_pfnPrevCrtAllocHook;
++extern int (__cdecl *g_pfnPrevCrtAllocHook)(int, void*, size_t, int, long, const unsigned char*, int) noexcept;
+ #endif
+ 
+ 
 diff --git a/srchybrid/WebServer.cpp b/srchybrid/WebServer.cpp
-index f737842..c380ea5 100644
+index 35996bc..9f34aff 100644
 --- a/srchybrid/WebServer.cpp
 +++ b/srchybrid/WebServer.cpp
-@@ -458,7 +458,7 @@ void CWebServer::_ProcessURL(const ThreadData &Data)
+@@ -450,7 +450,7 @@ void CWebServer::_ProcessURL(const ThreadData &Data)
  			_RemoveSession(Data, lSession);
  
  		TCHAR *gzipOut = NULL;
