@@ -1,0 +1,156 @@
+diff --git a/ec2n.h b/ec2n.h
+index 1da17842..6524bb5e 100644
+--- a/ec2n.h
++++ b/ec2n.h
+@@ -17,7 +17,7 @@
+ 
+ #if CRYPTOPP_MSC_VERSION
+ # pragma warning(push)
+-# pragma warning(disable: 4231 4275)
++# pragma warning(disable: 4275)
+ #endif
+ 
+ NAMESPACE_BEGIN(CryptoPP)
+diff --git a/eccrypto.h b/eccrypto.h
+index 0ca1bbb1..a21774fd 100644
+--- a/eccrypto.h
++++ b/eccrypto.h
+@@ -26,7 +26,7 @@
+ 
+ #if CRYPTOPP_MSC_VERSION
+ # pragma warning(push)
+-# pragma warning(disable: 4231 4275)
++# pragma warning(disable: 4275)
+ #endif
+ 
+ NAMESPACE_BEGIN(CryptoPP)
+diff --git a/ecp.h b/ecp.h
+index 1dc02ab0..b4964959 100644
+--- a/ecp.h
++++ b/ecp.h
+@@ -17,7 +17,7 @@
+ 
+ #if CRYPTOPP_MSC_VERSION
+ # pragma warning(push)
+-# pragma warning(disable: 4231 4275)
++# pragma warning(disable: 4275)
+ #endif
+ 
+ NAMESPACE_BEGIN(CryptoPP)
+diff --git a/filters.h b/filters.h
+index d81be6c3..cdc64c51 100644
+--- a/filters.h
++++ b/filters.h
+@@ -10,7 +10,7 @@
+ 
+ #if CRYPTOPP_MSC_VERSION
+ # pragma warning(push)
+-# pragma warning(disable: 4127 4189 4231 4275 4514)
++# pragma warning(disable: 4127 4189 4275 4514)
+ #endif
+ 
+ #include "cryptlib.h"
+diff --git a/gf2n.h b/gf2n.h
+index 4aef31ee..cec701ce 100644
+--- a/gf2n.h
++++ b/gf2n.h
+@@ -16,7 +16,7 @@
+ 
+ #if CRYPTOPP_MSC_VERSION
+ # pragma warning(push)
+-# pragma warning(disable: 4231 4275)
++# pragma warning(disable: 4275)
+ #endif
+ 
+ NAMESPACE_BEGIN(CryptoPP)
+diff --git a/gfpcrypt.h b/gfpcrypt.h
+index b4ac0bf6..e7a6dabe 100644
+--- a/gfpcrypt.h
++++ b/gfpcrypt.h
+@@ -12,7 +12,7 @@
+ 
+ #if CRYPTOPP_MSC_VERSION
+ # pragma warning(push)
+-# pragma warning(disable: 4189 4231 4275)
++# pragma warning(disable: 4189 4275)
+ #endif
+ 
+ #include "cryptlib.h"
+diff --git a/iterhash.h b/iterhash.h
+index 49d32585..b0c5ad34 100644
+--- a/iterhash.h
++++ b/iterhash.h
+@@ -13,7 +13,7 @@
+ 
+ #if CRYPTOPP_MSC_VERSION
+ # pragma warning(push)
+-# pragma warning(disable: 4231 4275)
++# pragma warning(disable: 4275)
+ # if (CRYPTOPP_MSC_VERSION >= 1400)
+ #  pragma warning(disable: 6011 6386 28193)
+ # endif
+diff --git a/modarith.h b/modarith.h
+index a92aafe9..e83b0a98 100644
+--- a/modarith.h
++++ b/modarith.h
+@@ -16,7 +16,7 @@
+ 
+ #if CRYPTOPP_MSC_VERSION
+ # pragma warning(push)
+-# pragma warning(disable: 4231 4275)
++# pragma warning(disable: 4275)
+ #endif
+ 
+ NAMESPACE_BEGIN(CryptoPP)
+diff --git a/modes.h b/modes.h
+index baa6f865..730fb362 100644
+--- a/modes.h
++++ b/modes.h
+@@ -22,7 +22,7 @@
+ 
+ #if CRYPTOPP_MSC_VERSION
+ # pragma warning(push)
+-# pragma warning(disable: 4231 4275)
++# pragma warning(disable: 4275)
+ # if (CRYPTOPP_MSC_VERSION >= 1400)
+ #  pragma warning(disable: 6011 6386 28193)
+ # endif
+diff --git a/modexppc.h b/modexppc.h
+index 5e8dd676..ebb2206f 100644
+--- a/modexppc.h
++++ b/modexppc.h
+@@ -11,7 +11,7 @@
+ 
+ #if CRYPTOPP_MSC_VERSION
+ # pragma warning(push)
+-# pragma warning(disable: 4231 4275)
++# pragma warning(disable: 4275)
+ #endif
+ 
+ NAMESPACE_BEGIN(CryptoPP)
+diff --git a/secblock.h b/secblock.h
+index 5ab920f9..78d0ae2d 100644
+--- a/secblock.h
++++ b/secblock.h
+@@ -13,7 +13,7 @@
+ 
+ #if defined(CRYPTOPP_MSC_VERSION)
+ # pragma warning(push)
+-# pragma warning(disable: 4231 4275 4700)
++# pragma warning(disable: 4275 4700)
+ # if (CRYPTOPP_MSC_VERSION >= 1400)
+ #  pragma warning(disable: 6011 6386 28193)
+ # endif
+diff --git a/strciphr.h b/strciphr.h
+index 710944fc..2c3292f0 100644
+--- a/strciphr.h
++++ b/strciphr.h
+@@ -32,7 +32,7 @@
+ 
+ #if CRYPTOPP_MSC_VERSION
+ # pragma warning(push)
+-# pragma warning(disable: 4127 4189 4231 4275)
++# pragma warning(disable: 4127 4189 4275)
+ #endif
+ 
+ #include "cryptlib.h"
