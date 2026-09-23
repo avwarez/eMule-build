@@ -26,62 +26,26 @@ index a25e659..1818b9e 100644
 \ No newline at end of file
 +};
 \ No newline at end of file
-diff --git a/srchybrid/Parser.cpp b/srchybrid/Parser.cpp
-index c0e1f45..92f4072 100644
---- a/srchybrid/Parser.cpp
-+++ b/srchybrid/Parser.cpp
-@@ -151,8 +151,6 @@ int yyerrorf(LPCTSTR errstr, ...);
+diff --git a/srchybrid/Statistics.cpp b/srchybrid/Statistics.cpp
+index 2d830e5..c7c389d 100644
+--- a/srchybrid/Statistics.cpp
++++ b/srchybrid/Statistics.cpp
+@@ -424,9 +424,6 @@ int AFX_CDECL AfxNewHandler(size_t /* nSize */)
+ 	return 0;
+ }
  
- #pragma warning(push)
- #pragma warning(disable:4065) // switch statement contains 'default' but no 'case' labels
--#pragma warning(disable:4102) // 'yyerrlab1' : unreferenced label
--#pragma warning(disable:4127) // conditional expression is constant
- #pragma warning(disable:4242) // conversion from <type1> to <type1>, possible loss of data
- #pragma warning(disable:4244) // conversion from <type1> to <type2>, possible loss of data
- #pragma warning(disable:4702) // unreachable code
-diff --git a/srchybrid/Parser.y b/srchybrid/Parser.y
-index 4aa6004..56e1fcb 100644
---- a/srchybrid/Parser.y
-+++ b/srchybrid/Parser.y
-@@ -21,8 +21,6 @@ int yyerrorf(LPCTSTR errstr, ...);
+-#pragma warning(push)
+-#pragma warning(disable:4273)
+-
+ _PNH _afxNewHandler = &AfxNewHandler;
  
- #pragma warning(push)
- #pragma warning(disable:4065) // switch statement contains 'default' but no 'case' labels
--#pragma warning(disable:4102) // 'yyerrlab1' : unreferenced label
--#pragma warning(disable:4127) // conditional expression is constant
- #pragma warning(disable:4242) // conversion from <type1> to <type1>, possible loss of data
- #pragma warning(disable:4244) // conversion from <type1> to <type2>, possible loss of data
- #pragma warning(disable:4702) // unreachable code
-diff --git a/srchybrid/Scanner.cpp b/srchybrid/Scanner.cpp
-index de88570..28f3600 100644
---- a/srchybrid/Scanner.cpp
-+++ b/srchybrid/Scanner.cpp
-@@ -840,10 +840,8 @@ static LPCSTR s_pszLexBuff;
- static bool s_bKeepQuotedStrings;
+ _PNH AFXAPI AfxGetNewHandler()
+@@ -495,5 +492,4 @@ void __cdecl operator delete[](void *p)
+ 	::operator delete(p);
+ }
  
- #pragma warning(push)
--#pragma warning(disable:4127) // conditional expression is constant
- #pragma warning(disable:4242) // conversion from <type1> to <type1>, possible loss of data
- #pragma warning(disable:4244) // conversion from <type1> to <type2>, possible loss of data
--#pragma warning(disable:4505) // unreferenced local function has been removed
- /* flex 2.5.35: There is a bug in the 'noyywrap' option which creates a wrong 'yywrap' macro.
-  *              Need to use an explicit 'yywrap' function to get the same functionality.
-  */
-diff --git a/srchybrid/Scanner.l b/srchybrid/Scanner.l
-index 0be61f3..c47895d 100644
---- a/srchybrid/Scanner.l
-+++ b/srchybrid/Scanner.l
-@@ -31,10 +31,8 @@ static LPCSTR s_pszLexBuff;
- static bool s_bKeepQuotedStrings;
- 
- #pragma warning(push)
--#pragma warning(disable:4127) // conditional expression is constant
- #pragma warning(disable:4242) // conversion from <type1> to <type1>, possible loss of data
- #pragma warning(disable:4244) // conversion from <type1> to <type2>, possible loss of data
--#pragma warning(disable:4505) // unreferenced local function has been removed
- %}
- 
- /* flex 2.5.35: There is a bug in the 'noyywrap' option which creates a wrong 'yywrap' macro.
+-#pragma warning(pop)
+ #endif
 diff --git a/srchybrid/Stdafx.h b/srchybrid/Stdafx.h
 index 4e980f9..bce1dfe 100644
 --- a/srchybrid/Stdafx.h
@@ -134,3 +98,64 @@ index 4e980f9..bce1dfe 100644
  #endif
  
  #if _MSC_VER>=1400
+diff --git a/srchybrid/kademlia/utils/ThreadName.cpp b/srchybrid/kademlia/utils/ThreadName.cpp
+index da756e2..37bc78a 100644
+--- a/srchybrid/kademlia/utils/ThreadName.cpp
++++ b/srchybrid/kademlia/utils/ThreadName.cpp
+@@ -44,8 +44,6 @@ namespace Kademlia
+ #ifdef DEBUG
+ 		if (dwThreadID == NULL)
+ 			return;
+-#pragma warning(push)
+-#pragma warning(disable:6320 6322)
+ 		__try {
+ 			va_list args;
+ 			va_start(args, szThreadName);
+@@ -71,7 +69,6 @@ namespace Kademlia
+ 			delete[] pcharBuffer;
+ 		} __except (EXCEPTION_CONTINUE_EXECUTION) {
+ 		}
+-#pragma warning(pop)
+ #else
+ 		UNREFERENCED_PARAMETER(dwThreadID);
+ 		UNREFERENCED_PARAMETER(szThreadName);
+@@ -82,8 +79,6 @@ namespace Kademlia
+ 	void SetThreadName(LPCSTR szThreadName, ...)
+ 	{
+ #ifdef DEBUG
+-#pragma warning(push)
+-#pragma warning(disable:6320 6322)
+ 		__try {
+ 			va_list args;
+ 			va_start(args, szThreadName);
+@@ -109,7 +104,6 @@ namespace Kademlia
+ 			delete[] pcharBuffer;
+ 		} __except (EXCEPTION_CONTINUE_EXECUTION) {
+ 		}
+-#pragma warning(pop)
+ #else
+ 		UNREFERENCED_PARAMETER(szThreadName);
+ #endif
+diff --git a/srchybrid/qedit.h b/srchybrid/qedit.h
+index 698aeb7..ede722f 100644
+--- a/srchybrid/qedit.h
++++ b/srchybrid/qedit.h
+@@ -5,9 +5,6 @@
+ //
+ //--------------------------------------------------------------------------
+ 
+-#pragma warning(push)
+-#pragma warning( disable: 4049 )  /* more than 64k source lines */
+-
+ /* this ALWAYS GENERATED file contains the definitions for the interfaces */
+ 
+ 
+@@ -19878,5 +19875,4 @@ void                      __RPC_USER  VARIANT_UserFree(__RPC__in unsigned long *
+     #endif
+ 
+ 
+-#endif    // DirectX 8.0 content
+-#pragma warning(pop)
+\ No newline at end of file
++#endif    // DirectX 8.0 content
+\ No newline at end of file
