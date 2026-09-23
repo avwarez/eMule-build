@@ -214,7 +214,7 @@ index a174171..7f88660 100644
  CDownloadClientsCtrl::CDownloadClientsCtrl()
  	: CListCtrlItemWalk(this)
 diff --git a/srchybrid/DownloadListCtrl.cpp b/srchybrid/DownloadListCtrl.cpp
-index 8084367..9ddc504 100644
+index 03acd39..97e935c 100644
 --- a/srchybrid/DownloadListCtrl.cpp
 +++ b/srchybrid/DownloadListCtrl.cpp
 @@ -57,6 +57,8 @@ IMPLEMENT_DYNAMIC(CtrlItem_Struct, CObject)
@@ -235,7 +235,7 @@ index 8084367..9ddc504 100644
  CDownloadListCtrl::CDownloadListCtrl()
  	: CDownloadListListCtrlItemWalk(this)
 diff --git a/srchybrid/EmuleDlg.cpp b/srchybrid/EmuleDlg.cpp
-index ac22135..14b6f2c 100644
+index 5bcb9ac..2066e94 100644
 --- a/srchybrid/EmuleDlg.cpp
 +++ b/srchybrid/EmuleDlg.cpp
 @@ -123,6 +123,8 @@ static const UINT UWM_TASK_BUTTON_CREATED = RegisterWindowMessage(_T("TaskbarBut
@@ -255,17 +255,19 @@ index ac22135..14b6f2c 100644
  
  CemuleDlg::CemuleDlg(CWnd *pParent /*=NULL*/)
  	: CTrayDialog(CemuleDlg::IDD, pParent)
-@@ -376,6 +379,10 @@ BOOL CemuleDlg::OnInitDialog()
+@@ -376,8 +379,10 @@ BOOL CemuleDlg::OnInitDialog()
  		m_bInitedCOM = SUCCEEDED(::CoInitialize(NULL));
  		if (m_bInitedCOM) {
  			typedef BOOL(WINAPI *PChangeWindowMessageFilter)(UINT message, DWORD dwFlag);
-+			// C4191: GetProcAddress returns FARPROC, so every typed use of it is a
-+			// cast between unrelated function types. Same reason as above: the
-+			// suppression only works from inside the .cpp.
-+#pragma warning(suppress: 4191)
- 			PChangeWindowMessageFilter ChangeWindowMessageFilter
- 				= (PChangeWindowMessageFilter)(::GetProcAddress(::GetModuleHandle(_T("user32.dll")), "ChangeWindowMessageFilter"));
+-			PChangeWindowMessageFilter ChangeWindowMessageFilter
+-				= (PChangeWindowMessageFilter)(::GetProcAddress(::GetModuleHandle(_T("user32.dll")), "ChangeWindowMessageFilter"));
++			// C4191: assigned through (FARPROC&) like every other GetProcAddress in eMule,
++			// rather than by casting the FARPROC to an unrelated function type
++			PChangeWindowMessageFilter ChangeWindowMessageFilter;
++			(FARPROC&)ChangeWindowMessageFilter = ::GetProcAddress(::GetModuleHandle(_T("user32.dll")), "ChangeWindowMessageFilter");
  			if (ChangeWindowMessageFilter) {
+ 				ChangeWindowMessageFilter(UWM_TASK_BUTTON_CREATED, 1);
+ 				ChangeWindowMessageFilter(WM_COMMAND, 1);
 diff --git a/srchybrid/FriendListCtrl.cpp b/srchybrid/FriendListCtrl.cpp
 index eea00c1..5578de0 100644
 --- a/srchybrid/FriendListCtrl.cpp
@@ -506,7 +508,7 @@ index 15c6ca3..c6c4786 100644
  CPShtWiz1::CPShtWiz1(UINT nIDCaption, CWnd *pParentWnd, UINT iSelectPage)
  	: CPropertySheetEx(nIDCaption, pParentWnd, iSelectPage)
 diff --git a/srchybrid/SearchResultsWnd.cpp b/srchybrid/SearchResultsWnd.cpp
-index e3b20d8..769cb12 100644
+index eb822ed..d564a23 100644
 --- a/srchybrid/SearchResultsWnd.cpp
 +++ b/srchybrid/SearchResultsWnd.cpp
 @@ -82,6 +82,8 @@ enum ESearchResultImage
@@ -526,7 +528,7 @@ index e3b20d8..769cb12 100644
  
  CSearchResultsWnd::CSearchResultsWnd(CWnd* /*pParent*/)
  	: CResizableFormView(CSearchResultsWnd::IDD)
-@@ -1708,9 +1711,12 @@ void CSearchResultsWnd::SearchRelatedFiles(CPtrList &listFiles)
+@@ -1705,9 +1708,12 @@ void CSearchResultsWnd::SearchRelatedFiles(CPtrList &listFiles)
  ///////////////////////////////////////////////////////////////////////////////
  // CSearchResultsSelector
  
@@ -540,7 +542,7 @@ index e3b20d8..769cb12 100644
  BOOL CSearchResultsSelector::OnCommand(WPARAM wParam, LPARAM lParam)
  {
 diff --git a/srchybrid/SharedFilesCtrl.cpp b/srchybrid/SharedFilesCtrl.cpp
-index e29160b..d080952 100644
+index 4a5cb60..c6019eb 100644
 --- a/srchybrid/SharedFilesCtrl.cpp
 +++ b/srchybrid/SharedFilesCtrl.cpp
 @@ -99,10 +99,13 @@ LPCTSTR CSharedFileDetailsSheet::m_pPshStartPage;
@@ -575,10 +577,10 @@ index e29160b..d080952 100644
  CSharedFilesCtrl::CSharedFilesCtrl()
  	: CListCtrlItemWalk(this)
 diff --git a/srchybrid/StatisticsDlg.cpp b/srchybrid/StatisticsDlg.cpp
-index 0861110..0baeffd 100644
+index b8a7b78..60c745d 100644
 --- a/srchybrid/StatisticsDlg.cpp
 +++ b/srchybrid/StatisticsDlg.cpp
-@@ -50,6 +50,8 @@ extern _CRT_ALLOC_HOOK g_pfnPrevCrtAllocHook;
+@@ -50,6 +50,8 @@ extern int (__cdecl *g_pfnPrevCrtAllocHook)(int, void*, size_t, int, long, const
  
  IMPLEMENT_DYNAMIC(CStatisticsDlg, CDialog)
  
