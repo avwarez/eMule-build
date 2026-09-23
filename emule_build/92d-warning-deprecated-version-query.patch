@@ -1,0 +1,112 @@
+diff --git a/srchybrid/OtherFunctions.cpp b/srchybrid/OtherFunctions.cpp
+index 5cf579a..62e8cc1 100644
+--- a/srchybrid/OtherFunctions.cpp
++++ b/srchybrid/OtherFunctions.cpp
+@@ -22,6 +22,7 @@
+ #include <share.h>
+ #include <ShlObj_core.h>
+ #include <sys/stat.h>
++#include <VersionHelpers.h>
+ #include "emule.h"
+ #include "UpDownClient.h"
+ #include "DownloadQueue.h"
+@@ -669,76 +670,36 @@ UINT GetMaxWindowsTCPConnections()
+ */
+ }
+ 
+-#pragma warning(push)
+-#pragma warning(disable:4996) //GetVersionEx()
++// GetVersionEx() is deprecated. VerifyVersionInfo(), which these helpers wrap,
++// is its documented replacement and is subject to the same manifest rules, so
++// the answers do not change for any Windows version eMule runs on.
+ WORD DetectWinVersion()
+ {
+-	OSVERSIONINFOEX osvi;
+-	osvi.dwOSVersionInfoSize = (DWORD)sizeof(OSVERSIONINFOEX);
+-
+-	if (!GetVersionEx((OSVERSIONINFO*)&osvi)) {
+-		osvi.dwOSVersionInfoSize = (DWORD)sizeof(OSVERSIONINFO);
+-		if (!GetVersionEx((OSVERSIONINFO*)&osvi))
+-			return 0;
+-	}
+-
+-	switch (osvi.dwPlatformId) {
+-	case VER_PLATFORM_WIN32_NT:
+-		if (osvi.dwMajorVersion <= 4)
+-			return _WINVER_NT4_;
+-		if (osvi.dwMajorVersion == 5) {
+-			if (osvi.dwMinorVersion == 0)
+-				return _WINVER_2K_;
+-			if (osvi.dwMinorVersion == 1)
+-				return _WINVER_XP_;
+-			if (osvi.dwMinorVersion == 2)
+-				return _WINVER_2003_;
+-		}
+-		if (osvi.dwMajorVersion == 6) {
+-			if (osvi.dwMinorVersion == 0)
+-				return _WINVER_VISTA_;
+-			if (osvi.dwMinorVersion == 1)
+-				return _WINVER_7_;
+-			if (osvi.dwMinorVersion == 2)
+-				return _WINVER_8_;
+-			if (osvi.dwMinorVersion == 3)
+-				return _WINVER_8_1_;
+-		}
+-		if (osvi.dwMajorVersion == 10 && osvi.dwMinorVersion == 0)
+-			return _WINVER_10_; //for Windows 11 - osvi.dwBuildNumber>=22000
+-		return _WINVER_7_; // never return Win95 if we get the info about an NT system
+-
+-	case VER_PLATFORM_WIN32_WINDOWS:
+-		if (osvi.dwMajorVersion == 4) {
+-			if (osvi.dwMinorVersion == 0)
+-				return _WINVER_95_;
+-			if (osvi.dwMinorVersion == 10)
+-				return _WINVER_98_;
+-			if (osvi.dwMinorVersion == 90)
+-				return _WINVER_ME_;
+-		}
+-	}
+-
+-	return _WINVER_95_;		// there shouldn't be anything lower than this
++	static const struct
++	{
++		WORD wMajor;
++		WORD wMinor;
++		WORD wVersion;
++	} s_aVersions[] = {
++		{10, 0, _WINVER_10_}, //for Windows 11 - build >= 22000
++		{6, 3, _WINVER_8_1_},
++		{6, 2, _WINVER_8_},
++		{6, 1, _WINVER_7_},
++		{6, 0, _WINVER_VISTA_},
++		{5, 2, _WINVER_2003_},
++		{5, 1, _WINVER_XP_},
++		{5, 0, _WINVER_2K_}
++	};
++	for (unsigned i = 0; i < _countof(s_aVersions); ++i)
++		if (IsWindowsVersionOrGreater(s_aVersions[i].wMajor, s_aVersions[i].wMinor, 0))
++			return s_aVersions[i].wVersion;
++	return _WINVER_NT4_;
+ }
+ 
+ bool IsRunningXPSP2()
+ {
+-	OSVERSIONINFOEX osvi;
+-	osvi.dwOSVersionInfoSize = (DWORD)sizeof(OSVERSIONINFOEX);
+-
+-	if (!GetVersionEx((OSVERSIONINFO*)&osvi)) {
+-		osvi.dwOSVersionInfoSize = (DWORD)sizeof(OSVERSIONINFO);
+-		if (!GetVersionEx((OSVERSIONINFO*)&osvi))
+-			return false;
+-	}
+-
+-	return osvi.dwPlatformId == VER_PLATFORM_WIN32_NT
+-		&& osvi.dwMajorVersion == 5
+-		&& osvi.dwMinorVersion == 1
+-		&& osvi.wServicePackMajor >= 2;
++	return IsWindowsVersionOrGreater(5, 1, 2) && !IsWindowsVersionOrGreater(5, 2, 0);
+ }
+-#pragma warning(pop)
+ 
+ bool IsRunningXPSP2OrHigher()
+ {
