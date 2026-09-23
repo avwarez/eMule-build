@@ -198,7 +198,7 @@ set_source_files_properties("${EMULE_SRC_DIR}/Parser.cpp" "${EMULE_SRC_DIR}/Scan
 # ARM64 gets neither - the vcxproj has no ARM64 condition for this file at all
 # (never updated when the ARM64 platform was added), replicated as-is.
 set_source_files_properties("${EMULE_SRC_DIR}/Scanner.cpp" PROPERTIES
-    COMPILE_DEFINITIONS "$<$<STREQUAL:${EMULE_PLATFORM_DIR},Win32>:_USE_32BIT_TIME_T;>$<$<OR:$<STREQUAL:${EMULE_PLATFORM_DIR},Win32>,$<STREQUAL:${EMULE_PLATFORM_DIR},x64>>:_CRT_SECURE_NO_DEPRECATE>"
+    COMPILE_DEFINITIONS "$<$<STREQUAL:${EMULE_PLATFORM_DIR},Win32>:_USE_32BIT_TIME_T;>$<$<OR:$<STREQUAL:${EMULE_PLATFORM_DIR},Win32>,$<STREQUAL:${EMULE_PLATFORM_DIR},x64>>:>"
 )
 
 # ---------------------------------------------------------------------------
