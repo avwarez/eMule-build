@@ -1,0 +1,31 @@
+diff --git a/srchybrid/IrcWnd.cpp b/srchybrid/IrcWnd.cpp
+index 773423c..54b6300 100644
+--- a/srchybrid/IrcWnd.cpp
++++ b/srchybrid/IrcWnd.cpp
+@@ -661,8 +661,6 @@ void CIrcWnd::AddInfoMessageF(const CString &sChannel, LPCTSTR sLine, ...)
+ 	}
+ }
+ 
+-#pragma warning(push)
+-#pragma warning(disable:4125) // decimal digit terminates octal escape sequence
+ void CIrcWnd::AddMessage(const CString &sChannel, const CString &sTargetName, const CString &sLine)
+ {
+ 	if (sChannel.IsEmpty() || sTargetName.IsEmpty())
+@@ -675,14 +673,15 @@ void CIrcWnd::AddMessage(const CString &sChannel, const CString &sTargetName, co
+ 			sOp = pNick->m_sSymbols;
+ 	} else
+ 		pChannel = m_wndChanSel.NewChannel(sChannel, (sChannel[0] == _T('#') ? Channel::ctNormal : Channel::ctPrivate));
+-	LPCTSTR fmt = (m_pIrcMain->GetNick() == sTargetName) ? _T("%s<\00310%s%s\003> %s\r\n") : _T("%s<\002\00310%s%s\003\002> %s\r\n");
++	// \003 is the colour code and "10" its argument: the literal is split so that the
++	// escape cannot run into the digits
++	LPCTSTR fmt = (m_pIrcMain->GetNick() == sTargetName) ? _T("%s<\003") _T("10%s%s\003> %s\r\n") : _T("%s<\002\003") _T("10%s%s\003\002> %s\r\n");
+ 	CString cs;
+ 	cs.Format(fmt, (LPCTSTR)make_time_stamp(), (LPCTSTR)sOp, (LPCTSTR)sTargetName, (LPCTSTR)sLine);
+ 	AddColorLine(cs, pChannel->m_wndLog);
+ 	if (m_wndChanSel.m_pCurrentChannel != pChannel)
+ 		m_wndChanSel.SetActivity(pChannel, true);
+ }
+-#pragma warning(pop)
+ 
+ void CIrcWnd::AddMessageF(const CString &sChannel, const CString &sTargetName, LPCTSTR sLine, ...)
+ {
