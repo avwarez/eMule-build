@@ -199,20 +199,6 @@ index 9296e85..1a0e163 100644
  	CToolTipCtrlX	*m_pToolTip;
  	CTypedPtrList<CPtrList, CShareableFile*>	liTempShareableFilesInDir;
  	CShareableFile	*m_pHighlightedItem;
-diff --git a/srchybrid/Stdafx.h b/srchybrid/Stdafx.h
-index 4e980f9..bdd40ab 100644
---- a/srchybrid/Stdafx.h
-+++ b/srchybrid/Stdafx.h
-@@ -122,9 +122,6 @@
- #if _MSC_VER>=1400
- #pragma warning(disable:4738) // storing 32-bit float result in memory, possible loss of performance
- #endif
--#ifdef _M_ARM64
--#pragma warning(disable:4746) // volatile access of '<expression>' is subject to /volatile:[iso|ms] setting
--#endif
- #pragma warning(disable:4820) // <n> bytes padding added after member <member>
- #pragma warning(disable:4917) // a GUID can only be associated with a class, interface or namespace
- #if _MSC_VER>=1900
 diff --git a/srchybrid/UPnPImpl.h b/srchybrid/UPnPImpl.h
 index 16cec42..bf802f4 100644
 --- a/srchybrid/UPnPImpl.h
