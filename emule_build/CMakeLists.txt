@@ -170,26 +170,17 @@ target_compile_definitions(emule PRIVATE
 # every MSVC warning, including ones off by default at /W4). Kept faithful
 # to the original project rather than toned down.
 #
-# /Wall applies to headers pulled in from third parties too, and that is where
-# almost all of the noise comes from. Measured on run 32569043402 (6 configs):
-# 14826 warning lines, of which 6524 from Crypto++ headers, 5732 from MFC/ATL/
-# CRT headers and ~1900 from the Windows SDK - 96% of the total, none of it
-# actionable here. Only 605 lines (146 unique warnings) came from srchybrid.
-# /external:W0 silences the external ones while /Wall stays fully in force on
-# our own translation units. Crypto++ and zlib are reached through quoted
-# includes (#include "cryptopp/rsa.h", "zlib/zlib.h"), so anglebrackets alone
-# does not cover them and their directories have to be named explicitly.
+# /Wall reaches the third-party headers too (MFC/ATL, the Windows SDK,
+# Crypto++, zlib), exactly as it does in the vcxproj, which has no
+# /external setting. Their warnings are left visible on purpose: a switch
+# that zeroes them would hide what the original project shows.
 target_compile_options(emule PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/Wall>
-    $<$<CXX_COMPILER_ID:MSVC>:/external:anglebrackets>
-    $<$<CXX_COMPILER_ID:MSVC>:/external:W0>
-    $<$<CXX_COMPILER_ID:MSVC>:/external:I${CMAKE_SOURCE_DIR}/cryptopp>
-    $<$<CXX_COMPILER_ID:MSVC>:/external:I${CMAKE_SOURCE_DIR}/zlib>
     # C4755 comes from atlmfc/atlalloc.h but is emitted by the optimizer during
     # code generation, where the warning is no longer attributed to the include
-    # that produced it - so /external:W0 above does not reach it (confirmed by a
-    # build). It reports that an inlined comparison in CStringT cannot take one
-    # of its branches, which is not actionable in a header we do not own.
+    # that produced it (confirmed by a build). It reports that an inlined
+    # comparison in CStringT cannot take one of its branches, which is not
+    # actionable in a header we do not own.
     $<$<CXX_COMPILER_ID:MSVC>:/wd4755>
     $<$<CXX_COMPILER_ID:MSVC>:/Zc:throwingNew>
     $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<STREQUAL:${EMULE_PLATFORM_DIR},ARM64>>:/Zc:enumTypes>
