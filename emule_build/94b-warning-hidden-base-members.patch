@@ -1,0 +1,160 @@
+diff --git a/srchybrid/ChatSelector.cpp b/srchybrid/ChatSelector.cpp
+index a22ca7e..2e394be 100644
+--- a/srchybrid/ChatSelector.cpp
++++ b/srchybrid/ChatSelector.cpp
+@@ -147,7 +147,7 @@ CChatItem* CChatSelector::StartSession(CUpDownClient *client, bool show)
+ 		rcChat.top += 19; // add the height of the tab which is not yet there
+ 	// using ES_NOHIDESEL is actually not needed, but it helps to get around a tricky window update problem!
+ 	// If that style is not specified there are troubles with right clicking into the control for the very first time!?
+-	chatitem->log->Create(WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | WS_CLIPCHILDREN | WS_VSCROLL | ES_MULTILINE | ES_READONLY | ES_NOHIDESEL, rcChat, this, UINT_MAX);
++	chatitem->log->CreateMsftEdit(WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | WS_CLIPCHILDREN | WS_VSCROLL | ES_MULTILINE | ES_READONLY | ES_NOHIDESEL, rcChat, this, UINT_MAX);
+ 	chatitem->log->ModifyStyleEx(0, WS_EX_STATICEDGE, SWP_FRAMECHANGED);
+ 	chatitem->log->SendMessage(EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELONG(3, 3));
+ 	chatitem->log->SetEventMask(chatitem->log->GetEventMask() | ENM_LINK);
+diff --git a/srchybrid/CustomAutoComplete.h b/srchybrid/CustomAutoComplete.h
+index 735d055..aa9a485 100644
+--- a/srchybrid/CustomAutoComplete.h
++++ b/srchybrid/CustomAutoComplete.h
+@@ -22,7 +22,7 @@ private:
+ public:
+ 	CCustomAutoComplete();
+ 	explicit CCustomAutoComplete(const CStringArray &p_sItemList);
+-	~CCustomAutoComplete();
++	virtual ~CCustomAutoComplete();
+ 
+ 	// Implementation
+ public:
+diff --git a/srchybrid/HTRichEditCtrl.cpp b/srchybrid/HTRichEditCtrl.cpp
+index e3b9107..a2d74de 100644
+--- a/srchybrid/HTRichEditCtrl.cpp
++++ b/srchybrid/HTRichEditCtrl.cpp
+@@ -69,7 +69,7 @@ CHTRichEditCtrl::CHTRichEditCtrl()
+ 	m_cfDefault.cbSize = (UINT)sizeof(CHARFORMAT2);
+ }
+ 
+-BOOL CHTRichEditCtrl::Create(DWORD dwStyle, const RECT &rect, CWnd *parent, UINT nID)
++BOOL CHTRichEditCtrl::CreateMsftEdit(DWORD dwStyle, const RECT &rect, CWnd *parent, UINT nID)
+ {
+ 	return static_cast<CWnd*>(this)->Create(MSFTEDIT_CLASS, NULL, dwStyle, rect, parent, nID);
+ }
+diff --git a/srchybrid/HTRichEditCtrl.h b/srchybrid/HTRichEditCtrl.h
+index 2302d87..c376fa1 100644
+--- a/srchybrid/HTRichEditCtrl.h
++++ b/srchybrid/HTRichEditCtrl.h
+@@ -9,7 +9,9 @@ class CHTRichEditCtrl : public CRichEditCtrl
+ public:
+ 	CHTRichEditCtrl();
+ 	virtual	~CHTRichEditCtrl()						{ EnableSmileys(false); }
+-	BOOL Create(DWORD dwStyle, const RECT &rect, CWnd *parent, UINT nID);
++	// Not named Create(): CWnd::Create() is virtual and this is no override of it,
++	// only a same-named overload that would hide it (C4263/C4264).
++	BOOL CreateMsftEdit(DWORD dwStyle, const RECT &rect, CWnd *parent, UINT nID);
+ 
+ 	void Init(LPCTSTR pszTitle, LPCTSTR pszSkinKey = NULL);
+ 	void SetProfileSkinKey(LPCTSTR pszSkinKey)		{ m_strSkinKey = pszSkinKey; }
+diff --git a/srchybrid/IrcChannelTabCtrl.cpp b/srchybrid/IrcChannelTabCtrl.cpp
+index fa99fb4..4688acf 100644
+--- a/srchybrid/IrcChannelTabCtrl.cpp
++++ b/srchybrid/IrcChannelTabCtrl.cpp
+@@ -192,7 +192,7 @@ Channel* CIrcChannelTabCtrl::NewChannel(const CString &sChannel, Channel::EType
+ 			)
+ 		{
+ 			RECT rcTopic = { rcChannelPane.left, rcChannelPane.top, rcChannelPane.right, rcChannelPane.top + IRC_TITLE_WND_DFLT_HEIGHT };
+-			pChannel->m_wndTopic.Create(WS_CHILD | WS_CLIPSIBLINGS | WS_CLIPCHILDREN | WS_VSCROLL | ES_MULTILINE | ES_READONLY | ES_NOHIDESEL, rcTopic, m_pParent, IDC_TITLEWINDOW);
++			pChannel->m_wndTopic.CreateMsftEdit(WS_CHILD | WS_CLIPSIBLINGS | WS_CLIPCHILDREN | WS_VSCROLL | ES_MULTILINE | ES_READONLY | ES_NOHIDESEL, rcTopic, m_pParent, IDC_TITLEWINDOW);
+ 			pChannel->m_wndTopic.ModifyStyleEx(0, WS_EX_STATICEDGE, SWP_FRAMECHANGED);
+ 			pChannel->m_wndTopic.SendMessage(EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELONG(3, 3));
+ 			pChannel->m_wndTopic.SetEventMask(pChannel->m_wndTopic.GetEventMask() | ENM_LINK);
+@@ -228,7 +228,7 @@ Channel* CIrcChannelTabCtrl::NewChannel(const CString &sChannel, Channel::EType
+ 			rcLog.bottom = rcChannelPane.bottom;
+ 		}
+ 
+-		pChannel->m_wndLog.Create(WS_CHILD | WS_CLIPSIBLINGS | WS_CLIPCHILDREN | WS_VSCROLL | ES_MULTILINE | ES_READONLY | ES_NOHIDESEL, rcLog, m_pParent, UINT_MAX);
++		pChannel->m_wndLog.CreateMsftEdit(WS_CHILD | WS_CLIPSIBLINGS | WS_CLIPCHILDREN | WS_VSCROLL | ES_MULTILINE | ES_READONLY | ES_NOHIDESEL, rcLog, m_pParent, UINT_MAX);
+ 		pChannel->m_wndLog.ModifyStyleEx(0, WS_EX_STATICEDGE, SWP_FRAMECHANGED);
+ 		pChannel->m_wndLog.SendMessage(EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELONG(3, 3));
+ 		pChannel->m_wndLog.SetEventMask(pChannel->m_wndLog.GetEventMask() | ENM_LINK);
+diff --git a/srchybrid/IrcMain.cpp b/srchybrid/IrcMain.cpp
+index 8efab03..313347f 100644
+--- a/srchybrid/IrcMain.cpp
++++ b/srchybrid/IrcMain.cpp
+@@ -1498,7 +1498,7 @@ void CIrcMain::Connect()
+ 		m_sUser.Format(_T("USER %s 8 * :%s"), (LPCTSTR)sIdent, (LPCTSTR)m_sVersion);
+ 		m_pIRCSocket->Create();
+ 		m_pwndIRC->AddStatus(GetResString(IDS_CONNECTING));
+-		m_pIRCSocket->Connect();
++		m_pIRCSocket->ConnectToServer();
+ 	} CATCH_DFLT_EXCEPTIONS(_T(__FUNCTION__))
+ 	CATCH_DFLT_ALL(_T(__FUNCTION__))
+ }
+diff --git a/srchybrid/IrcSocket.cpp b/srchybrid/IrcSocket.cpp
+index 25883ef..b2b7f95 100644
+--- a/srchybrid/IrcSocket.cpp
++++ b/srchybrid/IrcSocket.cpp
+@@ -70,7 +70,7 @@ BOOL CIrcSocket::Create(UINT uSocketPort, int iSocketType, long lEvent, const CS
+ 	return CAsyncSocketEx::Create(uSocketPort, iSocketType, lEvent, sSocketAddress);
+ }
+ 
+-void CIrcSocket::Connect()
++void CIrcSocket::ConnectToServer()
+ {
+ 	int iPort;
+ 	CString strServer(thePrefs.GetIRCServer());
+diff --git a/srchybrid/IrcSocket.h b/srchybrid/IrcSocket.h
+index d4fc59b..4f1293b 100644
+--- a/srchybrid/IrcSocket.h
++++ b/srchybrid/IrcSocket.h
+@@ -27,7 +27,8 @@ public:
+ 			, int iSocketType = SOCK_STREAM
+ 			, long lEvent = FD_DEFAULT
+ 			, const CString &sSocketAddress = CString());
+-	void Connect();
++	// Not named Connect(): that would hide the virtual CAsyncSocketEx::Connect() overloads (C4263/C4264).
++	void ConnectToServer();
+ 	int SendString(const CString &sMessage);
+ 
+ 	virtual void OnConnect(int iErrorCode);
+diff --git a/srchybrid/ServerWnd.cpp b/srchybrid/ServerWnd.cpp
+index 279cfe2..3cdebbf 100644
+--- a/srchybrid/ServerWnd.cpp
++++ b/srchybrid/ServerWnd.cpp
+@@ -114,7 +114,7 @@ BOOL CServerWnd::OnInitDialog()
+ 	GetDlgItem(IDC_SERVMSG)->GetWindowRect(&rect);
+ 	GetDlgItem(IDC_SERVMSG)->DestroyWindow();
+ 	::MapWindowPoints(NULL, m_hWnd, (LPPOINT)&rect, 2);
+-	if (servermsgbox->Create(LOG_PANE_RICHEDIT_STYLES, rect, this, IDC_SERVMSG)) {
++	if (servermsgbox->CreateMsftEdit(LOG_PANE_RICHEDIT_STYLES, rect, this, IDC_SERVMSG)) {
+ 		servermsgbox->SetProfileSkinKey(_T("ServerInfoLog"));
+ 		servermsgbox->ModifyStyleEx(0, WS_EX_STATICEDGE, SWP_FRAMECHANGED);
+ 		servermsgbox->SendMessage(EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELONG(3, 3));
+@@ -137,7 +137,7 @@ BOOL CServerWnd::OnInitDialog()
+ 	GetDlgItem(IDC_LOGBOX)->GetWindowRect(&rect);
+ 	GetDlgItem(IDC_LOGBOX)->DestroyWindow();
+ 	::MapWindowPoints(NULL, m_hWnd, (LPPOINT)&rect, 2);
+-	if (logbox->Create(LOG_PANE_RICHEDIT_STYLES, rect, this, IDC_LOGBOX)) {
++	if (logbox->CreateMsftEdit(LOG_PANE_RICHEDIT_STYLES, rect, this, IDC_LOGBOX)) {
+ 		logbox->SetProfileSkinKey(_T("Log"));
+ 		logbox->ModifyStyleEx(0, WS_EX_STATICEDGE, SWP_FRAMECHANGED);
+ 		logbox->SendMessage(EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELONG(3, 3));
+@@ -151,7 +151,7 @@ BOOL CServerWnd::OnInitDialog()
+ 	GetDlgItem(IDC_DEBUG_LOG)->GetWindowRect(&rect);
+ 	GetDlgItem(IDC_DEBUG_LOG)->DestroyWindow();
+ 	::MapWindowPoints(NULL, m_hWnd, (LPPOINT)&rect, 2);
+-	if (debuglog->Create(LOG_PANE_RICHEDIT_STYLES, rect, this, IDC_DEBUG_LOG)) {
++	if (debuglog->CreateMsftEdit(LOG_PANE_RICHEDIT_STYLES, rect, this, IDC_DEBUG_LOG)) {
+ 		debuglog->SetProfileSkinKey(_T("VerboseLog"));
+ 		debuglog->ModifyStyleEx(0, WS_EX_STATICEDGE, SWP_FRAMECHANGED);
+ 		debuglog->SendMessage(EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELONG(3, 3));
+diff --git a/srchybrid/TreePropSheetPgFrameDef.h b/srchybrid/TreePropSheetPgFrameDef.h
+index dbc6c2e..cabd55e 100644
+--- a/srchybrid/TreePropSheetPgFrameDef.h
++++ b/srchybrid/TreePropSheetPgFrameDef.h
+@@ -36,6 +36,8 @@ public:
+ 
+ // overridings
+ 	virtual BOOL Create(DWORD dwWindowStyle, const RECT &rect, CWnd *pwndParent, UINT nID);
++	// keeps CWnd's own Create() overloads visible next to the override above (C4266)
++	using CWnd::Create;
+ 	virtual CWnd* GetWnd();
+ 	virtual void SetCaption(LPCTSTR lpszCaption, HICON hIcon = NULL);
+ 
