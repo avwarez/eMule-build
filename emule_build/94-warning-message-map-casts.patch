@@ -20,7 +20,7 @@ index 1fc309a..a22ca7e 100644
  CChatSelector::CChatSelector()
  	: m_pParent()
 diff --git a/srchybrid/ChatWnd.cpp b/srchybrid/ChatWnd.cpp
-index ff9e808..b577440 100644
+index 8db5b5a..1b0bcd2 100644
 --- a/srchybrid/ChatWnd.cpp
 +++ b/srchybrid/ChatWnd.cpp
 @@ -44,6 +44,8 @@ static char THIS_FILE[] = __FILE__;
@@ -235,10 +235,10 @@ index 03acd39..97e935c 100644
  CDownloadListCtrl::CDownloadListCtrl()
  	: CDownloadListListCtrlItemWalk(this)
 diff --git a/srchybrid/EmuleDlg.cpp b/srchybrid/EmuleDlg.cpp
-index 5bcb9ac..2066e94 100644
+index a07d2d7..9ff5781 100644
 --- a/srchybrid/EmuleDlg.cpp
 +++ b/srchybrid/EmuleDlg.cpp
-@@ -123,6 +123,8 @@ static const UINT UWM_TASK_BUTTON_CREATED = RegisterWindowMessage(_T("TaskbarBut
+@@ -124,6 +124,8 @@ static const UINT UWM_TASK_BUTTON_CREATED = RegisterWindowMessage(_T("TaskbarBut
  
  IMPLEMENT_DYNAMIC(CMsgBoxException, CException)
  
@@ -247,7 +247,7 @@ index 5bcb9ac..2066e94 100644
  BEGIN_MESSAGE_MAP(CemuleDlg, CTrayDialog)
  	///////////////////////////////////////////////////////////////////////////
  	// Windows messages
-@@ -203,6 +205,7 @@ BEGIN_MESSAGE_MAP(CemuleDlg, CTrayDialog)
+@@ -204,6 +206,7 @@ BEGIN_MESSAGE_MAP(CemuleDlg, CTrayDialog)
  #endif
  
  END_MESSAGE_MAP()
@@ -255,19 +255,6 @@ index 5bcb9ac..2066e94 100644
  
  CemuleDlg::CemuleDlg(CWnd *pParent /*=NULL*/)
  	: CTrayDialog(CemuleDlg::IDD, pParent)
-@@ -376,8 +379,10 @@ BOOL CemuleDlg::OnInitDialog()
- 		m_bInitedCOM = SUCCEEDED(::CoInitialize(NULL));
- 		if (m_bInitedCOM) {
- 			typedef BOOL(WINAPI *PChangeWindowMessageFilter)(UINT message, DWORD dwFlag);
--			PChangeWindowMessageFilter ChangeWindowMessageFilter
--				= (PChangeWindowMessageFilter)(::GetProcAddress(::GetModuleHandle(_T("user32.dll")), "ChangeWindowMessageFilter"));
-+			// C4191: assigned through (FARPROC&) like every other GetProcAddress in eMule,
-+			// rather than by casting the FARPROC to an unrelated function type
-+			PChangeWindowMessageFilter ChangeWindowMessageFilter;
-+			(FARPROC&)ChangeWindowMessageFilter = ::GetProcAddress(::GetModuleHandle(_T("user32.dll")), "ChangeWindowMessageFilter");
- 			if (ChangeWindowMessageFilter) {
- 				ChangeWindowMessageFilter(UWM_TASK_BUTTON_CREATED, 1);
- 				ChangeWindowMessageFilter(WM_COMMAND, 1);
 diff --git a/srchybrid/FriendListCtrl.cpp b/srchybrid/FriendListCtrl.cpp
 index eea00c1..5578de0 100644
 --- a/srchybrid/FriendListCtrl.cpp
@@ -328,7 +315,7 @@ index be15813..1dfb001 100644
  CKadSearchListCtrl::CKadSearchListCtrl()
  {
 diff --git a/srchybrid/KademliaWnd.cpp b/srchybrid/KademliaWnd.cpp
-index 3d80522..5f4ff8b 100644
+index b5d422f..43db5e0 100644
 --- a/srchybrid/KademliaWnd.cpp
 +++ b/srchybrid/KademliaWnd.cpp
 @@ -55,6 +55,8 @@ static char THIS_FILE[] = __FILE__;
@@ -370,10 +357,10 @@ index f4ab80c..0b37353 100644
  CMetaDataDlg::CMetaDataDlg()
  	: CResizablePage(CMetaDataDlg::IDD)
 diff --git a/srchybrid/PPgConnection.cpp b/srchybrid/PPgConnection.cpp
-index 9fcf937..be852ea 100644
+index e1c5703..24a3f66 100644
 --- a/srchybrid/PPgConnection.cpp
 +++ b/srchybrid/PPgConnection.cpp
-@@ -42,6 +42,8 @@ static char THIS_FILE[] = __FILE__;
+@@ -41,6 +41,8 @@ static char THIS_FILE[] = __FILE__;
  
  IMPLEMENT_DYNAMIC(CPPgConnection, CPropertyPage)
  
@@ -382,8 +369,8 @@ index 9fcf937..be852ea 100644
  BEGIN_MESSAGE_MAP(CPPgConnection, CPropertyPage)
  	ON_BN_CLICKED(IDC_STARTTEST, OnStartPortTest)
  	ON_EN_CHANGE(IDC_DOWNLOAD_CAP, OnSettingsChange)
-@@ -66,6 +68,7 @@ BEGIN_MESSAGE_MAP(CPPgConnection, CPropertyPage)
- 	ON_BN_CLICKED(IDC_OPENPORTS, OnBnClickedOpenPorts)
+@@ -64,6 +66,7 @@ BEGIN_MESSAGE_MAP(CPPgConnection, CPropertyPage)
+ 	ON_WM_HELPINFO()
  	ON_BN_CLICKED(IDC_PREF_UPNPONSTART, OnSettingsChange)
  END_MESSAGE_MAP()
 +#pragma warning(pop)
@@ -508,7 +495,7 @@ index 15c6ca3..c6c4786 100644
  CPShtWiz1::CPShtWiz1(UINT nIDCaption, CWnd *pParentWnd, UINT iSelectPage)
  	: CPropertySheetEx(nIDCaption, pParentWnd, iSelectPage)
 diff --git a/srchybrid/SearchResultsWnd.cpp b/srchybrid/SearchResultsWnd.cpp
-index eb822ed..d564a23 100644
+index 00cef6f..3509ba6 100644
 --- a/srchybrid/SearchResultsWnd.cpp
 +++ b/srchybrid/SearchResultsWnd.cpp
 @@ -82,6 +82,8 @@ enum ESearchResultImage

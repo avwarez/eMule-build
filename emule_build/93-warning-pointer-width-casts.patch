@@ -1,8 +1,8 @@
 diff --git a/srchybrid/Emule.cpp b/srchybrid/Emule.cpp
-index b16b9ad..e5deb51 100644
+index 31a3b2c..3f48c05 100644
 --- a/srchybrid/Emule.cpp
 +++ b/srchybrid/Emule.cpp
-@@ -986,7 +986,7 @@ int CemuleApp::GetFileTypeSystemImageIdx(LPCTSTR pszFilePath, int iLength /* = -
+@@ -923,7 +923,7 @@ int CemuleApp::GetFileTypeSystemImageIdx(LPCTSTR pszFilePath, int iLength /* = -
  			m_hBigSystemImageList = hResult;
  
  			// Store icon index in local cache
@@ -11,7 +11,7 @@ index b16b9ad..e5deb51 100644
  			return sfi.iIcon;
  		}
  	} else if (!m_aExtToSysImgIdx.Lookup(pszCacheExt, vData)) {
-@@ -1000,12 +1000,12 @@ int CemuleApp::GetFileTypeSystemImageIdx(LPCTSTR pszFilePath, int iLength /* = -
+@@ -937,12 +937,12 @@ int CemuleApp::GetFileTypeSystemImageIdx(LPCTSTR pszFilePath, int iLength /* = -
  		m_hSystemImageList = hResult;
  
  		// Store icon index in local cache
@@ -85,7 +85,7 @@ index ac86a9a..4aceea4 100644
  		} else
  			ASSERT(0);
 diff --git a/srchybrid/SharedDirsTreeCtrl.cpp b/srchybrid/SharedDirsTreeCtrl.cpp
-index 7e57bc6..5637d9e 100644
+index 63eb078..57d98dd 100644
 --- a/srchybrid/SharedDirsTreeCtrl.cpp
 +++ b/srchybrid/SharedDirsTreeCtrl.cpp
 @@ -505,7 +505,7 @@ void CSharedDirsTreeCtrl::OnContextMenu(CWnd*, CPoint point)
@@ -98,7 +98,7 @@ index 7e57bc6..5637d9e 100644
  
  		m_SharedFilesMenu.EnableMenuItem(MP_OPENFOLDER, !pSelectedDir->m_strFullPath.IsEmpty() || pSelectedDir->m_eItemType == SDI_INCOMING || pSelectedDir->m_eItemType == SDI_TEMP || pSelectedDir->m_eItemType == SDI_CATINCOMING ? MF_ENABLED : MF_GRAYED);
 diff --git a/srchybrid/SharedFilesCtrl.cpp b/srchybrid/SharedFilesCtrl.cpp
-index b4cfdd8..e29160b 100644
+index f538ba9..4a5cb60 100644
 --- a/srchybrid/SharedFilesCtrl.cpp
 +++ b/srchybrid/SharedFilesCtrl.cpp
 @@ -737,7 +737,7 @@ void CSharedFilesCtrl::OnContextMenu(CWnd*, CPoint point)
@@ -123,25 +123,3 @@ index 2e767ae..3c450d5 100644
  		, 0));
  	if (!CWnd::CreateEx(0
  				, strClassName
-diff --git a/srchybrid/TitledMenu.cpp b/srchybrid/TitledMenu.cpp
-index 506bdbc..e8ba715 100644
---- a/srchybrid/TitledMenu.cpp
-+++ b/srchybrid/TitledMenu.cpp
-@@ -322,7 +322,7 @@ void CTitledMenu::SetMenuBitmap(UINT nFlags, UINT nIDNewItem, LPCTSTR /*lpszNewI
- 		int nPos;
- 		void *pvIndex;
- 		if (m_mapIconNameToIconIdx.Lookup(strIconLower, pvIndex)) {
--			nPos = (int)pvIndex;
-+			nPos = PtrToInt(pvIndex);
- 			m_mapMenuIdToIconIdx[nIDNewItem] = nPos;
- 		} else {
- 			HICON hIcon = theApp.LoadIcon(strIconLower);
-@@ -330,7 +330,7 @@ void CTitledMenu::SetMenuBitmap(UINT nFlags, UINT nIDNewItem, LPCTSTR /*lpszNewI
- 				return;
- 			nPos = m_ImageList.Add(hIcon);
- 			if (nPos >= 0) {
--				m_mapIconNameToIconIdx[strIconLower] = (void*)nPos;
-+				m_mapIconNameToIconIdx[strIconLower] = IntToPtr(nPos);
- 				m_mapMenuIdToIconIdx[nIDNewItem] = nPos;
- 			}
- 			VERIFY(::DestroyIcon(hIcon));

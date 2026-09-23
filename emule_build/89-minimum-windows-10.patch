@@ -1,0 +1,3531 @@
+diff --git a/srchybrid/BuddyButton.cpp b/srchybrid/BuddyButton.cpp
+index 2183b16..b764d52 100644
+--- a/srchybrid/BuddyButton.cpp
++++ b/srchybrid/BuddyButton.cpp
+@@ -108,10 +108,6 @@ void DestroyIconsArr(HICON *pIcon, size_t cnt)
+ 
+ bool InitAttachedBrowseButton(HWND hwndButton, HICON &ricoBrowse)
+ {
+-	// Showing an icon button works for all Windows versions *except* Windows XP w/ active styles
+-	if (theApp.IsXPThemeActive())
+-		return false;
+-
+ 	if (ricoBrowse == NULL) {
+ 		ricoBrowse = theApp.LoadIcon(_T("BrowseFolderSmall"));
+ 		if (ricoBrowse == NULL)
+diff --git a/srchybrid/ChatWnd.cpp b/srchybrid/ChatWnd.cpp
+index ff9e808..8db5b5a 100644
+--- a/srchybrid/ChatWnd.cpp
++++ b/srchybrid/ChatWnd.cpp
+@@ -185,7 +185,7 @@ BOOL CChatWnd::OnInitDialog()
+ 	m_wndSplitterHorz.CreateWnd(WS_CHILD | WS_VISIBLE, rcSpl, this, IDC_SPLITTER_FRIEND);
+ 
+ 	// Vista: Remove the TBSTYLE_TRANSPARENT to avoid flickering (can be done only after the toolbar was initially created with TBSTYLE_TRANSPARENT !?)
+-	m_wndFormat.ModifyStyle((theApp.m_ullComCtrlVer >= MAKEDLLVERULL(6, 16, 0, 0)) ? TBSTYLE_TRANSPARENT : 0, TBSTYLE_TOOLTIPS);
++	m_wndFormat.ModifyStyle(TBSTYLE_TRANSPARENT, TBSTYLE_TOOLTIPS);
+ 	m_wndFormat.SetExtendedStyle(m_wndFormat.GetExtendedStyle() | TBSTYLE_EX_MIXEDBUTTONS);
+ 	TBBUTTON atb[1] = {};
+ 	//atb[0].iBitmap = 0;
+diff --git a/srchybrid/Emule.cpp b/srchybrid/Emule.cpp
+index 9bda13f..c1d9092 100644
+--- a/srchybrid/Emule.cpp
++++ b/srchybrid/Emule.cpp
+@@ -55,11 +55,9 @@
+ #include "Server.h"
+ #include "ED2KLink.h"
+ #include "Preferences.h"
+-#include "secrunasuser.h"
+ #include "SafeFile.h"
+ #include "emuleDlg.h"
+ #include "enbitmap.h"
+-#include "FirewallOpener.h"
+ #include "StringConversion.h"
+ #include "Log.h"
+ #include "Collection.h"
+@@ -223,18 +221,11 @@ static void InitDEP()
+ ///////////////////////////////////////////////////////////////////////////////
+ // Heap Corruption Detection
+ //
+-// For Windows XP SP3 and later. Does *not* have any performance impact!
++// Does *not* have any performance impact!
+ //
+-#ifndef HeapEnableTerminationOnCorruption
+-#define HeapEnableTerminationOnCorruption (HEAP_INFORMATION_CLASS)1
+-#endif//!HeapEnableTerminationOnCorruption
+-
+ static void InitHeapCorruptionDetection()
+ {
+-	BOOL(WINAPI *pfnHeapSetInformation)(HANDLE HeapHandle, HEAP_INFORMATION_CLASS HeapInformationClass, PVOID HeapInformation, SIZE_T HeapInformationLength);
+-	(FARPROC &)pfnHeapSetInformation = ::GetProcAddress(::GetModuleHandle(_T("kernel32")), "HeapSetInformation");
+-	if (pfnHeapSetInformation)
+-		(*pfnHeapSetInformation)(NULL, HeapEnableTerminationOnCorruption, NULL, 0);
++	::HeapSetInformation(NULL, HeapEnableTerminationOnCorruption, NULL, 0);
+ }
+ 
+ 
+@@ -278,7 +269,6 @@ END_MESSAGE_MAP()
+ CemuleApp::CemuleApp(LPCTSTR lpszAppName)
+ 	: CWinApp(lpszAppName)
+ 	, emuledlg()
+-	, m_ullComCtrlVer(MAKEDLLVERULL(4, 0, 0, 0))
+ 	, m_iDfltImageListColorFlags(ILC_COLOR)
+ 	, m_app_state(APP_STATE_STARTING)
+ 	, m_hSystemImageList()
+@@ -444,25 +434,7 @@ BOOL CemuleApp::InitInstance()
+ 	///////////////////////////////////////////////////////////////////////////
+ 	// Common Controls initialization
+ 	//
+-	//						Mjr Min
+-	// ----------------------------
+-	// W98 SE, IE5			5	8
+-	// W2K SP4, IE6 SP1		5	81
+-	// XP SP2				6   0
+-	// XP SP3				6   0
+-	// Vista SP1			6   16
+ 	::InitCommonControls();
+-	switch (thePrefs.GetWindowsVersion()) {
+-	case _WINVER_2K_:
+-		m_ullComCtrlVer = MAKEDLLVERULL(5, 81, 0, 0);
+-		break;
+-	case _WINVER_XP_:
+-	case _WINVER_2003_:
+-		m_ullComCtrlVer = MAKEDLLVERULL(6, 0, 0, 0);
+-		break;
+-	default:  //Vista .. Win11
+-		m_ullComCtrlVer = MAKEDLLVERULL(6, 16, 0, 0);
+-	};
+ 
+ 	m_sizSmallSystemIcon.SetSize(::GetSystemMetrics(SM_CXSMICON), ::GetSystemMetrics(SM_CYSMICON));
+ 	UpdateLargeIconSize();
+@@ -494,17 +466,6 @@ BOOL CemuleApp::InitInstance()
+ 	thePrefs.Init();
+ 	theStats.Init();
+ 
+-	// check if we have to restart eMule as Secure user
+-	if (thePrefs.IsRunAsUserEnabled()) {
+-		CSecRunAsUser rau;
+-		eResult res = rau.RestartSecure();
+-		if (res == RES_OK_NEED_RESTART)
+-			return FALSE; // emule restart as secure user, kill this instance
+-		if (res == RES_FAILED)
+-			// something went wrong
+-			theApp.QueueLogLine(false, GetResString(IDS_RAU_FAILED), (LPCWSTR)rau.GetCurrentUserW());
+-	}
+-
+ 	if (thePrefs.GetRTLWindowsLayout())
+ 		EnableRTLWindowsLayout();
+ 
+@@ -537,30 +498,6 @@ BOOL CemuleApp::InitInstance()
+ 
+ 	SetAutoStart(thePrefs.GetAutoStart());
+ 
+-	m_pFirewallOpener = new CFirewallOpener();
+-	m_pFirewallOpener->Init(true); // we need to init it now (even if we may not use it yet) because of CoInitializeSecurity - which kinda ruins the sense of the class interface but ooohh well :P
+-	// Open WinXP firewall ports if set in preferences and possible
+-	if (thePrefs.IsOpenPortsOnStartupEnabled()) {
+-		if (m_pFirewallOpener->DoesFWConnectionExist()) {
+-			// delete old rules added by eMule
+-			m_pFirewallOpener->RemoveRule(EMULE_DEFAULTRULENAME_UDP);
+-			m_pFirewallOpener->RemoveRule(EMULE_DEFAULTRULENAME_TCP);
+-			// open port for this session
+-			if (m_pFirewallOpener->OpenPort(thePrefs.GetPort(), NAT_PROTOCOL_TCP, EMULE_DEFAULTRULENAME_TCP, true))
+-				QueueLogLine(false, GetResString(IDS_FO_TEMPTCP_S), thePrefs.GetPort());
+-			else
+-				QueueLogLine(false, GetResString(IDS_FO_TEMPTCP_F), thePrefs.GetPort());
+-
+-			if (thePrefs.GetUDPPort()) {
+-				// open port for this session
+-				if (m_pFirewallOpener->OpenPort(thePrefs.GetUDPPort(), NAT_PROTOCOL_UDP, EMULE_DEFAULTRULENAME_UDP, true))
+-					QueueLogLine(false, GetResString(IDS_FO_TEMPUDP_S), thePrefs.GetUDPPort());
+-				else
+-					QueueLogLine(false, GetResString(IDS_FO_TEMPUDP_F), thePrefs.GetUDPPort());
+-			}
+-		}
+-	}
+-
+ 	// UPnP Port forwarding
+ 	m_pUPnPFinder = new CUPnPImplWrapper();
+ 
+@@ -1524,17 +1461,6 @@ void CemuleApp::CreateAllFonts()
+ 
+ const CString& CemuleApp::GetDefaultFontFaceName()
+ {
+-/* Support for old Windows was dropped
+-	if (m_strDefaultFontFaceName.IsEmpty()) {
+-		OSVERSIONINFO osvi;
+-		osvi.dwOSVersionInfoSize = (DWORD)sizeof osvi;
+-		if (GetVersionEx(&osvi)
+-			&& osvi.dwPlatformId == VER_PLATFORM_WIN32_NT
+-			&& osvi.dwMajorVersion >= 5) // Win2000/XP or higher
+-			m_strDefaultFontFaceName = _T("MS Shell Dlg 2");
+-		else
+-			m_strDefaultFontFaceName = _T("MS Shell Dlg");
+-	}*/
+ 	return m_strDefaultFontFaceName;
+ }
+ 
+@@ -1566,21 +1492,6 @@ void CemuleApp::UpdateDesktopColorDepth()
+ 	} else {
+ 		// Get current desktop color depth and derive the image list format from it
+ 		m_iDfltImageListColorFlags = GetAppImageListColorFlag();
+-
+-		// Don't use 32-bit image lists if not supported by COMCTL32.DLL
+-		if (m_iDfltImageListColorFlags == ILC_COLOR32 && m_ullComCtrlVer < MAKEDLLVERULL(6, 0, 0, 0)) {
+-			// We fall back to 16-bit image lists because we do not provide 24-bit
+-			// versions of icons any longer (due to resource size restrictions for Win98). We
+-			// could also fall back to 24-bit image lists here but the difference is minimal
+-			// and considered not to be worth the additional memory consumption.
+-			//
+-			// Though, do not fall back to 8-bit image lists because this would let Windows
+-			// reduce the color resolution to the standard 256 color window system palette.
+-			// We need a 16-bit or 24-bit image list to hold all our 256 color icons (which
+-			// are not pre-quantized to standard 256 color windows system palette) without
+-			// losing any colors.
+-			m_iDfltImageListColorFlags = ILC_COLOR16;
+-		}
+ 	}
+ 
+ 	// Doesn't help.
+@@ -1699,14 +1610,8 @@ void CemuleApp::ResetStandByIdleTimer()
+ 		m_bStandbyOff = false;
+ }
+ 
+-bool CemuleApp::IsXPThemeActive() const
+-{
+-	// TRUE: If an XP style (and only an XP style) is active
+-	return theApp.m_ullComCtrlVer < MAKEDLLVERULL(6, 16, 0, 0) && ::IsThemeActive() && ::IsAppThemed();
+-}
+-
+ bool CemuleApp::IsVistaThemeActive() const
+ {
+ 	// Return true if Vista (or better) style is active
+-	return theApp.m_ullComCtrlVer >= MAKEDLLVERULL(6, 16, 0, 0) && ::IsThemeActive() && ::IsAppThemed();
++	return ::IsThemeActive() && ::IsAppThemed();
+ }
+\ No newline at end of file
+diff --git a/srchybrid/Emule.h b/srchybrid/Emule.h
+index 0e7a14c..92f25cc 100644
+--- a/srchybrid/Emule.h
++++ b/srchybrid/Emule.h
+@@ -46,7 +46,6 @@ class CIPFilter;
+ class CWebServer;
+ class CAbstractFile;
+ class CUpDownClient;
+-class CFirewallOpener;
+ class CUPnPImplWrapper;
+ class CUploadDiskIOThread;
+ class CPartFileWriteThread;
+@@ -90,7 +89,6 @@ public:
+ 	CIPFilter			*ipfilter;
+ 	CWebServer			*webserver;
+ 	CScheduler			*scheduler;
+-	CFirewallOpener		*m_pFirewallOpener;
+ 	CUPnPImplWrapper	*m_pUPnPFinder;
+ 	CUploadDiskIOThread	*m_pUploadDiskIOThread;
+ 	CPartFileWriteThread *m_pPartFileWriteThread;
+@@ -115,7 +113,6 @@ public:
+ 	CString		m_strCurVersionLongDbg;
+ 	UINT		m_uCurVersionShort;
+ 	UINT		m_uCurVersionCheck;
+-	ULONGLONG	m_ullComCtrlVer;
+ 	CMutex		hashing_mut;
+ 	CString		m_strPendingLink;
+ 	COPYDATASTRUCT sendstruct;
+@@ -172,7 +169,6 @@ public:
+ 	void		DisableRTLWindowsLayout();
+ 	void		UpdateDesktopColorDepth();
+ 	void		UpdateLargeIconSize();
+-	bool		IsXPThemeActive() const;
+ 	bool		IsVistaThemeActive() const;
+ 
+ 	bool		GetLangHelpFilePath(CString &strResult);
+diff --git a/srchybrid/EmuleDlg.cpp b/srchybrid/EmuleDlg.cpp
+index 8d7bdec..1120ca6 100644
+--- a/srchybrid/EmuleDlg.cpp
++++ b/srchybrid/EmuleDlg.cpp
+@@ -31,6 +31,8 @@
+ #include <share.h>
+ #include <dbt.h>
+ #include <uxtheme.h>
++#include <dwmapi.h>
++#pragma comment(lib, "dwmapi.lib")
+ #include "emule.h"
+ #include "emuleDlg.h"
+ #include "otherfunctions.h"
+@@ -97,7 +99,6 @@
+ #include "PartFileWriteThread.h"
+ #include "ImportParts.h"
+ #include "ClientCredits.h"
+-#include "FirewallOpener.h"
+ 
+ #ifdef _DEBUG
+ #define new DEBUG_NEW
+@@ -372,19 +373,12 @@ BOOL CemuleDlg::OnInitDialog()
+ 	theStats.starttime = ::GetTickCount();
+ #ifdef HAVE_WIN7_SDK_H
+ 	// allow the TaskbarButtonCreated- & (tbb-)WM_COMMAND message to be sent to our window if our app is running elevated
+-	if (thePrefs.GetWindowsVersion() >= _WINVER_7_) {
+-		m_bInitedCOM = SUCCEEDED(::CoInitialize(NULL));
+-		if (m_bInitedCOM) {
+-			typedef BOOL(WINAPI *PChangeWindowMessageFilter)(UINT message, DWORD dwFlag);
+-			PChangeWindowMessageFilter ChangeWindowMessageFilter
+-				= (PChangeWindowMessageFilter)(::GetProcAddress(::GetModuleHandle(_T("user32.dll")), "ChangeWindowMessageFilter"));
+-			if (ChangeWindowMessageFilter) {
+-				ChangeWindowMessageFilter(UWM_TASK_BUTTON_CREATED, 1);
+-				ChangeWindowMessageFilter(WM_COMMAND, 1);
+-			}
+-		} else
+-			ASSERT(0);
+-	}
++	m_bInitedCOM = SUCCEEDED(::CoInitialize(NULL));
++	if (m_bInitedCOM) {
++		::ChangeWindowMessageFilter(UWM_TASK_BUTTON_CREATED, MSGFLT_ADD);
++		::ChangeWindowMessageFilter(WM_COMMAND, MSGFLT_ADD);
++	} else
++		ASSERT(0);
+ #endif
+ 
+ 	// temporary disable the 'startup minimized' option, otherwise no window will be shown at all
+@@ -1762,7 +1756,6 @@ void CemuleDlg::OnClose()
+ 	delete theApp.scheduler;				theApp.scheduler = NULL;
+ 	delete theApp.ipfilter;					theApp.ipfilter = NULL;			// CIPFilter::SaveToDefaultFile
+ 	delete theApp.webserver;				theApp.webserver = NULL;
+-	delete theApp.m_pFirewallOpener;		theApp.m_pFirewallOpener = NULL;
+ 	delete theApp.uploadBandwidthThrottler;	theApp.uploadBandwidthThrottler = NULL;
+ 	delete theApp.lastCommonRouteFinder;	theApp.lastCommonRouteFinder = NULL;
+ 	delete theApp.m_pUPnPFinder;			theApp.m_pUPnPFinder = NULL;
+@@ -3670,8 +3663,7 @@ void CemuleDlg::OnTBBPressed(UINT id)
+ // When Windows tells us, the taskbar button was created, it is safe to initialize our taskbar stuff
+ LRESULT CemuleDlg::OnTaskbarBtnCreated(WPARAM, LPARAM)
+ {
+-	// Sanity check that the OS is Win 7 or later
+-	if (thePrefs.GetWindowsVersion() >= _WINVER_7_ && !theApp.IsClosing()) {
++	if (!theApp.IsClosing()) {
+ 		if (m_pTaskbarList)
+ 			m_pTaskbarList.Release();
+ 
+@@ -3763,26 +3755,18 @@ void CemuleDlg::SetTaskbarIconColor()
+ 	bool bTransparent = false;
+ 	COLORREF cr = RGB(0, 0, 0);
+ 	if (thePrefs.IsRunningAeroGlassTheme()) {
+-		HMODULE hDWMAPI = ::LoadLibrary(_T("dwmapi.dll"));
+-		if (hDWMAPI) {
+-			HRESULT(WINAPI *pfnDwmGetColorizationColor)(DWORD*, BOOL*);
+-			(FARPROC&)pfnDwmGetColorizationColor = ::GetProcAddress(hDWMAPI, "DwmGetColorizationColor");
+-			if (pfnDwmGetColorizationColor != NULL) {
+-				DWORD dwGlassColor;
+-				BOOL bOpaque;
+-				if (pfnDwmGetColorizationColor(&dwGlassColor, &bOpaque) == S_OK) {
+-					uint8 byAlpha = (uint8)(dwGlassColor >> 24);
+-					cr = 0xFFFFFF & dwGlassColor;
+-					if (byAlpha < 200 && !bOpaque) {
+-						// on transparent themes we can never figure out what exact color is shown
+-						// (if we could in real time?), but given that a color is blended against
+-						// the background, it is a good guess that a bright speedbar will be
+-						// the best solution in most cases
+-						bTransparent = true;
+-					}
+-				}
++		DWORD dwGlassColor;
++		BOOL bOpaque;
++		if (::DwmGetColorizationColor(&dwGlassColor, &bOpaque) == S_OK) {
++			uint8 byAlpha = (uint8)(dwGlassColor >> 24);
++			cr = 0xFFFFFF & dwGlassColor;
++			if (byAlpha < 200 && !bOpaque) {
++				// on transparent themes we can never figure out what exact color is shown
++				// (if we could in real time?), but given that a color is blended against
++				// the background, it is a good guess that a bright speedbar will be
++				// the best solution in most cases
++				bTransparent = true;
+ 			}
+-			::FreeLibrary(hDWMAPI);
+ 		}
+ 	} else if (::IsThemeActive() && ::IsAppThemed()) {
+ 		CWnd tmpWnd;
+diff --git a/srchybrid/FileInfoDialog.cpp b/srchybrid/FileInfoDialog.cpp
+index 709a812..1f3a015 100644
+--- a/srchybrid/FileInfoDialog.cpp
++++ b/srchybrid/FileInfoDialog.cpp
+@@ -133,9 +133,7 @@ public:
+ 				// -----------------------------
+ 				// But then MediaInfo adopted YY.MM (year, month) versioning scheme...
+ 				ULONGLONG ullVersion = GetModuleVersion(m_hLib);
+-				if (ullVersion >= MAKEDLLVERULL(0, 7, 13, 0)
+-					&& (thePrefs.GetWindowsVersion() >= _WINVER_VISTA_ && ullVersion < MAKEDLLVERULL(26, 6, 0, 0)
+-						|| ullVersion < MAKEDLLVERULL(21, 4, 0, 0))) //21.03 for Windows XP
++				if (ullVersion >= MAKEDLLVERULL(0, 7, 13, 0) && ullVersion < MAKEDLLVERULL(26, 6, 0, 0))
+ 				{
+ 					(FARPROC &)m_pfnMediaInfo_New = ::GetProcAddress(m_hLib, "MediaInfo_New");
+ 					(FARPROC &)m_pfnMediaInfo_Delete = ::GetProcAddress(m_hLib, "MediaInfo_Delete");
+diff --git a/srchybrid/FirewallOpener.cpp b/srchybrid/FirewallOpener.cpp
+deleted file mode 100644
+index a022f94..0000000
+--- a/srchybrid/FirewallOpener.cpp
++++ /dev/null
+@@ -1,295 +0,0 @@
+-//this file is part of eMule
+-//Copyright (C)2002-2026 Merkur ( strEmail.Format("%s@%s", "devteam", "emule-project.net") / https://www.emule-project.net )
+-//
+-//This program is free software; you can redistribute it and/or
+-//modify it under the terms of the GNU General Public License
+-//as published by the Free Software Foundation; either
+-//version 2 of the License, or (at your option) any later version.
+-//
+-//This program is distributed in the hope that it will be useful,
+-//but WITHOUT ANY WARRANTY; without even the implied warranty of
+-//MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+-//GNU General Public License for more details.
+-//
+-//You should have received a copy of the GNU General Public License
+-//along with this program; if not, write to the Free Software
+-
+-// class to configure the ICS-Firewall of Windows XP - will not work with WinXP-SP2 yet
+-
+-#include "StdAfx.h"
+-#include "firewallopener.h"
+-#include "emule.h"
+-#include "preferences.h"
+-#include "otherfunctions.h"
+-
+-#ifdef _DEBUG
+-#define new DEBUG_NEW
+-#undef THIS_FILE
+-static char THIS_FILE[] = __FILE__;
+-#endif
+-
+-
+-#define RETURN_ON_FAIL(x)	if (!SUCCEEDED(x)) return false;
+-
+-CFirewallOpener::CFirewallOpener()
+-	: m_pINetSM()
+-	, m_bInited()
+-{
+-}
+-
+-CFirewallOpener::~CFirewallOpener()
+-{
+-	UnInit();
+-}
+-
+-bool CFirewallOpener::Init(bool bPreInit)
+-{
+-	if (!m_bInited) {
+-		ASSERT(m_liAddedRules.IsEmpty());
+-		if (thePrefs.GetWindowsVersion() != _WINVER_XP_ || !SUCCEEDED(::CoInitialize(NULL)))
+-			return false;
+-		HRESULT hr = ::CoInitializeSecurity(NULL, -1, NULL, NULL, RPC_C_AUTHN_LEVEL_PKT, RPC_C_IMP_LEVEL_IMPERSONATE, NULL, EOAC_NONE, NULL);
+-		if (!SUCCEEDED(hr) || !SUCCEEDED(::CoCreateInstance(__uuidof(NetSharingManager), NULL, CLSCTX_ALL, __uuidof(INetSharingManager), (LPVOID*)&m_pINetSM))) {
+-			::CoUninitialize();
+-			return false;
+-		}
+-	}
+-	m_bInited = true;
+-	if (bPreInit) {
+-		// will return here in order to not create an instance when not really needed
+-		// preinit is only used to call CoInitializeSecurity before its too late for that (aka something else called it)
+-		// will have to look deeper into this issue in order to find a nicer way if possible
+-		return true;
+-	}
+-
+-	if (m_pINetSM == NULL) {
+-		if (!SUCCEEDED(::CoCreateInstance(__uuidof(NetSharingManager), NULL, CLSCTX_ALL, __uuidof(INetSharingManager), (LPVOID*)&m_pINetSM))) {
+-			UnInit();
+-			return false;
+-		}
+-	}
+-	return true;
+-}
+-
+-void CFirewallOpener::UnInit()
+-{
+-	if (!m_bInited)
+-		return;
+-
+-	for (INT_PTR i = m_liAddedRules.GetCount(); --i >= 0;)
+-		if (m_liAddedRules[i].m_bRemoveOnExit)
+-			RemoveRule(m_liAddedRules[i]);
+-
+-	m_liAddedRules.RemoveAll();
+-
+-	m_bInited = false;
+-	if (m_pINetSM != NULL) {
+-		m_pINetSM->Release();
+-		m_pINetSM = NULL;
+-	} else
+-		ASSERT(0);
+-	::CoUninitialize();
+-}
+-
+-bool CFirewallOpener::DoAction(const EFOCAction eAction, const CICSRuleInfo &riPortRule)
+-{
+-	if (!Init())
+-		return false;
+-	//TODO lets see if we can find a reliable method to find out the internet standard connection set by the user
+-
+-	bool bSuccess = true;
+-	bool bPartialSucceeded = false;
+-	bool bFoundAtLeastOneConn = false;
+-
+-	INetSharingEveryConnectionCollectionPtr NSECCP;
+-	IEnumVARIANTPtr varEnum;
+-	IUnknownPtr pUnk;
+-	RETURN_ON_FAIL(m_pINetSM->get_EnumEveryConnection(&NSECCP));
+-	RETURN_ON_FAIL(NSECCP->get__NewEnum(&pUnk));
+-	RETURN_ON_FAIL(pUnk->QueryInterface(__uuidof(IEnumVARIANT), (void**)&varEnum));
+-
+-	_variant_t var;
+-	while (S_OK == varEnum->Next(1, &var, NULL)) {
+-		INetConnectionPtr NCP;
+-		if (V_VT(&var) == VT_UNKNOWN
+-			&& SUCCEEDED(V_UNKNOWN(&var)->QueryInterface(__uuidof(INetConnection), (void**)&NCP)))
+-		{
+-			INetConnectionPropsPtr pNCP;
+-			if (!SUCCEEDED(m_pINetSM->get_NetConnectionProps(NCP, &pNCP)))
+-				continue;
+-			DWORD dwCharacteristics = 0;
+-			pNCP->get_Characteristics(&dwCharacteristics);
+-			if (dwCharacteristics & (NCCF_FIREWALLED)) {
+-				NETCON_MEDIATYPE MediaType = NCM_NONE;
+-				pNCP->get_MediaType(&MediaType);
+-				if ((MediaType != NCM_SHAREDACCESSHOST_LAN) && (MediaType != NCM_SHAREDACCESSHOST_RAS)) {
+-					INetSharingConfigurationPtr pNSC;
+-					if (!SUCCEEDED(m_pINetSM->get_INetSharingConfigurationForINetConnection(NCP, &pNSC)))
+-						continue;
+-					VARIANT_BOOL varbool = VARIANT_FALSE;
+-					pNSC->get_InternetFirewallEnabled(&varbool);
+-					if (varbool == VARIANT_FALSE)
+-						continue;
+-					bFoundAtLeastOneConn = true;
+-					switch (eAction) {
+-					case FOC_ADDRULE:
+-						{
+-							bool bResult;
+-							// we do not want to overwrite an existing rule
+-							if (FindRule(FOC_FINDRULEBYPORT, riPortRule, pNSC, NULL))
+-								bResult = true;
+-							else
+-								bResult = AddRule(riPortRule, pNSC, pNCP);
+-							bSuccess = bSuccess && bResult;
+-							if (bResult && !bPartialSucceeded)
+-								m_liAddedRules.Add(riPortRule); // keep track of added rules
+-							bPartialSucceeded = bPartialSucceeded || bResult;
+-							break;
+-						}
+-					case FOC_FWCONNECTIONEXISTS:
+-						return true;
+-					case FOC_DELETERULEBYNAME:
+-					case FOC_DELETERULEEXCACT:
+-						bSuccess = bSuccess && FindRule(eAction, riPortRule, pNSC, NULL);
+-						break;
+-					case FOC_FINDRULEBYNAME:
+-						if (FindRule(FOC_FINDRULEBYNAME, riPortRule, pNSC, NULL))
+-							return true;
+-						else
+-							bSuccess = false;
+-						break;
+-					case FOC_FINDRULEBYPORT:
+-						if (FindRule(FOC_FINDRULEBYPORT, riPortRule, pNSC, NULL))
+-							return true;
+-						else
+-							bSuccess = false;
+-						break;
+-					default:
+-						ASSERT(0);
+-					}
+-				}
+-			}
+-		}
+-		var.Clear();
+-	}
+-	return bSuccess && bFoundAtLeastOneConn;
+-}
+-
+-bool CFirewallOpener::AddRule(const CICSRuleInfo &riPortRule, const INetSharingConfigurationPtr &pNSC, const INetConnectionPropsPtr &pNCP)
+-{
+-	INetSharingPortMappingPtr pNSPM;
+-	HRESULT hr = pNSC->AddPortMapping(riPortRule.m_strRuleName.AllocSysString()
+-		, riPortRule.m_byProtocol
+-		, riPortRule.m_nPortNumber
+-		, riPortRule.m_nPortNumber
+-		, 0
+-		, CComBSTR(L"127.0.0.1")
+-		, ICSTT_IPADDRESS
+-		, &pNSPM);
+-	CComBSTR bstrName;
+-	pNCP->get_Name(&bstrName);
+-	const CString sName(bstrName);
+-	if (SUCCEEDED(hr) && SUCCEEDED(pNSPM->Enable())) {
+-		theApp.QueueDebugLogLine(false, _T("Succeeded to add Rule '%s' for Port '%u' on Connection '%s'"), (LPCTSTR)riPortRule.m_strRuleName, riPortRule.m_nPortNumber, (LPCTSTR)sName);
+-		return true;
+-	}
+-	theApp.QueueDebugLogLine(false, _T("Failed to add Rule '%s' for Port '%u' on Connection '%s'"), (LPCTSTR)riPortRule.m_strRuleName, riPortRule.m_nPortNumber, (LPCTSTR)sName);
+-	return false;
+-}
+-
+-bool CFirewallOpener::FindRule(const EFOCAction eAction, const CICSRuleInfo &riPortRule, const INetSharingConfigurationPtr &pNSC, INetSharingPortMappingPropsPtr *outNSPMP)
+-{
+-	INetSharingPortMappingCollectionPtr pNSPMC;
+-	RETURN_ON_FAIL(pNSC->get_EnumPortMappings(ICSSC_DEFAULT, &pNSPMC));
+-
+-	INetSharingPortMappingPtr pNSPM;
+-	IEnumVARIANTPtr varEnum;
+-	IUnknownPtr pUnk;
+-	RETURN_ON_FAIL(pNSPMC->get__NewEnum(&pUnk));
+-	RETURN_ON_FAIL(pUnk->QueryInterface(__uuidof(IEnumVARIANT), (void**)&varEnum));
+-	_variant_t var;
+-	while (S_OK == varEnum->Next(1, &var, NULL)) {
+-		INetSharingPortMappingPropsPtr pNSPMP;
+-		if (V_VT(&var) == VT_DISPATCH
+-			&& SUCCEEDED(V_DISPATCH(&var)->QueryInterface(__uuidof(INetSharingPortMapping), (void**)&pNSPM))
+-			&& SUCCEEDED(pNSPM->get_Properties(&pNSPMP)))
+-		{
+-			UCHAR ucProt = 0;
+-			long uExternal = 0;
+-			CComBSTR bstrName;
+-			pNSPMP->get_IPProtocol(&ucProt);
+-			pNSPMP->get_ExternalPort(&uExternal);
+-			pNSPMP->get_Name(&bstrName);
+-			switch (eAction) {
+-			case FOC_FINDRULEBYPORT:
+-				if (riPortRule.m_nPortNumber == uExternal && riPortRule.m_byProtocol == ucProt) {
+-					if (outNSPMP != NULL)
+-						*outNSPMP = pNSPM;
+-					return true;
+-				}
+-				break;
+-			case FOC_FINDRULEBYNAME:
+-				if (riPortRule.m_strRuleName == CString(bstrName)) {
+-					if (outNSPMP != NULL)
+-						*outNSPMP = pNSPM;
+-					return true;
+-				}
+-				break;
+-			case FOC_DELETERULEEXCACT:
+-				if (riPortRule.m_strRuleName == CString(bstrName)
+-					&& riPortRule.m_nPortNumber == uExternal && riPortRule.m_byProtocol == ucProt)
+-				{
+-					RETURN_ON_FAIL(pNSC->RemovePortMapping(pNSPM));
+-					theApp.QueueDebugLogLine(false, _T("Rule removed"));
+-				}
+-				break;
+-			case FOC_DELETERULEBYNAME:
+-				if (riPortRule.m_strRuleName == CString(bstrName)) {
+-					RETURN_ON_FAIL(pNSC->RemovePortMapping(pNSPM));
+-					theApp.QueueDebugLogLine(false, _T("Rule removed"));
+-				}
+-				break;
+-			default:
+-				ASSERT(0);
+-			}
+-		}
+-		var.Clear();
+-	}
+-
+-	return eAction == FOC_DELETERULEBYNAME || eAction == FOC_DELETERULEEXCACT;
+-}
+-
+-bool CFirewallOpener::RemoveRule(const CString &strName)
+-{
+-	return DoAction(FOC_DELETERULEBYNAME, CICSRuleInfo(0, 0, strName));
+-}
+-
+-bool CFirewallOpener::RemoveRule(const CICSRuleInfo &riPortRule)
+-{
+-	return DoAction(FOC_DELETERULEEXCACT, riPortRule);
+-}
+-
+-bool CFirewallOpener::DoesRuleExist(const CString &strName)
+-{
+-	return DoAction(FOC_FINDRULEBYNAME, CICSRuleInfo(0, 0, strName));
+-}
+-
+-bool CFirewallOpener::DoesRuleExist(const uint16 nPortNumber, const uint8 byProtocol)
+-{
+-	return DoAction(FOC_FINDRULEBYPORT, CICSRuleInfo(nPortNumber, byProtocol, _T("")));
+-}
+-
+-bool CFirewallOpener::OpenPort(const uint16 nPortNumber, const uint8 byProtocol, const CString &strRuleName, const bool bRemoveOnExit)
+-{
+-	return DoAction(FOC_ADDRULE, CICSRuleInfo(nPortNumber, byProtocol, strRuleName, bRemoveOnExit));
+-}
+-
+-bool CFirewallOpener::OpenPort(const CICSRuleInfo &riPortRule)
+-{
+-	return DoAction(FOC_ADDRULE, riPortRule);
+-}
+-
+-bool CFirewallOpener::DoesFWConnectionExist()
+-{
+-	return DoAction(FOC_FWCONNECTIONEXISTS, CICSRuleInfo());
+-}
+\ No newline at end of file
+diff --git a/srchybrid/FirewallOpener.h b/srchybrid/FirewallOpener.h
+deleted file mode 100644
+index 3f623f9..0000000
+--- a/srchybrid/FirewallOpener.h
++++ /dev/null
+@@ -1,115 +0,0 @@
+-//this file is part of eMule
+-//Copyright (C)2002-2026 Merkur ( strEmail.Format("%s@%s", "devteam", "emule-project.net") / https://www.emule-project.net )
+-//
+-//This program is free software; you can redistribute it and/or
+-//modify it under the terms of the GNU General Public License
+-//as published by the Free Software Foundation; either
+-//version 2 of the License, or (at your option) any later version.
+-//
+-//This program is distributed in the hope that it will be useful,
+-//but WITHOUT ANY WARRANTY; without even the implied warranty of
+-//MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+-//GNU General Public License for more details.
+-//
+-//You should have received a copy of the GNU General Public License
+-//along with this program; if not, write to the Free Software
+-
+-// class to configure the ICS-Firewall of Windows XP - will not work with WinXP-SP2 yet
+-
+-#pragma once
+-#include <comdef.h>
+-#include <initguid.h>
+-#include <Netcon.h>
+-
+-typedef _com_ptr_t<_com_IIID<INetSharingEveryConnectionCollection, &IID_INetSharingEveryConnectionCollection> >	INetSharingEveryConnectionCollectionPtr;
+-typedef _com_ptr_t<_com_IIID<INetConnection, &IID_INetConnection> >												INetConnectionPtr;
+-typedef _com_ptr_t<_com_IIID<INetConnectionProps, &IID_INetConnectionProps> >									INetConnectionPropsPtr;
+-typedef _com_ptr_t<_com_IIID<INetSharingPortMapping, &IID_INetSharingPortMapping> >								INetSharingPortMappingPtr;
+-typedef _com_ptr_t<_com_IIID<INetSharingConfiguration, &IID_INetSharingConfiguration> >							INetSharingConfigurationPtr;
+-typedef _com_ptr_t<_com_IIID<INetSharingPortMappingProps, &IID_INetSharingPortMappingProps> >					INetSharingPortMappingPropsPtr;
+-typedef _com_ptr_t<_com_IIID<INetSharingPortMappingCollection, &IID_INetSharingPortMappingCollection> >			INetSharingPortMappingCollectionPtr;
+-
+-enum EFOCAction
+-{
+-	FOC_ADDRULE,
+-	FOC_DELETERULEBYNAME,
+-	FOC_FINDRULEBYNAME,
+-	FOC_FINDRULEBYPORT,
+-	FOC_DELETERULEEXCACT,
+-	FOC_FWCONNECTIONEXISTS
+-};
+-
+-#define EMULE_DEFAULTRULENAME_UDP	_T("eMule_UDP_Port")
+-#define EMULE_DEFAULTRULENAME_TCP	_T("eMule_TCP_Port")
+-
+-#define NAT_PROTOCOL_TCP 6
+-#define NAT_PROTOCOL_UDP 17
+-
+-///////////////////////////////////////////////////////////////////////////////////////
+-/// CICSRuleInfo
+-class CICSRuleInfo
+-{
+-public:
+-	CICSRuleInfo()
+-		: m_nPortNumber()
+-		, m_byProtocol()
+-		, m_bRemoveOnExit()
+-	{
+-	}
+-	CICSRuleInfo(const CICSRuleInfo &ri)
+-	{
+-		*this = ri;
+-	}
+-	CICSRuleInfo(uint16 nPortNumber, uint8 byProtocol, const CString &strRuleName, bool bRemoveOnExit = false)
+-		: m_strRuleName(strRuleName)
+-		, m_nPortNumber(nPortNumber)
+-		, m_byProtocol(byProtocol)
+-		, m_bRemoveOnExit(bRemoveOnExit)
+-	{
+-	}
+-
+-	CICSRuleInfo& operator=(const CICSRuleInfo &ri)
+-	{
+-		m_nPortNumber = ri.m_nPortNumber;
+-		m_byProtocol = ri.m_byProtocol;
+-		m_strRuleName = ri.m_strRuleName;
+-		m_bRemoveOnExit = ri.m_bRemoveOnExit;
+-		return *this;
+-	}
+-
+-	CString	m_strRuleName;
+-	uint16	m_nPortNumber;
+-	uint8	m_byProtocol;
+-	bool	m_bRemoveOnExit;
+-};
+-
+-///////////////////////////////////////////////////////////////////////////////////////
+-/// CFirewallOpener
+-
+-class CFirewallOpener
+-{
+-public:
+-	CFirewallOpener();
+-	~CFirewallOpener();
+-	bool	OpenPort(const CICSRuleInfo &riPortRule);
+-	bool	OpenPort(const uint16 nPortNumber, const uint8 byProtocol, const CString &strRuleName, const bool bRemoveOnExit = false);
+-	bool	RemoveRule(const CString &strName);
+-	bool	RemoveRule(const CICSRuleInfo &riPortRule);
+-	bool	DoesRuleExist(const CString &strName);
+-	bool	DoesRuleExist(const uint16 nPortNumber, const uint8 byProtocol);
+-	bool	DoesFWConnectionExist();
+-	void	UnInit();
+-	bool	Init(bool bPreInit = false);
+-
+-protected:
+-
+-	static bool	AddRule(const CICSRuleInfo &riPortRule, const INetSharingConfigurationPtr &pNSC, const INetConnectionPropsPtr &pNCP);
+-	bool		DoAction(const EFOCAction eAction, const CICSRuleInfo &riPortRule);
+-	static bool	FindRule(const EFOCAction eAction, const CICSRuleInfo &riPortRule, const INetSharingConfigurationPtr &pNSC, INetSharingPortMappingPropsPtr *outNSPMP);
+-
+-	CArray<CICSRuleInfo> m_liAddedRules;
+-
+-private:
+-	INetSharingManager	*m_pINetSM;
+-	bool				m_bInited;
+-};
+\ No newline at end of file
+diff --git a/srchybrid/IrcWnd.cpp b/srchybrid/IrcWnd.cpp
+index 13daeab..c5a66f0 100644
+--- a/srchybrid/IrcWnd.cpp
++++ b/srchybrid/IrcWnd.cpp
+@@ -177,7 +177,7 @@ BOOL CIrcWnd::OnInitDialog()
+ 	AddAnchor(m_wndChanList, TOP_LEFT, BOTTOM_RIGHT);
+ 
+ 	// Vista: Remove the TBSTYLE_TRANSPARENT to avoid flickering (can be done only after the toolbar was initially created with TBSTYLE_TRANSPARENT !?)
+-	m_wndFormat.ModifyStyle((theApp.m_ullComCtrlVer >= MAKEDLLVERULL(6, 16, 0, 0)) ? TBSTYLE_TRANSPARENT : 0, TBSTYLE_TOOLTIPS);
++	m_wndFormat.ModifyStyle(TBSTYLE_TRANSPARENT, TBSTYLE_TOOLTIPS);
+ 	m_wndFormat.SetExtendedStyle(m_wndFormat.GetExtendedStyle() | TBSTYLE_EX_MIXEDBUTTONS);
+ 
+ 	TBBUTTON atb[6] = {};
+diff --git a/srchybrid/KademliaWnd.cpp b/srchybrid/KademliaWnd.cpp
+index 3d80522..b5d422f 100644
+--- a/srchybrid/KademliaWnd.cpp
++++ b/srchybrid/KademliaWnd.cpp
+@@ -132,7 +132,7 @@ BOOL CKademliaWnd::OnInitDialog()
+ 	SetAllIcons();
+ 
+ 	// Vista: Remove the TBSTYLE_TRANSPARENT to avoid flickering (can be done only after the toolbar was initially created with TBSTYLE_TRANSPARENT !?)
+-	m_pbtnWnd->ModifyStyle((theApp.m_ullComCtrlVer >= MAKEDLLVERULL(6, 16, 0, 0)) ? TBSTYLE_TRANSPARENT : 0, TBSTYLE_TOOLTIPS);
++	m_pbtnWnd->ModifyStyle(TBSTYLE_TRANSPARENT, TBSTYLE_TOOLTIPS);
+ 	m_pbtnWnd->SetExtendedStyle(m_pbtnWnd->GetExtendedStyle() | TBSTYLE_EX_MIXEDBUTTONS);
+ 
+ 	TBBUTTON atb1[1 + WND1_NUM_BUTTONS] = {};
+@@ -161,24 +161,14 @@ BOOL CKademliaWnd::OnInitDialog()
+ 	tbbi.cx = WND1_BUTTON_WIDTH;
+ 	m_pbtnWnd->SetButtonInfo(0, &tbbi);
+ 
+-	// 'GetMaxSize' does not work properly under:
+-	//	- Win98SE with COMCTL32 v5.80
+-	//	- Win2000 with COMCTL32 v5.81
+-	// The value returned by 'GetMaxSize' is just couple of pixels too small so that the
+-	// last toolbar button is nearly not visible at all.
+-	// So, to circumvent such problems, the toolbar control should be created right with
+-	// the needed size so that we do not really need to call the 'GetMaxSize' function.
+-	// Although it would be better to call it to adapt for system metrics basically.
+-	if (theApp.m_ullComCtrlVer > MAKEDLLVERULL(5, 81, 0, 0)) {
+-		SIZE size;
+-		m_pbtnWnd->GetMaxSize(&size);
+-		CRect rc;
+-		m_pbtnWnd->GetWindowRect(rc);
+-		ScreenToClient(rc);
+-		// the with of the toolbar should already match the needed size (see comment above)
+-		ASSERT(size.cx == rc.Width());
+-		m_pbtnWnd->MoveWindow(rc.left, rc.top, size.cx, rc.Height());
+-	}
++	SIZE size;
++	m_pbtnWnd->GetMaxSize(&size);
++	CRect rc;
++	m_pbtnWnd->GetWindowRect(rc);
++	ScreenToClient(rc);
++	// the with of the toolbar should already match the needed size
++	ASSERT(size.cx == rc.Width());
++	m_pbtnWnd->MoveWindow(rc.left, rc.top, size.cx, rc.Height());
+ 
+ 	Localize();
+ 
+diff --git a/srchybrid/ListCtrlX.cpp b/srchybrid/ListCtrlX.cpp
+index 16cf155..50fe5eb 100644
+--- a/srchybrid/ListCtrlX.cpp
++++ b/srchybrid/ListCtrlX.cpp
+@@ -24,8 +24,6 @@ BEGIN_MESSAGE_MAP(CListCtrlX, CListCtrl)
+ 	ON_WM_INITMENUPOPUP()
+ 	ON_WM_MENUSELECT()
+ 	ON_WM_CONTEXTMENU()
+-	ON_NOTIFY_EX(HDN_BEGINDRAG, 0, OnHdrBeginDrag)
+-	ON_NOTIFY_EX(HDN_ENDDRAG, 0, OnHdrEndDrag)
+ 	ON_WM_KEYDOWN()
+ 	ON_MESSAGE(WM_COPY, OnCopy)
+ END_MESSAGE_MAP()
+@@ -191,7 +189,7 @@ void CListCtrlX::CreateColumns(int iColumns, LCX_COLUMN_INIT *pColumns)
+ 
+ void CListCtrlX::EnableHdrCtrlSortBitmaps(BOOL bUseHdrCtrlSortBitmaps)
+ {
+-	if (bUseHdrCtrlSortBitmaps && theApp.m_ullComCtrlVer >= MAKEDLLVERULL(6, 0, 0, 0))
++	if (bUseHdrCtrlSortBitmaps)
+ 		m_bUseHdrCtrlSortBitmaps = TRUE;
+ 	else {
+ #ifdef IDB_SORT_STATES
+@@ -320,12 +318,6 @@ void UpdateHdrImageList(CListCtrl &lv, CImageList &imlHdr, UINT uIDHdrImgList
+ 			// Fill images and masks into image list
+ 			VERIFY(imlHdr.Add(&bmSortStates, RGB(255, 0, 255)) >= 0);
+ 
+-			// To avoid drawing problems (which occur only with an image list *with* a mask) while
+-			// resizing list view columns which have the header control bitmap right aligned, set
+-			// the background color of the image list.
+-			if (theApp.m_ullComCtrlVer < MAKEDLLVERULL(6, 0, 0, 0))
+-				imlHdr.SetBkColor(::GetSysColor(COLOR_BTNFACE));
+-
+ 			// When setting the image list for the header control, this *ALWAYS* returns
+ 			// the image list which was set for the list view control!!!
+ 			pHdrCtrl->SetImageList(&imlHdr);
+@@ -354,26 +346,6 @@ void CListCtrlX::ApplyImageList(HIMAGELIST himl)
+ 	}
+ }
+ 
+-BOOL CListCtrlX::OnHdrBeginDrag(UINT, LPNMHDR, LRESULT*)
+-{
+-	if (theApp.m_ullComCtrlVer < MAKEDLLVERULL(6, 0, 0, 0)) {
+-		CImageList *piml = GetHeaderCtrl()->GetImageList();
+-		if (piml != NULL)
+-			piml->SetBkColor(::GetSysColor(COLOR_3DSHADOW));
+-	}
+-	return FALSE; // *Force* default processing of notification!
+-}
+-
+-BOOL CListCtrlX::OnHdrEndDrag(UINT, LPNMHDR, LRESULT*)
+-{
+-	if (theApp.m_ullComCtrlVer < MAKEDLLVERULL(6, 0, 0, 0)) {
+-		CImageList *piml = GetHeaderCtrl()->GetImageList();
+-		if (piml != NULL)
+-			piml->SetBkColor(::GetSysColor(COLOR_BTNFACE));
+-	}
+-	return FALSE; // *Force* default processing of notification!
+-}
+-
+ void CListCtrlX::SelectAllItems()
+ {
+ 	SetItemState(-1, LVIS_SELECTED, LVIS_SELECTED);
+diff --git a/srchybrid/ListCtrlX.h b/srchybrid/ListCtrlX.h
+index c5708cd..15029d0 100644
+--- a/srchybrid/ListCtrlX.h
++++ b/srchybrid/ListCtrlX.h
+@@ -140,7 +140,5 @@ protected:
+ 	afx_msg void OnInitMenuPopup(CMenu *pPopupMenu, UINT nIndex, BOOL bSysMenu);
+ 	afx_msg void OnMenuSelect(UINT nItemID, UINT nFlags, HMENU hSysMenu);
+ 	afx_msg void OnContextMenu(CWnd*, CPoint point);
+-	afx_msg BOOL OnHdrBeginDrag(UINT, LPNMHDR, LRESULT*);
+-	afx_msg BOOL OnHdrEndDrag(UINT, LPNMHDR, LRESULT*);
+ 	afx_msg LRESULT OnCopy(WPARAM, LPARAM);
+ };
+\ No newline at end of file
+diff --git a/srchybrid/MuleListCtrl.cpp b/srchybrid/MuleListCtrl.cpp
+index f1248fe..da60be5 100644
+--- a/srchybrid/MuleListCtrl.cpp
++++ b/srchybrid/MuleListCtrl.cpp
+@@ -488,12 +488,6 @@ void CMuleListCtrl::SetSortArrow(int iColumn, ArrowType atType)
+ 				if (imlSortStates.Create(14, 14, theApp.m_iDfltImageListColorFlags | ILC_MASK, 1, 0)) {
+ 					VERIFY(imlSortStates.Add(&bmSortStates, RGB(255, 0, 255)) >= 0);
+ 
+-					// To avoid drawing problems (which occur only with an image list *with* a mask) while
+-					// resizing list view columns which have the header control bitmap right aligned, set
+-					// the background color of the image list.
+-					if (theApp.m_ullComCtrlVer < MAKEDLLVERULL(6, 0, 0, 0))
+-						imlSortStates.SetBkColor(::GetSysColor(COLOR_BTNFACE));
+-
+ 					// When setting the image list for the header control for the first time we'll get
+ 					// the image list of the listview control!! So, better store the header control image list separate.
+ 					(void)pHeaderCtrl->SetImageList(&imlSortStates);
+@@ -502,12 +496,10 @@ void CMuleListCtrl::SetSortArrow(int iColumn, ArrowType atType)
+ 
+ 					// Use smaller bitmap margins -- this saves some pixels which may be required for
+ 					// rather small column titles.
+-					if (theApp.m_ullComCtrlVer >= MAKEDLLVERULL(5, 8, 0, 0)) {
+-						int iBmpMargin = pHeaderCtrl->GetBitmapMargin();
+-						int iNewBmpMargin = ::GetSystemMetrics(SM_CXEDGE) + ::GetSystemMetrics(SM_CXEDGE) / 2;
+-						if (iNewBmpMargin < iBmpMargin)
+-							pHeaderCtrl->SetBitmapMargin(iNewBmpMargin);
+-					}
++					int iBmpMargin = pHeaderCtrl->GetBitmapMargin();
++					int iNewBmpMargin = ::GetSystemMetrics(SM_CXEDGE) + ::GetSystemMetrics(SM_CXEDGE) / 2;
++					if (iNewBmpMargin < iBmpMargin)
++						pHeaderCtrl->SetBitmapMargin(iNewBmpMargin);
+ 				}
+ 			}
+ 		}
+diff --git a/srchybrid/MuleSystrayDlg.cpp b/srchybrid/MuleSystrayDlg.cpp
+index d21b42b..f561351 100644
+--- a/srchybrid/MuleSystrayDlg.cpp
++++ b/srchybrid/MuleSystrayDlg.cpp
+@@ -277,9 +277,7 @@ BOOL CMuleSystrayDlg::OnInitDialog()
+ 	CFont Font;
+ 	Font.CreateFont(-16, 0, 900, 0, 700, 0, 0, 0, 0, 3, 2, 1, 34, _T("Tahoma"));
+ 
+-	UINT winver = thePrefs.GetWindowsVersion();
+-	int iClr = (winver == _WINVER_95_ || winver == _WINVER_NT4_ || g_bLowColorDesktop)
+-		? COLOR_ACTIVECAPTION : COLOR_GRADIENTACTIVECAPTION;
++	int iClr = g_bLowColorDesktop ? COLOR_ACTIVECAPTION : COLOR_GRADIENTACTIVECAPTION;
+ 	m_ctrlSidebar.SetColors(::GetSysColor(COLOR_CAPTIONTEXT), ::GetSysColor(COLOR_ACTIVECAPTION), ::GetSysColor(iClr));
+ 
+ 	m_ctrlSidebar.SetHorizontal(false);
+diff --git a/srchybrid/MuleToolBarCtrl.cpp b/srchybrid/MuleToolBarCtrl.cpp
+index 57d885e..728ee40 100644
+--- a/srchybrid/MuleToolBarCtrl.cpp
++++ b/srchybrid/MuleToolBarCtrl.cpp
+@@ -266,13 +266,7 @@ void CMuleToolbarCtrl::SetAllButtonsWidth()
+ 
+ 		SetButtonWidth(iCalcSize, iCalcSize);
+ 	} else {
+-		int iSmallIconsButtonHeight;
+-		if (theApp.m_ullComCtrlVer < MAKEDLLVERULL(6, 0, 0, 0)) {
+-			// Win98,WinME,Win2000: Comtrl32 prior to 6.0 cannot make a toolbar smaller than 22 pixels
+-			// in height and if it gets larger than 22 pixels the icons do not get centered vertically.
+-			iSmallIconsButtonHeight = 22;
+-		} else
+-			iSmallIconsButtonHeight = ::GetSystemMetrics(SM_CYSCREEN) <= 600 ? 16 : 28;
++		int iSmallIconsButtonHeight = ::GetSystemMetrics(SM_CYSCREEN) <= 600 ? 16 : 28;
+ 
+ 		int iFixedButtonWidth;
+ 		int iFixedButtonHeight;
+@@ -858,9 +852,7 @@ void CMuleToolbarCtrl::OnSettingChange(UINT uFlags, LPCTSTR lpszSection)
+ 	// not use the value of that parameter to limit the invocation of our correction code.
+ 	//
+ 
+-	if (theApp.m_ullComCtrlVer >= MAKEDLLVERULL(6, 16, 0, 0)
+-		&& (m_eLabelType == NoLabels || (m_eLabelType == LabelsRight && m_sizBtnBmp.cx == 16)))
+-	{
++	if (m_eLabelType == NoLabels || (m_eLabelType == LabelsRight && m_sizBtnBmp.cx == 16)) {
+ 		ChangeToolbarBitmap(thePrefs.GetToolbarBitmapSettings(), true);
+ 	}
+ }
+@@ -964,22 +956,6 @@ void CMuleToolbarCtrl::AutoSize()
+ #endif
+ }
+ 
+-BOOL CMuleToolbarCtrl::GetMaxSize(LPSIZE pSize) const
+-{
+-	BOOL bResult = CToolBarCtrl::GetMaxSize(pSize);
+-	if (theApp.m_ullComCtrlVer <= MAKEDLLVERULL(5, 81, 0, 0)) {
+-		int iWidth = 0;
+-		CRect rcButton;
+-		for (int i = GetButtonCount(); --i >= 0;)
+-			if (GetItemRect(i, &rcButton))
+-				iWidth += rcButton.Width();
+-
+-		if (iWidth > pSize->cx)
+-			pSize->cx = iWidth;
+-	}
+-	return bResult;
+-}
+-
+ void CMuleToolbarCtrl::SaveCurHeight()
+ {
+ 	CRect rcWnd;
+diff --git a/srchybrid/MuleToolBarCtrl.h b/srchybrid/MuleToolBarCtrl.h
+index ec8b781..fff99d0 100644
+--- a/srchybrid/MuleToolBarCtrl.h
++++ b/srchybrid/MuleToolBarCtrl.h
+@@ -39,7 +39,6 @@ public:
+ 	void SaveCurHeight();
+ 	void UpdateBackground();
+ 	void PressMuleButton(int nID);
+-	BOOL GetMaxSize(LPSIZE pSize) const;
+ 
+ 	static int GetDefaultLabelType()		{ return (int)LabelsBelow; }
+ 
+diff --git a/srchybrid/Opcodes.h b/srchybrid/Opcodes.h
+index d46a864..2f7d827 100644
+--- a/srchybrid/Opcodes.h
++++ b/srchybrid/Opcodes.h
+@@ -106,7 +106,6 @@
+ 
+ #define CONFIGFOLDER			_T("config\\")
+ #define MAXCONPER5SEC			20
+-#define MAXCON5WIN9X			10
+ #define	UPLOAD_CLIENT_MAXDATARATE	(25*1024) // max. target upload speed per client
+ #define	MIN_UP_CLIENTS_ALLOWED	2			// min. clients allowed to download regardless of any other factors. Don't set this too high
+ #define	MAX_UP_CLIENTS_ALLOWED	100			// max. clients allowed regardless of any other factors; cannot be below MIN_UP_CLIENTS_ALLOWED+3
+diff --git a/srchybrid/OtherFunctions.cpp b/srchybrid/OtherFunctions.cpp
+index 5cf579a..c84965d 100644
+--- a/srchybrid/OtherFunctions.cpp
++++ b/srchybrid/OtherFunctions.cpp
+@@ -532,7 +532,7 @@ bool Ask4RegFix(bool checkOnly, bool dontAsk, bool bAutoTakeCollections)
+ 		// we actually need to change the registry and write an entry for HKCU
+ 		if (checkOnly)
+ 			return true;
+-		HKEY hkeyCR = thePrefs.GetWindowsVersion() < _WINVER_2K_ ? HKEY_LOCAL_MACHINE : HKEY_CURRENT_USER;
++		HKEY hkeyCR = HKEY_CURRENT_USER;
+ 		if (regkey.Create(hkeyCR, _T("Software\\Classes\\ed2k\\shell\\open\\command")) == ERROR_SUCCESS) {
+ 			if (dontAsk || (LocMessageBox(IDS_ASSIGNED2K, MB_ICONQUESTION | MB_YESNO, 0) == IDYES)) {
+ 				VERIFY(regkey.SetStringValue(NULL, regbuffer) == ERROR_SUCCESS);
+@@ -567,7 +567,7 @@ void BackupReg()
+ 	//		This means that saving/restoring existent registry keys works completely differently in Win98/XP.
+ 	//		Actually it works correctly under Win98 and is broken in WinXP+. Though, did someone notice it at all?
+ 
+-	HKEY hkeyCR = thePrefs.GetWindowsVersion() < _WINVER_2K_ ? HKEY_LOCAL_MACHINE : HKEY_CURRENT_USER;
++	HKEY hkeyCR = HKEY_CURRENT_USER;
+ 	// Look for pre-existing old ed2k links
+ 	CRegKey regkey;
+ 	if (regkey.Create(hkeyCR, _T("Software\\Classes\\ed2k\\shell\\open\\command")) == ERROR_SUCCESS) {
+@@ -591,7 +591,7 @@ void BackupReg()
+ // Barry - Restore previous values
+ void RevertReg()
+ {
+-	HKEY hkeyCR = thePrefs.GetWindowsVersion() < _WINVER_2K_ ? HKEY_LOCAL_MACHINE : HKEY_CURRENT_USER;
++	HKEY hkeyCR = HKEY_CURRENT_USER;
+ 	// restore previous ed2k links before being assigned to emule
+ 	CRegKey regkey;
+ 	if (regkey.Create(hkeyCR, _T("Software\\Classes\\ed2k\\shell\\open\\command")) == ERROR_SUCCESS) {
+@@ -615,137 +615,7 @@ void RevertReg()
+ 
+ UINT GetMaxWindowsTCPConnections()
+ {
+-	return UNLIMITED;
+-/*	OSVERSIONINFOEX osvi;
+-	osvi.dwOSVersionInfoSize = (DWORD)sizeof(OSVERSIONINFOEX);
+-
+-	if (!GetVersionEx((OSVERSIONINFO*)&osvi)) {
+-		//if OSVERSIONINFOEX doesn't work, try OSVERSIONINFO
+-		osvi.dwOSVersionInfoSize = (DWORD)sizeof(OSVERSIONINFO);
+-		if (!GetVersionEx((OSVERSIONINFO*)&osvi))
+-			return UNLIMITED;  //shouldn't ever happen
+-	}
+-
+-	if (osvi.dwPlatformId == VER_PLATFORM_WIN32_NT) // Windows NT product family
+-		return UNLIMITED;  //no limits
+-
+-	if (osvi.dwPlatformId == VER_PLATFORM_WIN32_WINDOWS) { // Windows 95 product family
+-
+-		HKEY hKey;
+-		if (osvi.dwMajorVersion == 4 && osvi.dwMinorVersion == 0) { //old school 95
+-			DWORD dwValue;
+-			DWORD dwLength = (DWORD)sizeof dwValue;
+-
+-			RegOpenKeyEx(HKEY_LOCAL_MACHINE, _T("System\\CurrentControlSet\\Services\\VxD\\MSTCP")
+-				, 0, KEY_QUERY_VALUE, &hKey);
+-			LONG lResult = RegQueryValueEx(hKey, _T("MaxConnections"), NULL, NULL
+-				, (LPBYTE)&dwValue, &dwLength);
+-			RegCloseKey(hKey);
+-
+-			if (lResult != ERROR_SUCCESS || dwValue < 1)
+-				return 100;  //the default for 95 is 100
+-
+-			return dwValue;
+-
+-		}
+-		//98 or ME
+-		TCHAR szValue[32];
+-		DWORD dwLength = (DWORD)sizeof szValue;
+-		LONG lResult;
+-
+-		RegOpenKeyEx(HKEY_LOCAL_MACHINE, _T("System\\CurrentControlSet\\Services\\VxD\\MSTCP")
+-			, 0, KEY_QUERY_VALUE, &hKey);
+-		lResult = RegQueryValueEx(hKey, TEXT("MaxConnections"), NULL, NULL, (LPBYTE)szValue, &dwLength);
+-		RegCloseKey(hKey);
+-
+-		LONG lMaxConnections;
+-		if (lResult != ERROR_SUCCESS || (lMaxConnections = _tstoi(szValue)) < 1)
+-			return 100;  //the default for 98/ME is 100
+-
+-		return lMaxConnections;
+-	}
+-
+-	return UNLIMITED;  //give the user the benefit of the doubt, most use NT+ anyway
+-*/
+-}
+-
+-#pragma warning(push)
+-#pragma warning(disable:4996) //GetVersionEx()
+-WORD DetectWinVersion()
+-{
+-	OSVERSIONINFOEX osvi;
+-	osvi.dwOSVersionInfoSize = (DWORD)sizeof(OSVERSIONINFOEX);
+-
+-	if (!GetVersionEx((OSVERSIONINFO*)&osvi)) {
+-		osvi.dwOSVersionInfoSize = (DWORD)sizeof(OSVERSIONINFO);
+-		if (!GetVersionEx((OSVERSIONINFO*)&osvi))
+-			return 0;
+-	}
+-
+-	switch (osvi.dwPlatformId) {
+-	case VER_PLATFORM_WIN32_NT:
+-		if (osvi.dwMajorVersion <= 4)
+-			return _WINVER_NT4_;
+-		if (osvi.dwMajorVersion == 5) {
+-			if (osvi.dwMinorVersion == 0)
+-				return _WINVER_2K_;
+-			if (osvi.dwMinorVersion == 1)
+-				return _WINVER_XP_;
+-			if (osvi.dwMinorVersion == 2)
+-				return _WINVER_2003_;
+-		}
+-		if (osvi.dwMajorVersion == 6) {
+-			if (osvi.dwMinorVersion == 0)
+-				return _WINVER_VISTA_;
+-			if (osvi.dwMinorVersion == 1)
+-				return _WINVER_7_;
+-			if (osvi.dwMinorVersion == 2)
+-				return _WINVER_8_;
+-			if (osvi.dwMinorVersion == 3)
+-				return _WINVER_8_1_;
+-		}
+-		if (osvi.dwMajorVersion == 10 && osvi.dwMinorVersion == 0)
+-			return _WINVER_10_; //for Windows 11 - osvi.dwBuildNumber>=22000
+-		return _WINVER_7_; // never return Win95 if we get the info about an NT system
+-
+-	case VER_PLATFORM_WIN32_WINDOWS:
+-		if (osvi.dwMajorVersion == 4) {
+-			if (osvi.dwMinorVersion == 0)
+-				return _WINVER_95_;
+-			if (osvi.dwMinorVersion == 10)
+-				return _WINVER_98_;
+-			if (osvi.dwMinorVersion == 90)
+-				return _WINVER_ME_;
+-		}
+-	}
+-
+-	return _WINVER_95_;		// there shouldn't be anything lower than this
+-}
+-
+-bool IsRunningXPSP2()
+-{
+-	OSVERSIONINFOEX osvi;
+-	osvi.dwOSVersionInfoSize = (DWORD)sizeof(OSVERSIONINFOEX);
+-
+-	if (!GetVersionEx((OSVERSIONINFO*)&osvi)) {
+-		osvi.dwOSVersionInfoSize = (DWORD)sizeof(OSVERSIONINFO);
+-		if (!GetVersionEx((OSVERSIONINFO*)&osvi))
+-			return false;
+-	}
+-
+-	return osvi.dwPlatformId == VER_PLATFORM_WIN32_NT
+-		&& osvi.dwMajorVersion == 5
+-		&& osvi.dwMinorVersion == 1
+-		&& osvi.wServicePackMajor >= 2;
+-}
+-#pragma warning(pop)
+-
+-bool IsRunningXPSP2OrHigher()
+-{
+-	WORD wv = thePrefs.GetWindowsVersion();
+-	if (wv == _WINVER_XP_)
+-		return IsRunningXPSP2();
+-	return wv > _WINVER_XP_;
++	return UNLIMITED;	// the Win9x per-system cap is gone with Win9x
+ }
+ 
+ uint64 GetFreeDiskSpaceX(LPCTSTR pDirectory)
+@@ -3634,7 +3504,7 @@ bool DoCollectionRegFix(bool checkOnly)
+ 		// we actually need to change the registry and write an entry for HKCU
+ 		if (checkOnly)
+ 			return true;
+-		HKEY hkeyCR = thePrefs.GetWindowsVersion() < _WINVER_2K_ ? HKEY_LOCAL_MACHINE : HKEY_CURRENT_USER;
++		HKEY hkeyCR = HKEY_CURRENT_USER;
+ 		if (regkey.Create(hkeyCR, _T("Software\\Classes\\eMule\\shell\\open\\command")) == ERROR_SUCCESS) {
+ 			VERIFY(regkey.SetStringValue(NULL, regbuffer) == ERROR_SUCCESS);
+ 
+@@ -4085,94 +3955,6 @@ int bestclr(const RGBQUAD* const palette, const BGR c)
+ 	return best;
+ }
+ 
+-static HBITMAP GreyBitmap(const HBITMAP inbmp)
+-{
+-	BITMAP bm;
+-	if (!inbmp || ::GetObject(inbmp, sizeof bm, &bm) != sizeof bm)
+-		return 0;
+-	ASSERT(bm.bmBitsPixel != 16); //not implemented
+-
+-#define BGR2GREY(b,g,r) (((b)*117+(g)*601+(r)*306)>>10)
+-
+-	HDC hdc = ::CreateCompatibleDC(NULL);
+-	HBITMAP hbmPrev = (HBITMAP)::SelectObject(hdc, inbmp);
+-	struct {
+-		BITMAPINFOHEADER bmiHeader;
+-		RGBQUAD bmiColors[256];
+-	} bmiGrey = { {0} };
+-	bmiGrey.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+-	bmiGrey.bmiHeader.biWidth = bm.bmWidth;
+-	bmiGrey.bmiHeader.biHeight = bm.bmHeight;
+-	bmiGrey.bmiHeader.biPlanes = bm.bmPlanes;
+-	bmiGrey.bmiHeader.biBitCount = bm.bmBitsPixel;
+-	bmiGrey.bmiHeader.biCompression = BI_RGB;
+-	if (bm.bmBitsPixel <= 8) { //1, 2, 4, 8 bpp
+-		DWORD i = ::GetDIBColorTable(hdc, 0, _countof(bmiGrey.bmiColors), bmiGrey.bmiColors);
+-		bmiGrey.bmiHeader.biClrUsed = i;
+-		while (i-- > 0) {
+-			BYTE b = BGR2GREY(bmiGrey.bmiColors[i].rgbBlue, bmiGrey.bmiColors[i].rgbGreen, bmiGrey.bmiColors[i].rgbRed);
+-			bmiGrey.bmiColors[i] = RGBQUAD{b, b, b, bmiGrey.bmiColors[i].rgbReserved};
+-		}
+-	}
+-
+-	BYTE *pBits;
+-	HBITMAP outbmp = ::CreateDIBSection(NULL, (BITMAPINFO*)&bmiGrey, DIB_RGB_COLORS, (void**)&pBits, NULL, 0);
+-	if (outbmp) {
+-		HDC hdcMem = ::CreateCompatibleDC(NULL);
+-		HBITMAP hBitmapOld = (HBITMAP)::SelectObject(hdcMem, outbmp);
+-		::BitBlt(hdcMem, 0, 0, bm.bmWidth, bm.bmHeight, hdc, 0, 0, SRCCOPY);
+-		::SelectObject(hdcMem, hBitmapOld);
+-		::DeleteDC(hdcMem);
+-		if (bm.bmBitsPixel >= 24) {
+-			int step = bm.bmBitsPixel / 8;
+-			for (int i = bm.bmHeight; --i >= 0;) {
+-				BYTE *d = pBits;
+-				for (int j = bm.bmWidth; --j >= 0;) {
+-					BYTE g = (BYTE)BGR2GREY(d[0], d[1], d[2]);
+-					d[0] = d[1] = d[2] = g;
+-					d += step;
+-				}
+-				pBits += bm.bmWidthBytes;
+-			}
+-		}
+-	}
+-
+-	::SelectObject(hdc, hbmPrev);
+-	::DeleteDC(hdc);
+-	return outbmp;
+-}
+-
+-// Create grey-scaled icon for WinXP and lower
+-static HICON GreyIcon(const HICON hIcon)
+-{
+-	HICON hGreyIcon = 0;
+-	if (hIcon) {
+-		ICONINFO iinfo;
+-		if (::GetIconInfo(hIcon, &iinfo)) {
+-			HBITMAP hGreyBmp = GreyBitmap(iinfo.hbmColor);
+-			::DeleteObject(iinfo.hbmColor);
+-			if (hGreyBmp) {
+-				iinfo.hbmColor = hGreyBmp;
+-				hGreyIcon = ::CreateIconIndirect(&iinfo);
+-				::DeleteObject(hGreyBmp);
+-			}
+-			::DeleteObject(iinfo.hbmMask);
+-		}
+-	}
+-	return hGreyIcon;
+-}
+-
+-int AddIconGreyedToImageList(CImageList &rList, const HICON hIcon)
+-{
+-	int nPos = -1;
+-	HICON hGreyBmp = GreyIcon(hIcon);
+-	if (hGreyBmp) {
+-		nPos = rList.Add(hGreyBmp);
+-		::DeleteObject(hGreyBmp);
+-	}
+-	return nPos;
+-}
+-
+ byte* bmp2mem(HBITMAP hbmp, size_t &size, REFGUID imgfmt)
+ {
+ 	if (hbmp) {
+@@ -4208,20 +3990,4 @@ HBITMAP mem2bmp(const byte *inbuf, const size_t size)
+ 			return img.Detach();
+ 	}
+ 	return 0;
+-}
+-
+-HICON ReplaceIconGreyedInImageList(CImageList &rList, int nPos)
+-{
+-	if (nPos >= 0 && nPos < rList.GetImageCount()) {
+-		HICON hIcon = rList.ExtractIcon(nPos);
+-		if (hIcon) {
+-			HICON hGreyIcon = GreyIcon(hIcon);
+-			if (hGreyIcon) {
+-				VERIFY(rList.Replace(nPos, hGreyIcon) == nPos);
+-				VERIFY(::DestroyIcon(hGreyIcon));
+-			}
+-		}
+-		return hIcon;
+-	}
+-	return 0;
+ }
+\ No newline at end of file
+diff --git a/srchybrid/OtherFunctions.h b/srchybrid/OtherFunctions.h
+index fb4ec71..4cc8d71 100644
+--- a/srchybrid/OtherFunctions.h
++++ b/srchybrid/OtherFunctions.h
+@@ -317,23 +317,6 @@ ULONGLONG GetModuleVersion(HMODULE hModule);
+ 
+ UINT GetMaxWindowsTCPConnections();
+ 
+-#define _WINVER_95_		0x0400	// 4.0
+-#define _WINVER_NT4_	0x0401	// 4.1 (baked version)
+-#define _WINVER_98_		0x040A	// 4.10
+-#define _WINVER_ME_		0x045A	// 4.90
+-#define _WINVER_2K_		0x0500	// 5.0
+-#define _WINVER_XP_		0x0501	// 5.1
+-#define _WINVER_2003_	0x0502	// 5.2
+-#define _WINVER_VISTA_	0x0600	// 6.0
+-#define _WINVER_7_		0x0601	// 6.1
+-#define	_WINVER_S2008_	0x0601	// 6.1
+-#define _WINVER_8_		0x0602	// 6.2
+-#define _WINVER_8_1_	0x0603	// 6.3
+-#define _WINVER_10_		0x0a00	// 10.0
+-
+-WORD		DetectWinVersion();
+-bool		IsRunningXPSP2();
+-bool		IsRunningXPSP2OrHigher();
+ uint64		GetFreeDiskSpaceX(LPCTSTR pDirectory);
+ ULONGLONG	GetDiskFileSize(LPCTSTR pszFilePath);
+ int			GetAppImageListColorFlag();
+@@ -352,8 +335,6 @@ struct BGR //order of colours in bitmap and palette
+ int			bestclr(const RGBQUAD *const palette, const BGR c);
+ byte*		bmp2mem(HBITMAP hbmp, size_t &size, REFGUID imgfmt);
+ HBITMAP		mem2bmp(const byte *inbuf, const size_t size);
+-int			AddIconGreyedToImageList(CImageList &rList, HICON hIcon);
+-HICON		ReplaceIconGreyedInImageList(CImageList &rList, int nPos);
+ 
+ ///////////////////////////////////////////////////////////////////////////////
+ // MD4/MD5 helpers
+diff --git a/srchybrid/PPgConnection.cpp b/srchybrid/PPgConnection.cpp
+index 9fcf937..e1c5703 100644
+--- a/srchybrid/PPgConnection.cpp
++++ b/srchybrid/PPgConnection.cpp
+@@ -26,7 +26,6 @@
+ #include "Kademlia/Kademlia/Kademlia.h"
+ #include "HelpIDs.h"
+ #include "Statistics.h"
+-#include "Firewallopener.h"
+ #include "ListenSocket.h"
+ #include "ClientUDPSocket.h"
+ #include "LastCommonRouteFinder.h"
+@@ -63,7 +62,6 @@ BEGIN_MESSAGE_MAP(CPPgConnection, CPropertyPage)
+ 	ON_WM_HSCROLL()
+ 	ON_BN_CLICKED(IDC_NETWORK_KADEMLIA, OnSettingsChange)
+ 	ON_WM_HELPINFO()
+-	ON_BN_CLICKED(IDC_OPENPORTS, OnBnClickedOpenPorts)
+ 	ON_BN_CLICKED(IDC_PREF_UPNPONSTART, OnSettingsChange)
+ END_MESSAGE_MAP()
+ 
+@@ -193,14 +191,6 @@ void CPPgConnection::LoadSettings()
+ 		GetDlgItem(IDC_NETWORK_KADEMLIA)->EnableWindow(thePrefs.GetUDPPort() > 0);
+ 		CheckDlgButton(IDC_NETWORK_ED2K, static_cast<UINT>(thePrefs.networked2k));
+ 
+-		WORD wv = thePrefs.GetWindowsVersion();
+-		// don't try on XP SP2 or higher, not needed there any more
+-		GetDlgItem(IDC_OPENPORTS)->ShowWindow(
+-			(wv == _WINVER_XP_ && !IsRunningXPSP2() && theApp.m_pFirewallOpener->DoesFWConnectionExist())
+-			? SW_SHOW : SW_HIDE);
+-
+-		GetDlgItem(IDC_PREF_UPNPONSTART)->EnableWindow(wv != _WINVER_95_ && wv != _WINVER_98_ && wv != _WINVER_NT4_);
+-
+ 		CheckDlgButton(IDC_PREF_UPNPONSTART, static_cast<UINT>(thePrefs.IsUPnPEnabled()));
+ 
+ 		//ShowLimitValues(); - will be called in OnLimiterChange()
+@@ -369,7 +359,6 @@ void CPPgConnection::Localize()
+ 		SetDlgItemText(IDC_MAXSRCHARD_LBL, GetResString(IDS_HARDLIMIT));
+ 		SetDlgItemText(IDC_WIZARD, GetResString(IDS_WIZARD) + _T("..."));
+ 		SetDlgItemText(IDC_UDPDISABLE, GetResString(IDS_UDPDISABLED));
+-		SetDlgItemText(IDC_OPENPORTS, GetResString(IDS_FO_PREFBUTTON));
+ 		SetDlgItemText(IDC_STARTTEST, GetResString(IDS_STARTTEST));
+ 		SetDlgItemText(IDC_PREF_UPNPONSTART, GetResString(IDS_UPNPSTART));
+ 		ShowLimitValues();
+@@ -486,23 +475,6 @@ BOOL CPPgConnection::OnHelpInfo(HELPINFO*)
+ 	return TRUE;
+ }
+ 
+-void CPPgConnection::OnBnClickedOpenPorts()
+-{
+-	OnApply();
+-	theApp.m_pFirewallOpener->RemoveRule(EMULE_DEFAULTRULENAME_UDP);
+-	theApp.m_pFirewallOpener->RemoveRule(EMULE_DEFAULTRULENAME_TCP);
+-	bool bAlreadyExisted = theApp.m_pFirewallOpener->DoesRuleExist(thePrefs.GetPort(), NAT_PROTOCOL_TCP)
+-		|| theApp.m_pFirewallOpener->DoesRuleExist(thePrefs.GetUDPPort(), NAT_PROTOCOL_UDP);
+-	bool bResult = theApp.m_pFirewallOpener->OpenPort(thePrefs.GetPort(), NAT_PROTOCOL_TCP, EMULE_DEFAULTRULENAME_TCP, false);
+-	if (thePrefs.GetUDPPort() != 0)
+-		bResult = bResult && theApp.m_pFirewallOpener->OpenPort(thePrefs.GetUDPPort(), NAT_PROTOCOL_UDP, EMULE_DEFAULTRULENAME_UDP, false);
+-	// TODO: actually, we could offer to remove the existing rules
+-	if (bResult)
+-		LocMessageBox(bAlreadyExisted ? IDS_FO_PREF_EXISTED : IDS_FO_PREF_SUCCCEEDED, MB_ICONINFORMATION | MB_OK, 0);
+-	else
+-		LocMessageBox(IDS_FO_PREF_FAILED, MB_ICONSTOP | MB_OK, 0);
+-}
+-
+ void CPPgConnection::OnStartPortTest()
+ {
+ 	uint16 tcp = (uint16)GetDlgItemInt(IDC_PORT, NULL, FALSE);
+diff --git a/srchybrid/PPgConnection.h b/srchybrid/PPgConnection.h
+index 5a3b0dd..cceb2e0 100644
+--- a/srchybrid/PPgConnection.h
++++ b/srchybrid/PPgConnection.h
+@@ -41,7 +41,6 @@ protected:
+ //	afx_msg void OnBnClickedNetworkKademlia();
+ 	afx_msg void OnHelp();
+ 	afx_msg BOOL OnHelpInfo(HELPINFO*);
+-	afx_msg void OnBnClickedOpenPorts();
+ 	afx_msg void OnStartPortTest();
+ 	afx_msg void OnEnKillFocusTCP();
+ 	afx_msg void OnEnKillFocusUDP();
+diff --git a/srchybrid/PPgDisplay.cpp b/srchybrid/PPgDisplay.cpp
+index 91bdfca..f07423e 100644
+--- a/srchybrid/PPgDisplay.cpp
++++ b/srchybrid/PPgDisplay.cpp
+@@ -85,11 +85,10 @@ void CPPgDisplay::LoadSettings()
+ 	CheckDlgButton(IDC_DISABLEHIST, static_cast<UINT>(thePrefs.GetUseAutocompletion()));
+ 
+ #ifdef HAVE_WIN7_SDK_H
+-	if (thePrefs.GetWindowsVersion() >= _WINVER_7_)
+-		CheckDlgButton(IDC_WIN7TASKBARGOODIES, static_cast<UINT>(thePrefs.IsWin7TaskbarGoodiesEnabled()));
+-	else
++	CheckDlgButton(IDC_WIN7TASKBARGOODIES, static_cast<UINT>(thePrefs.IsWin7TaskbarGoodiesEnabled()));
++#else
++	GetDlgItem(IDC_WIN7TASKBARGOODIES)->EnableWindow(FALSE);
+ #endif
+-		GetDlgItem(IDC_WIN7TASKBARGOODIES)->EnableWindow(FALSE);
+ 
+ 	SetDlgItemInt(IDC_TOOLTIPDELAY, thePrefs.m_iToolDelayTime, FALSE);
+ }
+diff --git a/srchybrid/PPgGeneral.cpp b/srchybrid/PPgGeneral.cpp
+index a127a94..b3cca64 100644
+--- a/srchybrid/PPgGeneral.cpp
++++ b/srchybrid/PPgGeneral.cpp
+@@ -95,12 +95,7 @@ void CPPgGeneral::LoadSettings()
+ 	CheckDlgButton(IDC_STARTMIN, static_cast<UINT>(thePrefs.startMinimized));
+ 	CheckDlgButton(IDC_STARTWIN, static_cast<UINT>(thePrefs.m_bAutoStart));
+ 
+-	if (thePrefs.GetWindowsVersion() != _WINVER_95_)
+-		CheckDlgButton(IDC_PREVENTSTANDBY, static_cast<UINT>(thePrefs.GetPreventStandby()));
+-	else {
+-		CheckDlgButton(IDC_PREVENTSTANDBY, 0);
+-		GetDlgItem(IDC_PREVENTSTANDBY)->EnableWindow(FALSE);
+-	}
++	CheckDlgButton(IDC_PREVENTSTANDBY, static_cast<UINT>(thePrefs.GetPreventStandby()));
+ 
+ 	CString strBuffer;
+ 	strBuffer.Format(_T("%u %s"), thePrefs.versioncheckdays, (LPCTSTR)GetResString(IDS_DAYS2));
+diff --git a/srchybrid/PPgNotify.cpp b/srchybrid/PPgNotify.cpp
+index 6ee5970..554782f 100644
+--- a/srchybrid/PPgNotify.cpp
++++ b/srchybrid/PPgNotify.cpp
+@@ -103,8 +103,6 @@ BOOL CPPgNotify::OnInitDialog()
+ 
+ 	SetDlgItemText(IDC_EDIT_TBN_WAVFILE, thePrefs.notifierSoundFile);
+ 
+-	bool b = IsRunningXPSP2OrHigher();
+-	m_mail.bSendMail &= b;
+ 	CheckDlgButton(IDC_CB_ENABLENOTIFICATIONS, m_mail.bSendMail ? BST_CHECKED : BST_UNCHECKED);
+ 	SetDlgItemText(IDC_EDIT_RECEIVER, m_mail.sTo);
+ 	SetDlgItemText(IDC_EDIT_SENDER, m_mail.sFrom);
+diff --git a/srchybrid/PPgSecurity.cpp b/srchybrid/PPgSecurity.cpp
+index 5b3be83..671f38c 100644
+--- a/srchybrid/PPgSecurity.cpp
++++ b/srchybrid/PPgSecurity.cpp
+@@ -53,7 +53,6 @@ BEGIN_MESSAGE_MAP(CPPgSecurity, CPropertyPage)
+ 	ON_EN_CHANGE(IDC_UPDATEURL, OnEnChangeUpdateUrl)
+ 	ON_BN_CLICKED(IDC_DD, OnDDClicked)
+ 	ON_WM_HELPINFO()
+-	ON_BN_CLICKED(IDC_RUNASUSER, OnBnClickedRunAsUser)
+ 	ON_WM_DESTROY()
+ 	ON_BN_CLICKED(IDC_SEESHARE1, OnSettingsChange)
+ 	ON_BN_CLICKED(IDC_SEESHARE2, OnSettingsChange)
+@@ -83,10 +82,6 @@ void CPPgSecurity::LoadSettings()
+ 
+ 	CheckDlgButton(IDC_USESECIDENT, thePrefs.m_bUseSecureIdent);
+ 
+-	WORD wv = thePrefs.GetWindowsVersion();
+-	GetDlgItem(IDC_RUNASUSER)->EnableWindow(wv >= _WINVER_2K_ && wv <= _WINVER_2003_ && thePrefs.m_nCurrentUserDirMode == 2);
+-	CheckDlgButton(IDC_RUNASUSER, thePrefs.IsRunAsUserEnabled());
+-
+ 	CheckDlgButton(IDC_DISABLEOBFUSCATION, static_cast<UINT>(!thePrefs.IsCryptLayerEnabled()));
+ 	GetDlgItem(IDC_ENABLEOBFUSCATION)->EnableWindow(thePrefs.IsCryptLayerEnabled());
+ 	CheckDlgButton(IDC_ENABLEOBFUSCATION, static_cast<UINT>(thePrefs.IsCryptLayerPreferred()));
+@@ -139,7 +134,6 @@ BOOL CPPgSecurity::OnApply()
+ 		theApp.emuledlg->serverwnd->serverlistctrl.RemoveAllFilteredServers();
+ 
+ 	thePrefs.m_bUseSecureIdent = IsDlgButtonChecked(IDC_USESECIDENT) != 0;
+-	thePrefs.m_bRunAsUser = IsDlgButtonChecked(IDC_RUNASUSER) != 0;
+ 
+ 	thePrefs.m_bCryptLayerRequested = IsDlgButtonChecked(IDC_ENABLEOBFUSCATION) != 0;
+ 	thePrefs.m_bCryptLayerRequired = IsDlgButtonChecked(IDC_ONLYOBFUSCATED) != 0;
+@@ -172,7 +166,6 @@ void CPPgSecurity::Localize()
+ 
+ 		SetDlgItemText(IDC_SEC_MISC, GetResString(IDS_PW_MISC));
+ 		SetDlgItemText(IDC_USESECIDENT, GetResString(IDS_USESECIDENT));
+-		SetDlgItemText(IDC_RUNASUSER, GetResString(IDS_RUNASUSER));
+ 
+ 		SetDlgItemText(IDC_STATIC_UPDATEFROM, GetResString(IDS_UPDATEFROM));
+ 		SetDlgItemText(IDC_LOADURL, GetResString(IDS_LOADURL));
+@@ -476,15 +469,6 @@ BOOL CPPgSecurity::OnHelpInfo(HELPINFO*)
+ 	return TRUE;
+ }
+ 
+-void CPPgSecurity::OnBnClickedRunAsUser()
+-{
+-	if (IsDlgButtonChecked(IDC_RUNASUSER))
+-		if (LocMessageBox(IDS_RAU_WARNING, MB_OKCANCEL | MB_ICONINFORMATION, 0) == IDCANCEL)
+-			CheckDlgButton(IDC_RUNASUSER, BST_UNCHECKED);
+-
+-	OnSettingsChange();
+-}
+-
+ void CPPgSecurity::OnObfuscatedDisabledChange()
+ {
+ 	GetDlgItem(IDC_ENABLEOBFUSCATION)->EnableWindow(!IsDlgButtonChecked(IDC_DISABLEOBFUSCATION));
+diff --git a/srchybrid/PPgSecurity.h b/srchybrid/PPgSecurity.h
+index fd50dfd..4a679e5 100644
+--- a/srchybrid/PPgSecurity.h
++++ b/srchybrid/PPgSecurity.h
+@@ -37,7 +37,6 @@ protected:
+ 	afx_msg void OnDDClicked();
+ 	afx_msg void OnHelp();
+ 	afx_msg BOOL OnHelpInfo(HELPINFO*);
+-	afx_msg void OnBnClickedRunAsUser();
+ 	afx_msg void OnDestroy();
+ 	afx_msg void OnObfuscatedDisabledChange();
+ 	afx_msg void OnObfuscatedRequestedChange();
+diff --git a/srchybrid/PPgTweaks.cpp b/srchybrid/PPgTweaks.cpp
+index e1796df..543f061 100644
+--- a/srchybrid/PPgTweaks.cpp
++++ b/srchybrid/PPgTweaks.cpp
+@@ -86,7 +86,6 @@ CPPgTweaks::CPPgTweaks()
+ 	, m_htiExtractMetaDataID3Lib()
+ 	, m_htiExtractMetaDataNever()
+ 	, m_htiFilterLANIPs()
+-	, m_htiFirewallStartup()
+ 	, m_htiFullAlloc()
+ 	, m_htiImportParts()
+ 	, m_htiLog2Disk()
+@@ -144,7 +143,6 @@ CPPgTweaks::CPPgTweaks()
+ 	, m_bDynUpEnabled()
+ 	, m_bExtControls()
+ 	, m_bFilterLANIPs()
+-	, m_bFirewallStartup()
+ 	, m_bFullAlloc()
+ 	, m_bImportParts()
+ 	, m_bInitializedTreeOpts()
+@@ -209,7 +207,6 @@ void CPPgTweaks::DoDataExchange(CDataExchange *pDX)
+ 		//
+ 		m_htiAutoTakeEd2kLinks = m_ctrlTreeOptions.InsertCheckBox(GetResString(IDS_AUTOTAKEED2KLINKS), TVI_ROOT, m_bAutoTakeEd2kLinks);
+ 		m_htiCreditSystem = m_ctrlTreeOptions.InsertCheckBox(GetResString(IDS_USECREDITSYSTEM), TVI_ROOT, m_bCreditSystem);
+-		m_htiFirewallStartup = m_ctrlTreeOptions.InsertCheckBox(GetResString(IDS_FO_PREF_STARTUP), TVI_ROOT, m_bFirewallStartup);
+ 		m_htiFilterLANIPs = m_ctrlTreeOptions.InsertCheckBox(GetResString(IDS_PW_FILTER), TVI_ROOT, m_bFilterLANIPs);
+ 		m_htiExtControls = m_ctrlTreeOptions.InsertCheckBox(GetResString(IDS_SHOWEXTSETTINGS), TVI_ROOT, m_bExtControls);
+ 		m_htiA4AFSaveCpu = m_ctrlTreeOptions.InsertCheckBox(GetResString(IDS_A4AF_SAVE_CPU), TVI_ROOT, m_bA4AFSaveCpu); // ZZ:DownloadManager
+@@ -321,11 +318,8 @@ void CPPgTweaks::DoDataExchange(CDataExchange *pDX)
+ 	/////////////////////////////////////////////////////////////////////////////
+ 	// Miscellaneous group
+ 	//
+-	WORD wv = thePrefs.GetWindowsVersion();
+ 	DDX_TreeCheck(pDX, IDC_EXT_OPTS, m_htiAutoTakeEd2kLinks, m_bAutoTakeEd2kLinks);
+ 	DDX_TreeCheck(pDX, IDC_EXT_OPTS, m_htiCreditSystem, m_bCreditSystem);
+-	DDX_TreeCheck(pDX, IDC_EXT_OPTS, m_htiFirewallStartup, m_bFirewallStartup);
+-	m_ctrlTreeOptions.SetCheckBoxEnable(m_htiFirewallStartup, wv == _WINVER_XP_ && !IsRunningXPSP2());
+ 	DDX_TreeCheck(pDX, IDC_EXT_OPTS, m_htiFilterLANIPs, m_bFilterLANIPs);
+ 	DDX_TreeCheck(pDX, IDC_EXT_OPTS, m_htiExtControls, m_bExtControls);
+ 	DDX_TreeCheck(pDX, IDC_EXT_OPTS, m_htiA4AFSaveCpu, m_bA4AFSaveCpu);
+@@ -336,7 +330,6 @@ void CPPgTweaks::DoDataExchange(CDataExchange *pDX)
+ 	// File related group
+ 	//
+ 	DDX_TreeCheck(pDX, IDC_EXT_OPTS, m_htiSparsePartFiles, m_bSparsePartFiles);
+-	m_ctrlTreeOptions.SetCheckBoxEnable(m_htiSparsePartFiles, wv != _WINVER_VISTA_ /*only disable on Vista, not later versions*/);
+ 	DDX_TreeCheck(pDX, IDC_EXT_OPTS, m_htiImportParts, m_bImportParts);
+ 	DDX_TreeCheck(pDX, IDC_EXT_OPTS, m_htiFullAlloc, m_bFullAlloc);
+ 	DDX_TreeCheck(pDX, IDC_EXT_OPTS, m_htiCheckDiskspace, m_bCheckDiskspace);
+@@ -422,7 +415,6 @@ void CPPgTweaks::DoDataExchange(CDataExchange *pDX)
+ 	// eMule Shared User
+ 	//
+ 	DDX_TreeRadio(pDX, IDC_EXT_OPTS, m_htiShareeMule, m_iShareeMule);
+-	m_ctrlTreeOptions.SetRadioButtonEnable(m_htiShareeMulePublicUser, wv >= _WINVER_VISTA_);
+ }
+ 
+ BOOL CPPgTweaks::OnInitDialog()
+@@ -458,7 +450,6 @@ BOOL CPPgTweaks::OnInitDialog()
+ 	m_bResolveShellLinks = thePrefs.GetResolveSharedShellLinks();
+ 	m_fMinFreeDiskSpaceMB = (float)(thePrefs.m_uMinFreeDiskSpace / (1024.0 * 1024.0));
+ 	m_sYourHostname = thePrefs.GetYourHostname();
+-	m_bFirewallStartup = ((thePrefs.GetWindowsVersion() == _WINVER_XP_) ? thePrefs.m_bOpenPortsOnStartUp : 0);
+ 	m_bAutoArchDisable = !thePrefs.m_bAutomaticArcPreviewStart;
+ 
+ 	m_bDynUpEnabled = thePrefs.m_bDynUpEnabled;
+@@ -589,7 +580,6 @@ BOOL CPPgTweaks::OnApply()
+ 		thePrefs.SetYourHostname(m_sYourHostname);
+ 		theApp.emuledlg->serverwnd->UpdateMyInfo();
+ 	}
+-	thePrefs.m_bOpenPortsOnStartUp = m_bFirewallStartup;
+ 
+ 	thePrefs.m_bDynUpEnabled = m_bDynUpEnabled;
+ 	thePrefs.m_minupload = (uint32)m_iDynUpMinUpload;
+@@ -688,7 +678,6 @@ void CPPgTweaks::Localize()
+ 		//LocalizeItemText(m_htiExtractMetaDataMediaDet, IDS_META_DATA_MEDIADET);
+ 		LocalizeItemText(m_htiExtractMetaDataNever, IDS_NEVER);
+ 		LocalizeItemText(m_htiFilterLANIPs, IDS_PW_FILTER);
+-		LocalizeItemText(m_htiFirewallStartup, IDS_FO_PREF_STARTUP);
+ 		LocalizeItemText(m_htiFullAlloc, IDS_FULLALLOC);
+ 		LocalizeItemText(m_htiImportParts, IDS_ENABLEIMPORTPARTS);
+ 		LocalizeItemText(m_htiLog2Disk, IDS_LOG2DISK);
+@@ -757,7 +746,6 @@ void CPPgTweaks::OnDestroy()
+ 	m_htiCheckDiskspace = NULL;
+ 	m_htiMinFreeDiskSpace = NULL;
+ 	m_htiYourHostname = NULL;
+-	m_htiFirewallStartup = NULL;
+ 	m_htiDynUp = NULL;
+ 	m_htiDynUpEnabled = NULL;
+ 	m_htiDynUpMinUpload = NULL;
+diff --git a/srchybrid/PPgTweaks.h b/srchybrid/PPgTweaks.h
+index 0e405c4..b01a261 100644
+--- a/srchybrid/PPgTweaks.h
++++ b/srchybrid/PPgTweaks.h
+@@ -53,7 +53,6 @@ protected:
+ 	//HTREEITEM m_htiExtractMetaDataMediaDet;
+ 	HTREEITEM m_htiExtractMetaDataNever;
+ 	HTREEITEM m_htiFilterLANIPs;
+-	HTREEITEM m_htiFirewallStartup;
+ 	HTREEITEM m_htiFullAlloc;
+ 	HTREEITEM m_htiImportParts;
+ 	HTREEITEM m_htiLog2Disk;
+@@ -113,7 +112,6 @@ protected:
+ 	bool m_bDynUpEnabled;
+ 	bool m_bExtControls;
+ 	bool m_bFilterLANIPs;
+-	bool m_bFirewallStartup;
+ 	bool m_bFullAlloc;
+ 	bool m_bImportParts;
+ 	bool m_bInitializedTreeOpts;
+diff --git a/srchybrid/PartFile.cpp b/srchybrid/PartFile.cpp
+index bd13bcc..dc2dc95 100644
+--- a/srchybrid/PartFile.cpp
++++ b/srchybrid/PartFile.cpp
+@@ -53,9 +53,7 @@
+ #include "CollectionViewDialog.h"
+ #include "uploaddiskiothread.h"
+ #include "PartFileWriteThread.h"
+-#ifndef XP_BUILD
+ #include <urlmon.h>
+-#endif
+ 
+ #ifdef _DEBUG
+ #define new DEBUG_NEW
+@@ -2722,25 +2720,6 @@ static void UncompressFile(LPCTSTR pszFilePath, CPartFile *pPartFile)
+ 	::CloseHandle(hFile);
+ }
+ 
+-#ifdef XP_BUILD
+-#ifndef __IZoneIdentifier_INTERFACE_DEFINED__
+-MIDL_INTERFACE("cd45f185-1b21-48e2-967b-ead743a8914e")
+-IZoneIdentifier : public IUnknown
+-{
+-public:
+-	virtual HRESULT STDMETHODCALLTYPE GetId(DWORD *pdwZone) = 0;
+-	virtual HRESULT STDMETHODCALLTYPE SetId(DWORD dwZone) = 0;
+-	virtual HRESULT STDMETHODCALLTYPE Remove() = 0;
+-};
+-#endif //__IZoneIdentifier_INTERFACE_DEFINED__
+-
+-#ifdef CLSID_PersistentZoneIdentifier
+-EXTERN_C const IID CLSID_PersistentZoneIdentifier;
+-#elif _WIN32_WINNT<_WIN32_WINNT_VISTA
+-const GUID CLSID_PersistentZoneIdentifier = {0x0968E258, 0x16C7, 0x4DBA, { 0xAA, 0x86, 0x46, 0x2D, 0xD6, 0x1E, 0x31, 0xA3 }};
+-#endif
+-#endif
+-
+ static void SetZoneIdentifier(LPCWSTR pszFilePath)
+ {
+ 	if (!thePrefs.GetCheckFileOpen())
+diff --git a/srchybrid/Pinger.cpp b/srchybrid/Pinger.cpp
+index cf84a90..2bb55c3 100644
+--- a/srchybrid/Pinger.cpp
++++ b/srchybrid/Pinger.cpp
+@@ -374,39 +374,6 @@ PingStatus Pinger::PingICMP(uint32 lAddr, DWORD ttl, bool doLog)
+ 
+ void Pinger::PIcmpErr(LPCTSTR pszMsg, DWORD nICMPErr)
+ {
+-#ifdef XP_BUILD
+-	static LPCTSTR const aszSendEchoErr[] =
+-	{
+-		_T("IP_STATUS_BASE (11000)"),
+-		_T("IP_BUF_TOO_SMALL (11001)"),
+-		_T("IP_DEST_NET_UNREACHABLE (11002)"),
+-		_T("IP_DEST_HOST_UNREACHABLE (11003)"),
+-		_T("IP_DEST_PROT_UNREACHABLE (11004)"),
+-		_T("IP_DEST_PORT_UNREACHABLE (11005)"),
+-		_T("IP_NO_RESOURCES (11006)"),
+-		_T("IP_BAD_OPTION (11007)"),
+-		_T("IP_HW_ERROR (11008)"),
+-		_T("IP_PACKET_TOO_BIG (11009)"),
+-		_T("IP_REQ_TIMED_OUT (11010)"),
+-		_T("IP_BAD_REQ (11011)"),
+-		_T("IP_BAD_ROUTE (11012)"),
+-		_T("IP_TTL_EXPIRED_TRANSIT (11013)"),
+-		_T("IP_TTL_EXPIRED_REASSEM (11014)"),
+-		_T("IP_PARAM_PROBLEM (11015)"),
+-		_T("IP_SOURCE_QUENCH (11016)"),
+-		_T("IP_OPTION_TOO_BIG (11017)"),
+-		_T("IP_BAD_DESTINATION (11018)"),
+-		_T("IP_ADDR_DELETED (11019)"),
+-		_T("IP_SPEC_MTU_CHANGE (11020)"),
+-		_T("IP_MTU_CHANGE (11021)"),
+-		_T("IP_UNLOAD (11022)")
+-	};
+-
+-	bool b = (nICMPErr >= IP_STATUS_BASE && nICMPErr < IP_STATUS_BASE + _countof(aszSendEchoErr));
+-	theApp.QueueDebugLogLine(false, _T("%sPinger: %s")
+-		, pszMsg ? pszMsg : _T("")
+-		, b ? aszSendEchoErr[nICMPErr - IP_STATUS_BASE] : (LPCTSTR)GetErrorMessage(nICMPErr, 1));
+-#else
+ 	DWORD dwSize = 511;
+ 	CStringW sErr;
+ 	bool b = (GetIpErrorString(nICMPErr, sErr.GetBuffer(dwSize), &dwSize) == NO_ERROR);
+@@ -414,5 +381,4 @@ void Pinger::PIcmpErr(LPCTSTR pszMsg, DWORD nICMPErr)
+ 	theApp.QueueDebugLogLine(false, _T("%sPinger: %s")
+ 		, pszMsg ? pszMsg : _T("")
+ 		, (LPCTSTR)(b ? (CString)sErr.Trim() : GetErrorMessage(nICMPErr, 1)));
+-#endif
+ }
+\ No newline at end of file
+diff --git a/srchybrid/Preferences.cpp b/srchybrid/Preferences.cpp
+index 8508c78..f0a0a4c 100644
+--- a/srchybrid/Preferences.cpp
++++ b/srchybrid/Preferences.cpp
+@@ -17,6 +17,8 @@
+ #include "stdafx.h"
+ #include <share.h>
+ #include <iphlpapi.h>
++#include <dwmapi.h>
++#pragma comment(lib, "dwmapi.lib")
+ #include "emule.h"
+ #include "Preferences.h"
+ #include "Opcodes.h"
+@@ -442,12 +444,8 @@ CIni	*CPreferences::skinsIni;
+ Preferences_Ext_Struct *CPreferences::prefsExt;
+ CArray<Category_Struct*> CPreferences::catArr;
+ UINT	CPreferences::m_nWebMirrorAlertLevel;
+-WORD	CPreferences::m_wWinVer;
+-bool	CPreferences::m_bRunAsUser;
+-bool	CPreferences::m_bPreferRestrictedOverUser;
+ bool	CPreferences::m_bUseOldTimeRemaining;
+ 
+-bool	CPreferences::m_bOpenPortsOnStartUp;
+ int		CPreferences::m_byLogLevel;
+ bool	CPreferences::m_bTrustEveryHash;
+ bool	CPreferences::m_bRememberCancelledFiles;
+@@ -1749,10 +1747,7 @@ void CPreferences::SavePreferences()
+ 	ini.WriteBool(_T("A4AFSaveCpu"), m_bA4AFSaveCpu); // ZZ:DownloadManager
+ 	ini.WriteBool(_T("HighresTimer"), m_bHighresTimer);
+ 	ini.WriteInt(_T("WebMirrorAlertLevel"), m_nWebMirrorAlertLevel);
+-	ini.WriteBool(_T("RunAsUnprivilegedUser"), m_bRunAsUser);
+-	ini.WriteBool(_T("OpenPortsOnStartUp"), m_bOpenPortsOnStartUp);
+ 	ini.WriteInt(_T("DebugLogLevel"), m_byLogLevel);
+-	ini.WriteInt(_T("WinXPSP2OrHigher"), static_cast<int>(IsRunningXPSP2OrHigher()));
+ 	ini.WriteBool(_T("RememberCancelledFiles"), m_bRememberCancelledFiles);
+ 	ini.WriteBool(_T("RememberDownloadedFiles"), m_bRememberDownloadedFiles);
+ 
+@@ -1953,12 +1948,6 @@ void CPreferences::LoadPreferences()
+ 	maxhalfconnections = ini.GetInt(_T("MaxHalfConnections"), 9);
+ 	m_bConditionalTCPAccept = ini.GetBool(_T("ConditionalTCPAccept"), false);
+ 
+-	// reset max half-open to a default if OS changed to/from XP SP2 or higher
+-	int dwSP2OrHigher = ini.GetInt(_T("WinXPSP2OrHigher"), -1);
+-	bool dwCurSP2OrHigher = IsRunningXPSP2OrHigher();
+-	if (dwSP2OrHigher != static_cast<int>(dwCurSP2OrHigher))
+-		maxhalfconnections = dwCurSP2OrHigher ? 9 : 50;
+-
+ 	m_strBindAddrW = ini.GetString(_T("BindAddr")).Trim();
+ 	m_pszBindAddrW = m_strBindAddrW.IsEmpty() ? NULL : (LPCWSTR)m_strBindAddrW;
+ 	m_strBindAddrA = m_strBindAddrW;
+@@ -2308,16 +2297,13 @@ void CPreferences::LoadPreferences()
+ 
+ 	m_bA4AFSaveCpu = ini.GetBool(_T("A4AFSaveCpu"), false); // ZZ:DownloadManager
+ 	m_bHighresTimer = ini.GetBool(_T("HighresTimer"), false);
+-	m_bRunAsUser = ini.GetBool(_T("RunAsUnprivilegedUser"), false);
+-	m_bPreferRestrictedOverUser = ini.GetBool(_T("PreferRestrictedOverUser"), false);
+-	m_bOpenPortsOnStartUp = ini.GetBool(_T("OpenPortsOnStartUp"), false);
+ 	m_byLogLevel = ini.GetInt(_T("DebugLogLevel"), DLP_VERYLOW);
+ 	m_bTrustEveryHash = ini.GetBool(_T("AICHTrustEveryHash"), false);
+ 	m_bRememberCancelledFiles = ini.GetBool(_T("RememberCancelledFiles"), true);
+ 	m_bRememberDownloadedFiles = ini.GetBool(_T("RememberDownloadedFiles"), true);
+ 	m_bPartiallyPurgeOldKnownFiles = ini.GetBool(_T("PartiallyPurgeOldKnownFiles"), true);
+ 
+-	m_email.bSendMail = IsRunningXPSP2OrHigher() && ini.GetBool(_T("NotifierSendMail"), false);
++	m_email.bSendMail = ini.GetBool(_T("NotifierSendMail"), false);
+ 	m_email.uAuth = static_cast<SMTPauth>(ini.GetInt(_T("NotifierMailAuth"), 0));
+ 	m_email.uTLS = static_cast<TLSmode>(ini.GetInt(_T("NotifierMailTLS"), 0));
+ 	m_email.sFrom = ini.GetString(_T("NotifierMailSender"), _T(""));
+@@ -2418,27 +2404,9 @@ void CPreferences::LoadPreferences()
+ 	SetLanguage();
+ }
+ 
+-WORD CPreferences::GetWindowsVersion()
+-{
+-	static bool bWinVerAlreadyDetected = false;
+-	if (!bWinVerAlreadyDetected) {
+-		bWinVerAlreadyDetected = true;
+-		m_wWinVer = DetectWinVersion();
+-	}
+-	return m_wWinVer;
+-}
+-
+ UINT CPreferences::GetDefaultMaxConperFive()
+ {
+-	switch (GetWindowsVersion()) {
+-	case _WINVER_98_:
+-		return 5;
+-	case _WINVER_95_:
+-	case _WINVER_ME_:
+-		return MAXCON5WIN9X;
+-	default:
+-		return MAXCONPER5SEC;
+-	}
++	return MAXCONPER5SEC;
+ }
+ 
+ //////////////////////////////////////////////////////////
+@@ -2713,20 +2681,9 @@ UINT CPreferences::GetWebMirrorAlertLevel()
+ 	return UpdateNotify() ? m_nWebMirrorAlertLevel : 0;
+ }
+ 
+-bool CPreferences::IsRunAsUserEnabled()
+-{
+-	switch (GetWindowsVersion()) {
+-	case _WINVER_2K_:
+-	case _WINVER_XP_:
+-	case _WINVER_2003_:
+-		return m_bRunAsUser && m_nCurrentUserDirMode == 2;
+-	}
+-	return false;
+-}
+-
+ bool CPreferences::GetUseReBarToolbar()
+ {
+-	return GetReBarToolbar() && theApp.m_ullComCtrlVer >= MAKEDLLVERULL(5, 8, 0, 0);
++	return GetReBarToolbar();
+ }
+ 
+ uint32 CPreferences::GetMaxGraphUploadRate(bool bEstimateIfUnlimited)
+@@ -2886,7 +2843,7 @@ CString CPreferences::GetDefaultDirectory(EDefaultDirectory eDirectory, bool bCr
+ 
+ 		// check if our registry setting is present which forces the single or multiuser directories
+ 		// and lets us ignore other defaults
+-		// 0 = Multiuser, 1 = Publicuser, 2 = ExecutableDir. (on Winver < Vista 1 has the same effect as 2)
++		// 0 = Multiuser, 1 = Publicuser, 2 = ExecutableDir.
+ 		DWORD nRegistrySetting = _UI32_MAX;
+ 		CRegKey rkEMuleRegKey;
+ 		if (rkEMuleRegKey.Open(HKEY_CURRENT_USER, _T("Software\\eMule"), KEY_READ) == ERROR_SUCCESS) {
+@@ -2897,101 +2854,65 @@ CString CPreferences::GetDefaultDirectory(EDefaultDirectory eDirectory, bool bCr
+ 			nRegistrySetting = _UI32_MAX;
+ 
+ 		// Do we need to get SystemFolders, or do we use our old Default anyway? (Executable Dir)
+-		bool bVista = (GetWindowsVersion() >= _WINVER_VISTA_);
+-		if (nRegistrySetting == 0
+-			|| (nRegistrySetting == 1 && bVista)
+-			|| (nRegistrySetting == _UI32_MAX && (!bConfigAvailableExecutable || bVista)))
+-		{
+-			if (bVista) {
+-				// function unavailable before WinVista
+-				HRESULT(WINAPI *pfnSHGetKnownFolderPath)(REFKNOWNFOLDERID, DWORD, HANDLE, PWSTR*);
+-				HMODULE hShell32 = ::GetModuleHandle(_T("shell32.dll"));
+-				(FARPROC&)pfnSHGetKnownFolderPath = hShell32 ? ::GetProcAddress(hShell32, "SHGetKnownFolderPath") : NULL;
+-				if (pfnSHGetKnownFolderPath) {
+-					PWSTR pszLocalAppData = NULL;
+-					PWSTR pszPersonalDownloads = NULL;
+-					PWSTR pszPublicDownloads = NULL;
+-					PWSTR pszProgramData = NULL;
+-					if (   (*pfnSHGetKnownFolderPath)(FOLDERID_LocalAppData, 0, NULL, &pszLocalAppData) == S_OK
+-						&& (*pfnSHGetKnownFolderPath)(FOLDERID_Downloads, 0, NULL, &pszPersonalDownloads) == S_OK
+-						&& (*pfnSHGetKnownFolderPath)(FOLDERID_PublicDownloads, 0, NULL, &pszPublicDownloads) == S_OK
+-						&& (*pfnSHGetKnownFolderPath)(FOLDERID_ProgramData, 0, NULL, &pszProgramData) == S_OK)
+-					{
+-						if (   wcslen(pszLocalAppData) < MAX_PATH - 30
+-							&& wcslen(pszPersonalDownloads) < MAX_PATH - 40
+-							&& wcslen(pszProgramData) < MAX_PATH - 30
+-							&& wcslen(pszPublicDownloads) < MAX_PATH - 40)
+-						{
+-							CString strLocalAppData(pszLocalAppData);
+-							CString strPersonalDownloads(pszPersonalDownloads);
+-							CString strPublicDownloads(pszPublicDownloads);
+-							CString strProgramData(pszProgramData);
+-							slosh(strLocalAppData);
+-							slosh(strPersonalDownloads);
+-							slosh(strPublicDownloads);
+-							slosh(strProgramData);
+-
+-							if (nRegistrySetting == _UI32_MAX) {
+-								// no registry default, check if we find a preferences.ini to use
+-								if (::PathFileExists(strLocalAppData + _T("eMule\\") CONFIGFOLDER PREFINIFILE))
+-									m_nCurrentUserDirMode = 0;
+-								else if (::PathFileExists(strProgramData + _T("eMule\\") CONFIGFOLDER PREFINIFILE))
+-									m_nCurrentUserDirMode = 1;
+-								else if (bConfigAvailableExecutable)
+-									m_nCurrentUserDirMode = 2;
+-								else
+-									m_nCurrentUserDirMode = 0; // no preferences.ini found, use the default
+-							} else
+-								m_nCurrentUserDirMode = nRegistrySetting;
+-
+-							switch (m_nCurrentUserDirMode) {
+-							case 0: //multiuser
+-								strSelectedDataBaseDirectory = strPersonalDownloads + _T("eMule\\");
+-								strSelectedConfigBaseDirectory = strLocalAppData + _T("eMule\\");
+-								strSelectedExpansionBaseDirectory = strProgramData + _T("eMule\\");
+-								break;
+-							case 1: //public user
+-								strSelectedDataBaseDirectory = strPublicDownloads + _T("eMule\\");
+-								strSelectedConfigBaseDirectory = strProgramData + _T("eMule\\");
+-								strSelectedExpansionBaseDirectory = strProgramData + _T("eMule\\");
+-							case 2: //program directory
+-								break;
+-							default:
+-								ASSERT(0);
+-							}
+-						} else
+-							ASSERT(0);
+-					}
+-					::CoTaskMemFree(pszLocalAppData);
+-					::CoTaskMemFree(pszPersonalDownloads);
+-					::CoTaskMemFree(pszPublicDownloads);
+-					::CoTaskMemFree(pszProgramData);
+-				} else {
+-					DebugLogError(_T("Unable to retrieve system folders' location with shell32.dll; using fallbacks"));
+-					ASSERT(0);
+-				}
+-			} else { //pre-Vista
+-				const CString &strAppData(ShellGetFolderPath(CSIDL_APPDATA));
+-				const CString &strPersonal(ShellGetFolderPath(CSIDL_PERSONAL));
+-				if (!strAppData.IsEmpty() && !strPersonal.IsEmpty()) {
+-					if (strAppData.GetLength() < MAX_PATH - 30 && strPersonal.GetLength() < MAX_PATH - 40) {
+-						if (nRegistrySetting == 0	// registry setting overwrites, use these folders
+-							|| (nRegistrySetting == _UI32_MAX
+-								&& !bConfigAvailableExecutable
+-								&& ::PathFileExists(strAppData + _T("eMule\\") CONFIGFOLDER PREFINIFILE)))
+-						{
+-							slosh(const_cast<CString&>(strAppData));
+-							slosh(const_cast<CString&>(strPersonal));
+-							strSelectedDataBaseDirectory = strPersonal + _T("eMule Downloads\\");
+-							strSelectedConfigBaseDirectory = strAppData + _T("eMule\\");
+-							// strSelectedExpansionBaseDirectory stays unchanged
++		if (nRegistrySetting != 2) {
++			PWSTR pszLocalAppData = NULL;
++			PWSTR pszPersonalDownloads = NULL;
++			PWSTR pszPublicDownloads = NULL;
++			PWSTR pszProgramData = NULL;
++			if (   ::SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, NULL, &pszLocalAppData) == S_OK
++				&& ::SHGetKnownFolderPath(FOLDERID_Downloads, 0, NULL, &pszPersonalDownloads) == S_OK
++				&& ::SHGetKnownFolderPath(FOLDERID_PublicDownloads, 0, NULL, &pszPublicDownloads) == S_OK
++				&& ::SHGetKnownFolderPath(FOLDERID_ProgramData, 0, NULL, &pszProgramData) == S_OK)
++			{
++				if (   wcslen(pszLocalAppData) < MAX_PATH - 30
++					&& wcslen(pszPersonalDownloads) < MAX_PATH - 40
++					&& wcslen(pszProgramData) < MAX_PATH - 30
++					&& wcslen(pszPublicDownloads) < MAX_PATH - 40)
++				{
++					CString strLocalAppData(pszLocalAppData);
++					CString strPersonalDownloads(pszPersonalDownloads);
++					CString strPublicDownloads(pszPublicDownloads);
++					CString strProgramData(pszProgramData);
++					slosh(strLocalAppData);
++					slosh(strPersonalDownloads);
++					slosh(strPublicDownloads);
++					slosh(strProgramData);
++
++					if (nRegistrySetting == _UI32_MAX) {
++						// no registry default, check if we find a preferences.ini to use
++						if (::PathFileExists(strLocalAppData + _T("eMule\\") CONFIGFOLDER PREFINIFILE))
+ 							m_nCurrentUserDirMode = 0;
+-						} else
+-							ASSERT(0);
++						else if (::PathFileExists(strProgramData + _T("eMule\\") CONFIGFOLDER PREFINIFILE))
++							m_nCurrentUserDirMode = 1;
++						else if (bConfigAvailableExecutable)
++							m_nCurrentUserDirMode = 2;
++						else
++							m_nCurrentUserDirMode = 0; // no preferences.ini found, use the default
+ 					} else
++						m_nCurrentUserDirMode = nRegistrySetting;
++
++					switch (m_nCurrentUserDirMode) {
++					case 0: //multiuser
++						strSelectedDataBaseDirectory = strPersonalDownloads + _T("eMule\\");
++						strSelectedConfigBaseDirectory = strLocalAppData + _T("eMule\\");
++						strSelectedExpansionBaseDirectory = strProgramData + _T("eMule\\");
++						break;
++					case 1: //public user
++						strSelectedDataBaseDirectory = strPublicDownloads + _T("eMule\\");
++						strSelectedConfigBaseDirectory = strProgramData + _T("eMule\\");
++						strSelectedExpansionBaseDirectory = strProgramData + _T("eMule\\");
++					case 2: //program directory
++						break;
++					default:
+ 						ASSERT(0);
+-				}
++					}
++				} else
++					ASSERT(0);
+ 			}
++			::CoTaskMemFree(pszLocalAppData);
++			::CoTaskMemFree(pszPersonalDownloads);
++			::CoTaskMemFree(pszPublicDownloads);
++			::CoTaskMemFree(pszProgramData);
+ 		}
+ 
+ 		// All the directories (categories also) should have a trailing backslash
+@@ -3074,10 +2995,6 @@ void CPreferences::ChangeUserDirMode(int nNewMode)
+ {
+ 	if (m_nCurrentUserDirMode == nNewMode)
+ 		return;
+-	if (nNewMode == 1 && GetWindowsVersion() < _WINVER_VISTA_) {
+-		ASSERT(0);
+-		return;
+-	}
+ 	// check if our registry setting is present which forces the single or multiuser directories
+ 	// and lets us ignore other defaults
+ 	// 0 = Multiuser, 1 = Public user, 2 = ExecutableDir.
+@@ -3093,18 +3010,7 @@ void CPreferences::ChangeUserDirMode(int nNewMode)
+ 
+ bool CPreferences::GetSparsePartFiles()
+ {
+-	// Vista's Sparse File implementation seems to be buggy as far as i can see
+-	// If a sparse file exceeds a given limit of write I/O operations in a certain order
+-	// (or i.e. end to beginning) in its lifetime, it will at some point throw out
+-	// a FILE_SYSTEM_LIMITATION error and deny any writing to this file.
+-	// It was suggested that Vista might limit the data runs, which would lead to such behaviour,
+-	// but wouldn't make much sense for a sparse file implementation nevertheless.
+-	// Due to the fact that eMule writes a lot of small blocks into sparse files and flushes them
+-	// every 6 seconds, this problem pops up sooner or later for all big files.
+-	// I don't see any way to walk around this for now
+-	// Update: This problem seems to be fixed on Win7, possibly on earlier Vista ServicePacks too
+-	//		   In any case, we allow sparse files for versions earlier and later than Vista
+-	return m_bSparsePartFiles && (GetWindowsVersion() != _WINVER_VISTA_);
++	return m_bSparsePartFiles;
+ }
+ 
+ bool CPreferences::IsRunningAeroGlassTheme()
+@@ -3116,17 +3022,8 @@ bool CPreferences::IsRunningAeroGlassTheme()
+ 	static bool bAeroAlreadyDetected = false;
+ 	if (!bAeroAlreadyDetected) {
+ 		bAeroAlreadyDetected = true;
+-		m_bIsRunningAeroGlass = FALSE;
+-		if (GetWindowsVersion() >= _WINVER_VISTA_) {
+-			HMODULE hDWMAPI = ::LoadLibrary(_T("dwmapi.dll"));
+-			if (hDWMAPI) {
+-				HRESULT(WINAPI *pfnDwmIsCompositionEnabled)(BOOL*);
+-				(FARPROC&)pfnDwmIsCompositionEnabled = ::GetProcAddress(hDWMAPI, "DwmIsCompositionEnabled");
+-				if (pfnDwmIsCompositionEnabled != NULL)
+-					pfnDwmIsCompositionEnabled(&m_bIsRunningAeroGlass);
+-				::FreeLibrary(hDWMAPI);
+-			}
+-		}
++		if (FAILED(::DwmIsCompositionEnabled(&m_bIsRunningAeroGlass)))
++			m_bIsRunningAeroGlass = FALSE;
+ 	}
+ 	return m_bIsRunningAeroGlass != FALSE;
+ }
+\ No newline at end of file
+diff --git a/srchybrid/Preferences.h b/srchybrid/Preferences.h
+index 236a541..0280486 100644
+--- a/srchybrid/Preferences.h
++++ b/srchybrid/Preferences.h
+@@ -607,13 +607,9 @@ public:
+ 
+ 	static int		m_iDbgHeap;
+ 	static UINT		m_nWebMirrorAlertLevel;
+-	static bool		m_bRunAsUser;
+-	static bool		m_bPreferRestrictedOverUser;
+ 
+ 	static bool		m_bUseOldTimeRemaining;
+ 
+-	// Firewall settings
+-	static bool		m_bOpenPortsOnStartUp;
+ 
+ 	//AICH Options
+ 	static bool		m_bTrustEveryHash;
+@@ -1062,7 +1058,6 @@ public:
+ 	static bool		GetMessageEnableSmileys()			{ return m_bMessageEnableSmileys; }
+ 	static bool		GetIRCEnableUTF8()					{ return m_bIRCEnableUTF8; }
+ 
+-	static WORD		GetWindowsVersion();
+ 	static bool		IsRunningAeroGlassTheme();
+ 	static bool		GetStartMinimized()					{ return startMinimized; }
+ 	static void		SetStartMinimized( bool instartMinimized) { startMinimized = instartMinimized; }
+@@ -1325,8 +1320,6 @@ public:
+ 	static UINT		GetWebMirrorAlertLevel();
+ 	static bool		UseSimpleTimeRemainingComputation()	{ return m_bUseOldTimeRemaining; }
+ 
+-	static bool		IsRunAsUserEnabled();
+-	static bool		IsPreferingRestrictedOverUser()		{ return m_bPreferRestrictedOverUser; }
+ 
+ 	// Verbose log options
+ 	static bool		GetEnableVerboseOptions()			{ return m_bEnableVerboseOptions; }
+@@ -1364,8 +1357,6 @@ public:
+ 	static int		GetDebugSearchResultDetailLevel()	{ return 0; }
+ #endif
+ 
+-	// Firewall settings
+-	static bool		IsOpenPortsOnStartupEnabled()		{ return m_bOpenPortsOnStartUp; }
+ 	//AICH Hash
+ 	static bool		IsTrustingEveryHash()				{ return m_bTrustEveryHash; } // this is a debug option
+ 	// Files options
+@@ -1424,7 +1415,6 @@ public:
+ protected:
+ 	static CString	m_strFileCommentsFilePath;
+ 	static Preferences_Ext_Struct *prefsExt;
+-	static WORD		m_wWinVer;
+ 	static CArray<Category_Struct*> catArr;
+ 	static CString	m_astrDefaultDirs[13];
+ 	static bool		m_abDefaultDirsCreated[13];
+diff --git a/srchybrid/Resource.h b/srchybrid/Resource.h
+index 7dd89dd..aa656c4 100644
+--- a/srchybrid/Resource.h
++++ b/srchybrid/Resource.h
+@@ -1642,7 +1642,6 @@
+ #define IDC_SHOWOVERHEAD                2132
+ #define IDC_INDICATERATINGS             2133
+ #define IDC_USESECIDENT                 2134
+-#define IDC_RUNASUSER                   2135
+ #define IDC_MMENABLED                   2136
+ #define IDC_ENABLEOBFUSCATION           2136
+ #define IDC_ONLYOBFUSCATED              2137
+@@ -2193,7 +2192,6 @@
+ #define IDC_CATS                        2841
+ #define IDC_STATICFI                    2842
+ #define IDC_RESET                       2843
+-#define IDC_OPENPORTS                   2844
+ #define IDC_SMILEY                      2844
+ #define IDC_TCP                         2845
+ #define IDC_UDP                         2846
+diff --git a/srchybrid/SearchResultsWnd.cpp b/srchybrid/SearchResultsWnd.cpp
+index e3b20d8..6a04849 100644
+--- a/srchybrid/SearchResultsWnd.cpp
++++ b/srchybrid/SearchResultsWnd.cpp
+@@ -147,7 +147,7 @@ void CSearchResultsWnd::OnInitialUpdate()
+ 	m_btnSearchListMenu.MoveWindow(&rc);
+ 	m_btnSearchListMenu.AddBtnStyle(IDC_SEARCHLST_ICO, TBSTYLE_AUTOSIZE);
+ 	// Vista: Remove the TBSTYLE_TRANSPARENT to avoid flickering (can be done only after the toolbar was initially created with TBSTYLE_TRANSPARENT !?)
+-	m_btnSearchListMenu.ModifyStyle(TBSTYLE_TOOLTIPS | ((theApp.m_ullComCtrlVer >= MAKEDLLVERULL(6, 16, 0, 0)) ? TBSTYLE_TRANSPARENT : 0), 0);
++	m_btnSearchListMenu.ModifyStyle(TBSTYLE_TOOLTIPS | TBSTYLE_TRANSPARENT, 0);
+ 	m_btnSearchListMenu.SetExtendedStyle(m_btnSearchListMenu.GetExtendedStyle() & ~TBSTYLE_EX_MIXEDBUTTONS);
+ 	m_btnSearchListMenu.RecalcLayout(true);
+ 
+diff --git a/srchybrid/SecRunAsUser.cpp b/srchybrid/SecRunAsUser.cpp
+deleted file mode 100644
+index c41ab9a..0000000
+--- a/srchybrid/SecRunAsUser.cpp
++++ /dev/null
+@@ -1,502 +0,0 @@
+-//this file is part of eMule
+-//Copyright (C)2004-2026 Merkur ( devs@emule-project.net / https://www.emule-project.net )
+-//
+-//This program is free software; you can redistribute it and/or
+-//modify it under the terms of the GNU General Public License
+-//as published by the Free Software Foundation; either
+-//version 2 of the License, or (at your option) any later version.
+-//
+-//This program is distributed in the hope that it will be useful,
+-//but WITHOUT ANY WARRANTY; without even the implied warranty of
+-//MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+-//GNU General Public License for more details.
+-//
+-//You should have received a copy of the GNU General Public License
+-//along with this program; if not, write to the Free Software
+-//Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+-#include "StdAfx.h"
+-#include <aclapi.h>
+-#include "emule.h"
+-#include "secrunasuser.h"
+-#include "Preferences.h"
+-#include "otherfunctions.h"
+-#include "Log.h"
+-
+-#ifdef _DEBUG
+-#define new DEBUG_NEW
+-#undef THIS_FILE
+-static char THIS_FILE[] = __FILE__;
+-#endif
+-
+-
+-CSecRunAsUser::CSecRunAsUser()
+-	: m_hACTIVEDS_DLL()
+-	, m_bRunningAsEmule()
+-	, m_bRunningRestricted()
+-{
+-}
+-
+-CSecRunAsUser::~CSecRunAsUser()
+-{
+-	FreeAPI();
+-}
+-
+-eResult CSecRunAsUser::PrepareUser()
+-{
+-	if (!LoadAPI())
+-		return RES_FAILED;
+-
+-	(void)::CoInitialize(NULL);
+-	bool bResult = false;
+-	try {
+-		IADsContainerPtr pUsers;
+-		try {
+-			IADsWinNTSystemInfoPtr pNTsys;
+-			if (FAILED(CoCreateInstance(CLSID_WinNTSystemInfo, NULL, CLSCTX_INPROC_SERVER, IID_IADsWinNTSystemInfo, (LPVOID*)&pNTsys)))
+-				throwCStr(_T("Failed to create IADsWinNTSystemInfo"));
+-			// check if we are already running on our eMule Account
+-			// todo: check if the current account is an administrator
+-
+-			CComBSTR bstrUserName;
+-			pNTsys->get_UserName(&bstrUserName);
+-			m_strCurrentUser = bstrUserName;
+-
+-			if (m_strCurrentUser == EMULEACCOUNTW) {
+-				m_bRunningAsEmule = true;
+-				throwCStr(_T("Already running as eMule_Secure Account (everything is fine)"));
+-			}
+-			CComBSTR bstrCompName;
+-			pNTsys->get_ComputerName(&bstrCompName);
+-			const CStringW cscompName(bstrCompName);
+-
+-			CComBSTR bstrDomainName;
+-			pNTsys->get_DomainName(&bstrDomainName);
+-			m_strDomain = bstrDomainName;
+-
+-			ADSPath.Format(L"WinNT://%s,computer", (LPCWSTR)cscompName);
+-			if (FAILED(ADsGetObject(ADSPath.AllocSysString(), IID_IADsContainer, (void**)&pUsers)))
+-				throwCStr(_T("Failed ADsGetObject()"));
+-
+-			IEnumVARIANTPtr pEnum;
+-			if (FAILED(ADsBuildEnumerator(pUsers, &pEnum)))
+-				throwCStr(_T("ADsBuildEnumerator()"));
+-
+-			_variant_t vChild;
+-			ULONG ulFetched;
+-			while (SUCCEEDED(ADsEnumerateNext(pEnum, 1, &vChild, &ulFetched)) && ulFetched > 0) {
+-				IADsUserPtr pChild;
+-				if (SUCCEEDED(V_DISPATCH(&vChild)->QueryInterface(IID_IADsUser, (void **)&pChild))) {
+-					//If the object in the container is user then get properties
+-					CComBSTR bstrName;
+-					pChild->get_Name(&bstrName);
+-
+-					// find the emule user account if possible
+-					if (bstrName == EMULEACCOUNTW) {
+-						// account found, set new random password and save it
+-						m_strPassword = CreateRandomPW();
+-						bResult = SUCCEEDED(pChild->SetPassword(m_strPassword.AllocSysString()));
+-						if (bResult)
+-							break;
+-						throwCStr(_T("Failed to set password"));
+-					}
+-				}
+-			}
+-		} catch (const CString &error) {
+-			// clean up and abort
+-			theApp.QueueDebugLogLine(false, _T("Run as unprivileged user: Exception while preparing user account: %s!"), (LPCTSTR)error);
+-			::CoUninitialize();
+-			return m_bRunningAsEmule ? RES_OK : RES_FAILED;
+-		}
+-		if (bResult || CreateEmuleUser(pUsers))
+-			bResult = SetDirectoryPermissions();
+-	} catch (...) {
+-		// clean up and abort
+-		theApp.QueueDebugLogLine(false, _T("Run as unprivileged user: Unexpected fatal error while preparing user account!"));
+-		bResult = false;
+-	}
+-
+-	::CoUninitialize();
+-	FreeAPI();
+-	return bResult ? RES_OK_NEED_RESTART : RES_FAILED;
+-}
+-
+-bool CSecRunAsUser::CreateEmuleUser(IADsContainerPtr pUsers)
+-{
+-	IDispatchPtr pDisp;
+-	if (FAILED(pUsers->Create(CComBSTR(L"user"), CString(EMULEACCOUNTW).AllocSysString(), &pDisp)))
+-		return false;
+-
+-	IADsUserPtr pUser;
+-	if (FAILED(pDisp->QueryInterface(&pUser)))
+-		return false;
+-
+-	VARIANT_BOOL bAccountDisabled = VARIANT_FALSE;
+-	VARIANT_BOOL bIsLocked = VARIANT_FALSE;
+-	VARIANT_BOOL bPwRequired = VARIANT_TRUE;
+-	pUser->put_AccountDisabled(bAccountDisabled);
+-	pUser->put_IsAccountLocked(bIsLocked);
+-	pUser->put_PasswordRequired(bPwRequired);
+-	pUser->put_Description(CStringW(L"Account used to run eMule with additional security").AllocSysString());
+-	pUser->SetInfo();
+-	m_strPassword = CreateRandomPW();
+-	return SUCCEEDED(pUser->SetPassword(m_strPassword.AllocSysString()));
+-}
+-
+-CStringW CSecRunAsUser::CreateRandomPW()
+-{
+-	CStringW strResult;
+-	while (strResult.GetLength() < 10) {
+-		char chRnd = (char)('0' + (rand() % ('z' - '0' + 1))); //'0'..'z'
+-		if (isalnum(chRnd) || chRnd == '_')
+-			strResult += chRnd;
+-	}
+-	return strResult;
+-}
+-
+-bool CSecRunAsUser::SetDirectoryPermissions()
+-{
+-#define FULLACCESS ADS_RIGHT_GENERIC_ALL
+-	// shared files list: read permission only
+-	// we odnt check for success here, for emule will also run if one dir fails for some reason
+-	// if there is a dir which is also an incoming dir, rights will be overwritten below
+-	for (POSITION pos = thePrefs.shareddir_list.GetHeadPosition(); pos != NULL;)
+-		VERIFY(SetObjectPermission(thePrefs.shareddir_list.GetNext(pos), (DWORD)ADS_RIGHT_GENERIC_READ));
+-
+-	// set special permission for emule account on needed folders
+-
+-	// verify permissions on the most important folders. Keep in mind that this is mainly for WinXP-PublicUser-Installs,
+-	// and is not really needed for MultiUser or Vista Setups
+-	bool bSucceeded = SetObjectPermission(thePrefs.GetMuleDirectory(EMULE_CONFIGBASEDIR), FULLACCESS)
+-				   && SetObjectPermission(thePrefs.GetMuleDirectory(EMULE_INCOMINGDIR), FULLACCESS)
+-				   && SetObjectPermission(thePrefs.GetMuleDirectory(EMULE_CONFIGDIR), FULLACCESS);
+-	for (INT_PTR i = thePrefs.GetTempDirCount(); --i >= 0;)
+-		bSucceeded = bSucceeded && SetObjectPermission(thePrefs.GetTempDir(i), FULLACCESS);
+-
+-	for (INT_PTR i = thePrefs.GetCatCount(); --i >= 0;)
+-		if (!thePrefs.GetCatPath(i).IsEmpty())
+-			bSucceeded = bSucceeded && SetObjectPermission(thePrefs.GetCatPath(i), FULLACCESS);
+-
+-	if (!bSucceeded)
+-		theApp.QueueDebugLogLine(false, _T("Run as unprivileged user: Error: Failed to set directory permissions!"));
+-
+-	return bSucceeded;
+-}
+-
+-bool CSecRunAsUser::SetObjectPermission(const CString &strDirFile, DWORD lGrantedAccess)
+-{
+-	if (strDirFile.IsEmpty())
+-		return true;
+-
+-	SID_NAME_USE snuType;
+-	WCHAR *szDomain = NULL;
+-	LPVOID pUserSID = NULL;
+-	PACL pNewACL = NULL;
+-	PSECURITY_DESCRIPTOR pSD = NULL;
+-	BOOL fAPISuccess;
+-
+-	try {
+-		// get user SID
+-		DWORD cbDomain = 0;
+-		DWORD cbUserSID = 0;
+-		fAPISuccess = ::LookupAccountNameW(NULL, EMULEACCOUNTW, pUserSID, &cbUserSID, szDomain, &cbDomain, &snuType);
+-		if ((!fAPISuccess) && ::GetLastError() != ERROR_INSUFFICIENT_BUFFER)
+-			throwCStr(_T("Run as unprivileged user: Error: LookupAccountName() failed,"));
+-
+-		pUserSID = MHeapAlloc(cbUserSID);
+-		if (!pUserSID)
+-			throwCStr(_T("Run as unprivileged user: Error: Allocating memory failed,"));
+-
+-		szDomain = (WCHAR*)MHeapAlloc(cbDomain * sizeof(WCHAR));
+-		if (!szDomain)
+-			throwCStr(_T("Run as unprivileged user: Error: Allocating memory failed,"));
+-
+-		fAPISuccess = ::LookupAccountNameW(NULL, EMULEACCOUNTW, pUserSID, &cbUserSID, szDomain, &cbDomain, &snuType);
+-		if (!fAPISuccess)
+-			throwCStr(_T("Run as unprivileged user: Error: LookupAccountName()2 failed"));
+-
+-		if (szDomain != m_strDomain)
+-			throwCStr(_T("Run as unprivileged user: Logical Error: Domain name mismatch"));
+-
+-		// get old ACL
+-		PACL pOldACL = NULL;
+-		fAPISuccess = ::GetNamedSecurityInfo(strDirFile, SE_FILE_OBJECT, DACL_SECURITY_INFORMATION, NULL, NULL, &pOldACL, NULL, &pSD);
+-		if (fAPISuccess != ERROR_SUCCESS)
+-			throwCStr(_T("Run as unprivileged user: Error: GetNamedSecurityInfo() failed"));
+-
+-		// calculate size for new ACL
+-		ACL_SIZE_INFORMATION AclInfo;
+-		AclInfo.AceCount = 0; // Assume NULL DACL.
+-		AclInfo.AclBytesFree = 0;
+-		AclInfo.AclBytesInUse = sizeof(ACL);
+-
+-		if (pOldACL != NULL && !::GetAclInformation(pOldACL, &AclInfo, sizeof(ACL_SIZE_INFORMATION), AclSizeInformation))
+-			throwCStr(_T("Run as unprivileged user: Error: GetAclInformation() failed"));
+-
+-		// Create new ACL
+-		DWORD cbNewACL = (DWORD)(AclInfo.AclBytesInUse + sizeof(ACCESS_ALLOWED_ACE) + ::GetLengthSid(pUserSID) - sizeof(DWORD));
+-
+-		pNewACL = (PACL)MHeapAlloc(cbNewACL);
+-		if (!pNewACL)
+-			throwCStr(_T("Run as unprivileged user: Error: Allocating memory failed,"));
+-
+-		if (!::InitializeAcl(pNewACL, cbNewACL, ACL_REVISION2))
+-			throwCStr(_T("Run as unprivileged user: Error: Allocating memory failed,"));
+-
+-
+-		// copy the entries form the old acl into the new one and enter a new ace in the right order
+-		uint32 CurrentAceIndex = 0;
+-		if (AclInfo.AceCount) {
+-			for (CurrentAceIndex = 0; CurrentAceIndex < AclInfo.AceCount; ++CurrentAceIndex) {
+-				LPVOID pTempAce;
+-				if (!::GetAce(pOldACL, CurrentAceIndex, &pTempAce))
+-					throwCStr(_T("Run as unprivileged user: Error: GetAce() failed,"));
+-
+-				if (((ACCESS_ALLOWED_ACE*)pTempAce)->Header.AceFlags & INHERITED_ACE)
+-					break;
+-				// no multiple entries
+-				if (::EqualSid(pUserSID, &(((ACCESS_ALLOWED_ACE*)pTempAce)->SidStart)))
+-					continue;
+-
+-				if (!::AddAce(pNewACL, ACL_REVISION, MAXDWORD, pTempAce, ((PACE_HEADER)pTempAce)->AceSize))
+-					throwCStr(_T("Run as unprivileged user: Error: AddAce()1 failed,"));
+-			}
+-		}
+-		// here we add the actually entry
+-		if (!::AddAccessAllowedAceEx(pNewACL, ACL_REVISION2, CONTAINER_INHERIT_ACE | OBJECT_INHERIT_ACE, lGrantedAccess, pUserSID))
+-			throwCStr(_T("Run as unprivileged user: Error: AddAccessAllowedAceEx() failed,"));
+-
+-		// copy the rest
+-		if (AclInfo.AceCount) {
+-			for (; CurrentAceIndex < AclInfo.AceCount; ++CurrentAceIndex) {
+-				LPVOID pTempAce;
+-				if (!::GetAce(pOldACL, CurrentAceIndex, &pTempAce))
+-					throwCStr(_T("Run as unprivileged user: Error: GetAce()2 failed,"));
+-
+-				if (!::AddAce(pNewACL, ACL_REVISION, MAXDWORD, pTempAce, ((PACE_HEADER)pTempAce)->AceSize))
+-					throwCStr(_T("Run as unprivileged user: Error: AddAce()2 failed,"));
+-			}
+-		}
+-
+-		fAPISuccess = ::SetNamedSecurityInfo(const_cast<LPTSTR>((LPCTSTR)strDirFile), SE_FILE_OBJECT, DACL_SECURITY_INFORMATION, NULL, NULL, pNewACL, NULL);
+-		if (fAPISuccess != ERROR_SUCCESS)
+-			throwCStr(_T("Run as unprivileged user: Error: SetNamedSecurityInfo() failed,"));
+-		fAPISuccess = TRUE;
+-	} catch (const CString &error) {
+-		fAPISuccess = FALSE;
+-		theApp.QueueDebugLogLine(false, error);
+-	}
+-	// clean up
+-	if (pUserSID != NULL)
+-		MHeapFree(pUserSID);
+-	if (szDomain != NULL)
+-		MHeapFree(szDomain);
+-	if (pNewACL != NULL)
+-		MHeapFree(pNewACL);
+-	if (pSD != NULL)
+-		::LocalFree(pSD);
+-
+-	// finished
+-	return fAPISuccess != FALSE;
+-}
+-
+-eResult CSecRunAsUser::RestartAsUser()
+-{
+-	if (m_bRunningRestricted || m_bRunningAsEmule)
+-		return RES_OK;
+-	if (!LoadAPI())
+-		return RES_FAILED;
+-
+-	WCHAR szAppPath[MAX_PATH + 2];
+-	DWORD dwModPathLen = ::GetModuleFileNameW(NULL, &szAppPath[1], MAX_PATH);
+-	if (dwModPathLen == 0 || dwModPathLen == _countof(szAppPath))
+-		return RES_FAILED;
+-	szAppPath[0] = L'"';
+-	szAppPath[++dwModPathLen] = L'"';
+-	szAppPath[++dwModPathLen] = L'\0';
+-
+-	ASSERT(!m_strPassword.IsEmpty());
+-	BOOL bResult;
+-	try {
+-		PROCESS_INFORMATION ProcessInfo = {};
+-
+-		STARTUPINFOW StartInf = {};
+-		StartInf.cb = (DWORD)sizeof StartInf;
+-		StartInf.dwFlags = STARTF_USESHOWWINDOW;
+-		StartInf.wShowWindow = SW_NORMAL;
+-
+-		// remove the current mutex, so that the restart emule can create its own without problems
+-		// in the rare case CreateProcessWithLogonW fails, this will allow multiple instances,
+-		// but if that function fails we have other problems anyway
+-		::CloseHandle(theApp.m_hMutexOneInstance);
+-
+-		bResult = ::CreateProcessWithLogonW(EMULEACCOUNTW, m_strDomain, m_strPassword
+-			, LOGON_WITH_PROFILE, NULL, szAppPath, 0, NULL, NULL, &StartInf, &ProcessInfo);
+-		::CloseHandle(ProcessInfo.hProcess);
+-		::CloseHandle(ProcessInfo.hThread);
+-	} catch (...) {
+-		theApp.QueueDebugLogLine(false, _T("Run as unprivileged user: Error: Unexpected exception while loading advapi32.dll"));
+-		FreeAPI();
+-		return RES_FAILED;
+-	}
+-	FreeAPI();
+-	if (bResult)
+-		return RES_OK_NEED_RESTART;
+-
+-	theApp.QueueDebugLogLine(false, _T("Run as unprivileged user: Error: Failed to restart eMule as different user! Error Code: %i"), ::GetLastError());
+-	return RES_FAILED;
+-}
+-
+-CStringW CSecRunAsUser::GetCurrentUserW() const
+-{
+-	return m_strCurrentUser.IsEmpty() ? CStringW(L"Unknown") : m_strCurrentUser;
+-}
+-
+-bool CSecRunAsUser::LoadAPI()
+-{
+-	if (!m_hACTIVEDS_DLL) {
+-		m_hACTIVEDS_DLL = ::LoadLibrary(_T("ActiveDS"));
+-		if (!m_hACTIVEDS_DLL) {
+-			AddDebugLogLine(false, _T("Failed to load ActiveDS.dll!"));
+-			return false;
+-		}
+-	}
+-
+-	bool bSucceeded = (ADsGetObject = (TADsGetObject)::GetProcAddress(m_hACTIVEDS_DLL,"ADsGetObject")) != NULL
+-				   && (ADsBuildEnumerator = (TADsBuildEnumerator)::GetProcAddress(m_hACTIVEDS_DLL,"ADsBuildEnumerator")) != NULL
+-				   && (ADsEnumerateNext = (TADsEnumerateNext)::GetProcAddress(m_hACTIVEDS_DLL,"ADsEnumerateNext")) != NULL;
+-
+-	if (!bSucceeded) {
+-		AddDebugLogLine(false, _T("Failed to load all functions from ActiveDS.dll!"));
+-		FreeAPI();
+-	}
+-	return bSucceeded;
+-}
+-
+-void CSecRunAsUser::FreeAPI()
+-{
+-	if (m_hACTIVEDS_DLL) {
+-		::FreeLibrary(m_hACTIVEDS_DLL);
+-		m_hACTIVEDS_DLL = 0;
+-	}
+-}
+-
+-eResult CSecRunAsUser::RestartAsRestricted()
+-{
+-	if (m_bRunningRestricted || m_bRunningAsEmule)
+-		return RES_OK;
+-	if (!LoadAPI())
+-		return RES_FAILED;
+-
+-	HANDLE hProcessToken = NULL;
+-	HANDLE hRestrictedToken = NULL;
+-	PTOKEN_USER pstructUserToken = NULL;
+-
+-	try {
+-		// get our access token from the process
+-		if (!::OpenProcessToken(GetCurrentProcess(), TOKEN_DUPLICATE | TOKEN_ASSIGN_PRIMARY | TOKEN_READ, &hProcessToken))
+-			throwCStr(_T("Failed to retrieve access token from process"));
+-
+-		// there is no easy way to check if we have already restricted token when not using the restricted SID list
+-		// so just check if we set the SANDBOX_INERT flag and hope no one else did
+-		// (which is unlikely tho because AFAIK you would only set it when using CreateRestirctedToken) :)
+-		DWORD dwLen = 0;
+-		DWORD dwInertFlag;
+-		if (!::GetTokenInformation(hProcessToken, TokenSandBoxInert, &dwInertFlag, sizeof(dwInertFlag), &dwLen))
+-			throwCStr(_T("Failed to Flag-Status from AccessToken"));
+-
+-		if (dwInertFlag != 0) {
+-			m_bRunningRestricted = true;
+-			throwCStr(_T("Already using a restricted Token it seems (everything is fine!)"));
+-		}
+-
+-		// get the user account SID to disable it in our new token
+-		dwLen = 0;
+-		while (!::GetTokenInformation(hProcessToken, TokenUser, pstructUserToken, dwLen, &dwLen)) {
+-			if (::GetLastError() != ERROR_INSUFFICIENT_BUFFER || pstructUserToken != NULL)
+-				throwCStr(_T("Failed to retrieve UserSID from AccessToken"));
+-			pstructUserToken = (PTOKEN_USER)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, dwLen);
+-		}
+-		if (pstructUserToken == NULL)
+-			throwCStr(_T("Failed to retrieve UserSID from AccessToken"));
+-
+-		// disabling our primary token would make sense from a Security POV, but this would cause file acces conflicts
+-		// in the default settings (since we cannot access files we created ourself if they don't have the write flag for the group "users")
+-		// so it stays enabled for now and we only reduce privileges
+-
+-		// create the new token
+-		if (!::CreateRestrictedToken(hProcessToken, DISABLE_MAX_PRIVILEGE | SANDBOX_INERT, 0 /*disabled*/, &pstructUserToken->User, 0, NULL, 0, NULL, &hRestrictedToken))
+-			throwCStr(_T("Failed to create Restricted Token"));
+-
+-		// do the starting job
+-		TCHAR szAppPath[MAX_PATH + 2];
+-		DWORD dwModPathLen = ::GetModuleFileName(NULL, &szAppPath[1], MAX_PATH);
+-		if (dwModPathLen == 0 || dwModPathLen >= MAX_PATH)
+-			throwCStr(_T("Failed to get module file path"));
+-		szAppPath[0] = _T('"');
+-		szAppPath[++dwModPathLen] = _T('"');
+-		szAppPath[++dwModPathLen] = _T('\0');
+-		//CString strAppName;
+-		//strAppName.Format(_T("\"%s\""), szAppPath);
+-
+-		STARTUPINFO StartInf = {};
+-		StartInf.cb = sizeof StartInf;
+-		StartInf.dwFlags = STARTF_USESHOWWINDOW;
+-		StartInf.wShowWindow = SW_NORMAL;
+-
+-		// remove the current mutex, so that the restart emule can create its own without problems
+-		// in the rare case CreateProcessWithLogonW fails, this will allow multiple instances,
+-		// but if this function fails we have other problems anyway
+-		::CloseHandle(theApp.m_hMutexOneInstance);
+-
+-		PROCESS_INFORMATION ProcessInfo = {};
+-		if (!::CreateProcessAsUser(hRestrictedToken, NULL, szAppPath, NULL, NULL, FALSE, NORMAL_PRIORITY_CLASS, NULL, NULL, &StartInf, &ProcessInfo)) {
+-			CString e;
+-			GetErrorMessage(::GetLastError(), e, 0);
+-			e.Insert(0, _T("CreateProcessAsUser failed: "));
+-			throw e;
+-		}
+-		::CloseHandle(ProcessInfo.hProcess);
+-		::CloseHandle(ProcessInfo.hThread);
+-
+-		// cleanup
+-		HeapFree(GetProcessHeap(), 0, (LPVOID)pstructUserToken);
+-		pstructUserToken = NULL;
+-		::CloseHandle(hRestrictedToken);
+-		::CloseHandle(hProcessToken);
+-	} catch (const CString &strError) {
+-		if (hProcessToken != NULL)
+-			::CloseHandle(hProcessToken);
+-		if (hRestrictedToken != NULL)
+-			::CloseHandle(hRestrictedToken);
+-		if (pstructUserToken != NULL)
+-			::HeapFree(GetProcessHeap(), 0, (LPVOID)pstructUserToken);
+-
+-		theApp.QueueDebugLogLine(false, _T("SecureShellExecute exception: %s!"), (LPCTSTR)strError);
+-		return m_bRunningRestricted ? RES_OK : RES_FAILED;
+-	}
+-	return RES_OK_NEED_RESTART;
+-}
+-
+-eResult CSecRunAsUser::RestartSecure()
+-{
+-	eResult res;
+-
+-	if (!thePrefs.IsPreferingRestrictedOverUser()) {
+-		res = PrepareUser();
+-		if (res == RES_OK) {
+-			theApp.QueueLogLine(false, GetResString(IDS_RAU_RUNNING), EMULEACCOUNTW);
+-			return res;
+-		}
+-		if (res == RES_OK_NEED_RESTART) {
+-			res = RestartAsUser();
+-			if (res != RES_FAILED)
+-				return res;
+-		}
+-	}
+-
+-	res = RestartAsRestricted();
+-	if (res == RES_OK)
+-		theApp.QueueLogLine(false, GetResString(IDS_RUNNINGRESTRICTED));
+-
+-	return res;
+-}
+\ No newline at end of file
+diff --git a/srchybrid/SecRunAsUser.h b/srchybrid/SecRunAsUser.h
+deleted file mode 100644
+index 9f00fff..0000000
+--- a/srchybrid/SecRunAsUser.h
++++ /dev/null
+@@ -1,99 +0,0 @@
+-//this file is part of eMule
+-//Copyright (C)2004-2026 Merkur ( devs@emule-project.net / https://www.emule-project.net )
+-//
+-//This program is free software; you can redistribute it and/or
+-//modify it under the terms of the GNU General Public License
+-//as published by the Free Software Foundation; either
+-//version 2 of the License, or (at your option) any later version.
+-//
+-//This program is distributed in the hope that it will be useful,
+-//but WITHOUT ANY WARRANTY; without even the implied warranty of
+-//MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+-//GNU General Public License for more details.
+-//
+-//You should have received a copy of the GNU General Public License
+-//along with this program; if not, write to the Free Software
+-//Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+-#pragma once
+-#include <comdef.h>
+-#include <Iads.h>
+-
+-#define LOGON_WITH_PROFILE			0x00000001
+-#define LOGON_NETCREDENTIALS_ONLY	0x00000002
+-
+-enum eResult
+-{
+-	RES_OK_NEED_RESTART = 0,
+-	RES_OK,
+-	RES_FAILED
+-};
+-
+-typedef HRESULT(WINAPI *TADsGetObject)
+-(
+-	LPWSTR	lpszPathName,
+-	REFIID	iid,
+-	LPVOID	*ppObject
+-);
+-
+-typedef HRESULT(WINAPI *TADsBuildEnumerator)
+-(
+-	IADsContainer *pADsContainer,
+-	IEnumVARIANT **ppEnumVariant
+-);
+-
+-typedef HRESULT(WINAPI *TADsEnumerateNext)
+-(
+-	IEnumVARIANT *pEnumVariant,
+-	ULONG cElements,
+-	VARIANT *pvar,
+-	ULONG *pcElementsFetched
+-);
+-
+-typedef _com_ptr_t<_com_IIID<IADsContainer, &IID_IADsContainer> >  IADsContainerPtr;
+-typedef _com_ptr_t<_com_IIID<IADs, &IID_IADs> >  IADsPtr;
+-typedef _com_ptr_t<_com_IIID<IADsUser, &IID_IADsUser> >  IADsUserPtr;
+-typedef _com_ptr_t<_com_IIID<IADsAccessControlEntry, &IID_IADsAccessControlEntry> >  IIADsAccessControlEntryPtr;
+-typedef _com_ptr_t<_com_IIID<IADsSecurityDescriptor, &IID_IADsSecurityDescriptor> >  IADsSecurityDescriptorPtr;
+-typedef _com_ptr_t<_com_IIID<IADsWinNTSystemInfo, &IID_IADsWinNTSystemInfo> >  IADsWinNTSystemInfoPtr;
+-#define MHeapAlloc(x) (::HeapAlloc(::GetProcessHeap(), HEAP_ZERO_MEMORY, x))
+-#define MHeapFree(x)  (::HeapFree(::GetProcessHeap(), 0, x))
+-
+-#define EMULEACCOUNTW L"eMule_Secure"
+-
+-class CSecRunAsUser
+-{
+-public:
+-	CSecRunAsUser();
+-	~CSecRunAsUser();
+-
+-	eResult	RestartSecure();
+-	bool	IsRunningEmuleAccount() const	{ return m_bRunningAsEmule; }
+-	bool	IsRunningRestricted() const		{ return m_bRunningRestricted; }
+-	bool	IsRunningSecure() const			{ return m_bRunningRestricted || m_bRunningAsEmule; }
+-	CStringW	GetCurrentUserW() const;
+-
+-protected:
+-	eResult	PrepareUser();
+-	eResult	RestartAsUser();
+-	eResult	RestartAsRestricted();
+-
+-	bool	SetDirectoryPermissions();
+-	bool	CreateEmuleUser(IADsContainerPtr pUsers);
+-	static CStringW	CreateRandomPW();
+-	bool	SetObjectPermission(const CString &strDirFile, DWORD lGrantedAccess);
+-	bool	LoadAPI();
+-	void	FreeAPI();
+-
+-private:
+-	CStringW ADSPath;
+-	CStringW m_strPassword;
+-	CStringW m_strDomain;
+-	CStringW m_strCurrentUser;
+-	HMODULE m_hACTIVEDS_DLL;
+-	bool m_bRunningAsEmule;
+-	bool m_bRunningRestricted;
+-
+-	TADsGetObject ADsGetObject;
+-	TADsBuildEnumerator ADsBuildEnumerator;
+-	TADsEnumerateNext ADsEnumerateNext;
+-};
+\ No newline at end of file
+diff --git a/srchybrid/Stdafx.h b/srchybrid/Stdafx.h
+index 4e980f9..7b4c4ad 100644
+--- a/srchybrid/Stdafx.h
++++ b/srchybrid/Stdafx.h
+@@ -11,66 +11,20 @@
+ 
+ #include "emule_site_config.h"
+ 
+-// MSDN: Using the Windows Headers
+-// ===========================================================
+-//Windows Vista			_WIN32_WINNT>=0x0600	WINVER>=0x0600
+-//Windows Server 2003	_WIN32_WINNT>=0x0502    WINVER>=0x0502
+-//Windows XP			_WIN32_WINNT>=0x0501	WINVER>=0x0501
+-//Windows 2000			_WIN32_WINNT>=0x0500    WINVER>=0x0500
+-//Windows NT 4.0		_WIN32_WINNT>=0x0400	WINVER>=0x0400
+-//Windows Me			_WIN32_WINDOWS=0x0500	WINVER>=0x0500
+-//Windows 98			_WIN32_WINDOWS>=0x0410	WINVER>=0x0410
+-//Windows 95			_WIN32_WINDOWS>=0x0400	WINVER>=0x0400
+-//
+-//IE 7.0				_WIN32_IE>=0x0700
+-//IE 6.0 SP2			_WIN32_IE>=0x0603
+-//IE 6.0 SP1			_WIN32_IE>=0x0601
+-//IE 6.0				_WIN32_IE>=0x0600
+-//IE 5.5				_WIN32_IE>=0x0550
+-//IE 5.01				_WIN32_IE>=0x0501
+-//IE 5.0, 5.0a, 5.0b	_WIN32_IE>=0x0500
+-//IE 4.01				_WIN32_IE>=0x0401
+-//IE 4.0				_WIN32_IE>=0x0400
+-//IE 3.0, 3.01, 3.02	_WIN32_IE>=0x0300
+-
+-#if defined(HAVE_VISTA_SDK)
+-
++// Windows 10 is the oldest Windows this build supports: the SDK headers
++// declare everything up to it, and nothing older is checked for at run time.
+ #ifndef WINVER
+-#define WINVER 0x0502			// 0x0502 == Windows Server 2003, Windows XP (same as VS2005-MFC)
++#define WINVER 0x0A00			// _WIN32_WINNT_WIN10
+ #endif
+ 
+ #ifndef _WIN32_WINNT
+-#define _WIN32_WINNT WINVER		// same as VS2005-MFC
+-#endif
+-
+-#ifndef _WIN32_WINDOWS
+-#define _WIN32_WINDOWS 0x0410	// 0x0410 == Windows 98
++#define _WIN32_WINNT WINVER
+ #endif
+ 
+ #ifndef _WIN32_IE
+-#define _WIN32_IE 0x0603		// 0x0603 == Internet Explorer 6.0 SP2
+-#endif
+-
+-#else //HAVE_VISTA_SDK
+-
+-#ifndef WINVER
+-#define WINVER 0x0400			// 0x0400 == Windows 98 and Windows NT 4.0 (because of '_WIN32_WINDOWS=0x0410')
++#define _WIN32_IE 0x0A00			// _WIN32_IE_IE110
+ #endif
+ 
+-#ifndef _WIN32_WINNT
+-#define _WIN32_WINNT 0x0400		// 0x0400 == Windows NT 4.0
+-#endif
+-
+-#ifndef _WIN32_WINDOWS
+-#define _WIN32_WINDOWS 0x0410	// 0x0410 == Windows 98
+-#endif
+-
+-#ifndef _WIN32_IE
+-#define _WIN32_IE 0x0560		// 0x0560 == Internet Explorer 5.6 -> Comctl32.dll v5.8 (same as MFC internally used)
+-#endif
+-
+-#endif //HAVE_VISTA_SDK
+-
+ #define _ATL_CSTRING_EXPLICIT_CONSTRUCTORS	// Makes certain CString constructors explicit, preventing any unintentional conversions
+ #define	_ATL_EX_CONVERSION_MACROS_ONLY		// Disable old ATL 3.0 string conversion macros
+ #ifdef _ATL_EX_CONVERSION_MACROS_ONLY
+@@ -163,10 +117,6 @@
+ #endif
+ #endif//!defined(_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES) || (_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES==0)
+ 
+-#if defined(XP_BUILD) && !defined(_WIN64) && !defined(_USE_32BIT_TIME_T)
+-#define _USE_32BIT_TIME_T
+-#endif
+-
+ //Windows XP compatibility requires 'inet_addr' and 'WSAAsyncGetHostByName' (warning C4996)
+ #ifndef _WINSOCK_DEPRECATED_NO_WARNINGS
+ #define _WINSOCK_DEPRECATED_NO_WARNINGS
+diff --git a/srchybrid/TitledMenu.cpp b/srchybrid/TitledMenu.cpp
+index 506bdbc..db4b36b 100644
+--- a/srchybrid/TitledMenu.cpp
++++ b/srchybrid/TitledMenu.cpp
+@@ -37,7 +37,6 @@ CTitledMenu::CTitledMenu()
+ 	, m_bDrawEdge()
+ 	, m_bIconMenu()
+ {
+-	m_mapMenuIdToIconIdx.InitHashTable(29);
+ }
+ 
+ CTitledMenu::~CTitledMenu()
+@@ -47,10 +46,6 @@ CTitledMenu::~CTitledMenu()
+ 
+ void CTitledMenu::DeleteIcons()
+ {
+-	m_ImageList.DeleteImageList();
+-	m_mapIconNameToIconIdx.RemoveAll();
+-	m_mapMenuIdToIconIdx.RemoveAll();
+-
+ 	CString strKey;
+ 	for (POSITION pos = m_mapIconNameToBitmap.GetStartPosition(); pos != NULL;) {
+ 		void *pvBmp;
+@@ -62,9 +57,6 @@ void CTitledMenu::DeleteIcons()
+ 
+ BOOL CTitledMenu::CreateMenu()
+ {
+-	ASSERT(m_mapIconNameToIconIdx.IsEmpty());
+-	ASSERT(m_mapMenuIdToIconIdx.IsEmpty());
+-	ASSERT(m_ImageList.m_hImageList == NULL || m_ImageList.GetImageCount() == 0);
+ 	ASSERT(m_mapIconNameToBitmap.IsEmpty());
+ 	return __super::CreateMenu();
+ }
+@@ -96,14 +88,7 @@ void CTitledMenu::AddMenuTitle(LPCTSTR lpszTitle, bool bIsIconMenu)
+ 
+ void CTitledMenu::EnableIcons()
+ {
+-	switch (thePrefs.GetWindowsVersion()) {
+-	case _WINVER_95_:
+-	case _WINVER_NT4_:
+-		return;
+-	}
+ 	m_bIconMenu = true;
+-	m_ImageList.DeleteImageList();
+-	m_ImageList.Create(ICONSIZE, ICONSIZE, theApp.m_iDfltImageListColorFlags | ILC_MASK, 0, 1);
+ 
+ 	MENUINFO mi;
+ 	mi.cbSize = (DWORD)sizeof mi;
+@@ -113,7 +98,6 @@ void CTitledMenu::EnableIcons()
+ 	SetMenuInfo(&mi);
+ }
+ 
+-// NOTE: This function is no longer used for Vista!
+ void CTitledMenu::MeasureItem(LPMEASUREITEMSTRUCT lpMIS)
+ {
+ 	if (lpMIS->itemID == MP_TITLE) {
+@@ -137,7 +121,6 @@ void CTitledMenu::MeasureItem(LPMEASUREITEMSTRUCT lpMIS)
+ 	}
+ }
+ 
+-// NOTE: This function is no longer used for Vista!
+ void CTitledMenu::DrawItem(LPDRAWITEMSTRUCT lpDIS)
+ {
+ 	if (lpDIS->itemID == MP_TITLE) {
+@@ -176,19 +159,6 @@ void CTitledMenu::DrawItem(LPDRAWITEMSTRUCT lpDIS)
+ 		::SetTextColor(lpDIS->hDC, crOld);
+ 		::SetBkMode(lpDIS->hDC, iOldBkMode);
+ 		::SetBkColor(lpDIS->hDC, crOldBk);
+-	} else {
+-		int nIconPos;
+-		if (m_mapMenuIdToIconIdx.Lookup(lpDIS->itemID, nIconPos)) {
+-			int posY = lpDIS->rcItem.top + ((lpDIS->rcItem.bottom - lpDIS->rcItem.top) - ICONSIZE) / 2;
+-			CDC *dc = CDC::FromHandle(lpDIS->hDC);
+-			HICON hIcon = (lpDIS->itemState & ODS_GRAYED) ? ReplaceIconGreyedInImageList(m_ImageList, nIconPos) : 0;
+-			// Draw the bitmap on the menu.
+-			m_ImageList.Draw(dc, nIconPos, CPoint(lpDIS->rcItem.left, posY), ILD_TRANSPARENT);
+-			if (hIcon) { //restore coloured icon
+-				m_ImageList.Replace(nIconPos, hIcon);
+-				::DestroyIcon(hIcon);
+-			}
+-		}
+ 	}
+ }
+ 
+@@ -273,7 +243,7 @@ static HBITMAP IconToBitmap32(HICON hIcon, int cx, int cy)
+ 
+ void CTitledMenu::SetMenuBitmap(UINT nFlags, UINT nIDNewItem, LPCTSTR /*lpszNewItem*/, LPCTSTR lpszIconName)
+ {
+-	if (!m_bIconMenu || (nFlags & MF_SEPARATOR) != 0 || thePrefs.GetWindowsVersion() < _WINVER_2K_) {
++	if (!m_bIconMenu || (nFlags & MF_SEPARATOR) != 0) {
+ 		if (m_bIconMenu && lpszIconName != NULL)
+ 			ASSERT(0);
+ 		return;
+@@ -292,56 +262,29 @@ void CTitledMenu::SetMenuBitmap(UINT nFlags, UINT nIDNewItem, LPCTSTR /*lpszNewI
+ 	CString strIconLower(lpszIconName);
+ 	if (strIconLower.MakeLower().IsEmpty())
+ 		return;
+-	if (thePrefs.GetWindowsVersion() >= _WINVER_VISTA_) {
+-		// Vista+: Use the Windows built-in feature for 32-bit menu item bitmaps.
+-		// 'MeasureItem', 'DrawItem' will not get called any longer and Vista
+-		// cares properly about grayed/selected menu item bitmaps.
+-		HBITMAP hBmp;
+-		void *pvBmp;
+-		if (m_mapIconNameToBitmap.Lookup(strIconLower, pvBmp))
+-			hBmp = (HBITMAP)pvBmp;
+-		else {
+-			HICON hIcon = theApp.LoadIcon(strIconLower);
+-			if (hIcon) {
+-				hBmp = IconToBitmap32(hIcon, ICONSIZE, ICONSIZE);
+-				VERIFY(::DestroyIcon(hIcon));
+-			} else
+-				hBmp = NULL;
+-		}
+-
+-		if (hBmp) {
+-			MENUITEMINFO info = {};
+-			info.cbSize = (UINT)sizeof info;
+-			info.fMask = MIIM_BITMAP;
+-			info.hbmpItem = hBmp;
+-			VERIFY(SetMenuItemInfo(nIDNewItem, &info, FALSE));
+-			m_mapIconNameToBitmap[strIconLower] = hBmp;
+-		}
+-	} else {
+-		// pre-Vista: Use owner drawn menu items which are handled in 'MeasureItem' and 'DrawItem'
+-		int nPos;
+-		void *pvIndex;
+-		if (m_mapIconNameToIconIdx.Lookup(strIconLower, pvIndex)) {
+-			nPos = (int)pvIndex;
+-			m_mapMenuIdToIconIdx[nIDNewItem] = nPos;
+-		} else {
+-			HICON hIcon = theApp.LoadIcon(strIconLower);
+-			if (!hIcon)
+-				return;
+-			nPos = m_ImageList.Add(hIcon);
+-			if (nPos >= 0) {
+-				m_mapIconNameToIconIdx[strIconLower] = (void*)nPos;
+-				m_mapMenuIdToIconIdx[nIDNewItem] = nPos;
+-			}
++	// Use the Windows built-in feature for 32-bit menu item bitmaps: Windows
++	// cares properly about grayed/selected menu item bitmaps, and 'MeasureItem',
++	// 'DrawItem' are left with the owner-drawn title alone.
++	HBITMAP hBmp;
++	void *pvBmp;
++	if (m_mapIconNameToBitmap.Lookup(strIconLower, pvBmp))
++		hBmp = (HBITMAP)pvBmp;
++	else {
++		HICON hIcon = theApp.LoadIcon(strIconLower);
++		if (hIcon) {
++			hBmp = IconToBitmap32(hIcon, ICONSIZE, ICONSIZE);
+ 			VERIFY(::DestroyIcon(hIcon));
+-		}
+-		if (nPos != -1) {
+-			MENUITEMINFO info = {};
+-			info.cbSize = (UINT)sizeof info;
+-			info.fMask = MIIM_BITMAP;
+-			info.hbmpItem = HBMMENU_CALLBACK;
+-			VERIFY(SetMenuItemInfo(nIDNewItem, &info, FALSE));
+-		}
++		} else
++			hBmp = NULL;
++	}
++
++	if (hBmp) {
++		MENUITEMINFO info = {};
++		info.cbSize = (UINT)sizeof info;
++		info.fMask = MIIM_BITMAP;
++		info.hbmpItem = hBmp;
++		VERIFY(SetMenuItemInfo(nIDNewItem, &info, FALSE));
++		m_mapIconNameToBitmap[strIconLower] = hBmp;
+ 	}
+ }
+ 
+diff --git a/srchybrid/TitledMenu.h b/srchybrid/TitledMenu.h
+index 8bea7ab..f6046d1 100644
+--- a/srchybrid/TitledMenu.h
++++ b/srchybrid/TitledMenu.h
+@@ -42,9 +42,6 @@ public:
+ 
+ protected:
+ 	CString m_strTitle;
+-	CImageList m_ImageList;
+-	CMap<int, int, int, int> m_mapMenuIdToIconIdx;
+-	CMapStringToPtr m_mapIconNameToIconIdx;
+ 	CMapStringToPtr m_mapIconNameToBitmap;
+ 
+ 	long m_clRight;
+diff --git a/srchybrid/ToolTipCtrlX.cpp b/srchybrid/ToolTipCtrlX.cpp
+index b3b0ac1..4beb2a1 100644
+--- a/srchybrid/ToolTipCtrlX.cpp
++++ b/srchybrid/ToolTipCtrlX.cpp
+@@ -60,12 +60,7 @@ void CToolTipCtrlX::SetCol2DrawTextFlags(DWORD dwFlags)
+ 
+ BOOL CToolTipCtrlX::SubclassWindow(HWND hWnd)
+ {
+-	BOOL bResult = __super::SubclassWindow(hWnd);
+-	// Win98/Win2000: Preventive, turning off tooltip animations should help in getting around
+-	// some glitches when using customized tooltip drawing. Though, doesn't seem to help a lot.
+-	if (theApp.m_ullComCtrlVer <= MAKEDLLVERULL(5, 81, 0, 0))
+-		ModifyStyle(0, TTS_NOANIMATE | TTS_NOFADE);
+-	return bResult;
++	return __super::SubclassWindow(hWnd);
+ }
+ 
+ void CToolTipCtrlX::ResetSystemMetrics()
+@@ -323,7 +318,7 @@ void CToolTipCtrlX::CustomPaint(LPNMTTCUSTOMDRAW pNMCD)
+ 	if (bShowFileIcon && iCaptionEnd > 0)
+ 		iCaptionHeight = maxi(iCaptionHeight, (int)(theApp.GetBigSytemIconSize().cy + (2 * iIconMinYBorder)));
+ 	sizText.cy += iCaptionHeight;
+-	if (hTheme && theApp.m_ullComCtrlVer >= MAKEDLLVERULL(6, 16, 0, 0))
++	if (hTheme)
+ 		sizText.cy += 2; // extra bottom margin for Vista Theme
+ 
+ 	iMaxCol1Width = min(m_iScreenWidth4, iMaxCol1Width);
+@@ -351,18 +346,16 @@ void CToolTipCtrlX::CustomPaint(LPNMTTCUSTOMDRAW pNMCD)
+ 			::FillRect(*pdc, &rcWnd, ::GetSysColorBrush(COLOR_INFOBK));
+ 			iOldBkColor = pdc->SetBkColor(m_crTooltipBkColor);
+ 			// Vista: Need to draw the window border explicitly !?
+-			if (theApp.m_ullComCtrlVer >= MAKEDLLVERULL(6, 16, 0, 0)) {
+-				CPen pen;
+-				pen.CreatePen(0, 1, m_crTooltipTextColor);
+-				CPen *pOP = pdc->SelectObject(&pen);
+-				pdc->MoveTo(rcWnd.left, rcWnd.top);
+-				pdc->LineTo(rcWnd.right - 1, rcWnd.top);
+-				pdc->LineTo(rcWnd.right - 1, rcWnd.bottom - 1);
+-				pdc->LineTo(rcWnd.left, rcWnd.bottom - 1);
+-				pdc->LineTo(rcWnd.left, rcWnd.top);
+-				pdc->SelectObject(pOP);
+-				pen.DeleteObject();
+-			}
++			CPen pen;
++			pen.CreatePen(0, 1, m_crTooltipTextColor);
++			CPen *pOP = pdc->SelectObject(&pen);
++			pdc->MoveTo(rcWnd.left, rcWnd.top);
++			pdc->LineTo(rcWnd.right - 1, rcWnd.top);
++			pdc->LineTo(rcWnd.right - 1, rcWnd.bottom - 1);
++			pdc->LineTo(rcWnd.left, rcWnd.bottom - 1);
++			pdc->LineTo(rcWnd.left, rcWnd.top);
++			pdc->SelectObject(pOP);
++			pen.DeleteObject();
+ 		}
+ 
+ 		int iOldBkMode = 0;
+@@ -466,61 +459,10 @@ void CToolTipCtrlX::CustomPaint(LPNMTTCUSTOMDRAW pNMCD)
+ 		::CloseThemeData(hTheme);
+ }
+ 
+-void EnsureWindowVisible(const RECT &rcScreen, RECT &rc)
+-{
+-	// 1st: Move the window towards the left side, in case it exceeds the desktop width.
+-	// 2nd: Move the window towards the right side, in case it exceeds the desktop width.
+-	//
+-	// This order of actions ensures that in case the window is too large for the desktop,
+-	// the user will though see the top-left part of the window.
+-	if (rc.right > rcScreen.right) {
+-		rc.left -= rc.right - rcScreen.right;
+-		rc.right = rcScreen.right;
+-	}
+-	if (rc.left < rcScreen.left) {
+-		rc.right += rcScreen.left - rc.left;
+-		rc.left = rcScreen.left;
+-	}
+-
+-	// Same logic for bottom/top
+-	if (rc.bottom > rcScreen.bottom) {
+-		rc.top -= rc.bottom - rcScreen.bottom;
+-		rc.bottom = rcScreen.bottom;
+-	}
+-	if (rc.top < rcScreen.top) {
+-		rc.bottom += rcScreen.top - rc.top;
+-		rc.top = rcScreen.top;
+-	}
+-}
+-
+-BOOL CToolTipCtrlX::OnTTShow(LPNMHDR pNMHDR, LRESULT *pResult)
++BOOL CToolTipCtrlX::OnTTShow(LPNMHDR /*pNMHDR*/, LRESULT *pResult)
+ {
+ 	//DebugLog(_T("OnTTShow: rcScreen: %d,%d-%d,%d: styles=%08x  exStyles=%08x"), m_rcScreen, GetStyle(), ::GetWindowLongPtr(m_hWnd, GWL_EXSTYLE));
+ 
+-	// Win98/Win2000: The only chance to resize a tooltip window is to do it within the TTN_SHOW notification.
+-	if (theApp.m_ullComCtrlVer <= MAKEDLLVERULL(5, 81, 0, 0)) {
+-		NMTTCUSTOMDRAW nmttcd = {};
+-		nmttcd.uDrawFlags = DT_NOPREFIX | DT_CALCRECT | DT_EXTERNALLEADING | DT_EXPANDTABS | DT_WORDBREAK;
+-		nmttcd.nmcd.hdr = *pNMHDR;
+-		nmttcd.nmcd.dwDrawStage = CDDS_PREPAINT;
+-		nmttcd.nmcd.hdc = ::GetDC(pNMHDR->hwndFrom);
+-		CustomPaint(&nmttcd);
+-		::ReleaseDC(pNMHDR->hwndFrom, nmttcd.nmcd.hdc);
+-
+-		CRect rcWnd(nmttcd.nmcd.rc);
+-		AdjustRect(&rcWnd);
+-
+-		// Win98/Win2000: We have to explicitly ensure that the tooltip window remains within the visible desktop window.
+-		EnsureWindowVisible(m_rcScreen, rcWnd);
+-
+-		// Win98/Win2000: The only chance to resize a tooltip window is to do it within the TTN_SHOW notification.
+-		// Win98/Win2000: Must *not* specify 'SWP_NOZORDER' - some of the tooltip windows may get drawn behind(!) the application window!
+-		::SetWindowPos(pNMHDR->hwndFrom, NULL, rcWnd.left, rcWnd.top, rcWnd.Width(), rcWnd.Height(), SWP_NOACTIVATE /*| SWP_NOZORDER*/);
+-
+-		return (BOOL)(*pResult = 1); // Windows API: Suppress default positioning
+-									 // MFC API:     Suppress further routing of this message
+-	}
+-
+ 	// If the TTN_SHOW notification is not sent to the subclassed tooltip control, we would lose the
+ 	// exact positioning of in-place tooltips which is performed by the tooltip control by default.
+ 	// Thus it is important that we tell MFC (not the Windows API in that case) to further route this message.
+@@ -548,33 +490,11 @@ void CToolTipCtrlX::OnNmCustomDraw(LPNMHDR pNMHDR, LRESULT *pResult)
+ 	//	DebugLog(_T(""));
+ 	//DebugLog(_T("OnNmCustomDraw: DrawFlags=%08x DrawStage=%08x ItemSpec=%08x ItemState=%08x ItemlParam=%08x rc=%4d,%4d,(%4dx%4d), styles=%08x  exStyles=%08x"), pNMCD->uDrawFlags, pNMCD->nmcd.dwDrawStage, pNMCD->nmcd.dwItemSpec, pNMCD->nmcd.uItemState, pNMCD->nmcd.lItemlParam, pNMCD->nmcd.rc.left, pNMCD->nmcd.rc.top, pNMCD->nmcd.rc.right - pNMCD->nmcd.rc.left, pNMCD->nmcd.rc.bottom - pNMCD->nmcd.rc.top, GetStyle(), ::GetWindowLongPtr(m_hWnd, GWL_EXSTYLE));
+ 
+-	if (theApp.m_ullComCtrlVer <= MAKEDLLVERULL(5, 81, 0, 0)) {
+-		// Win98/Win2000: Resize and position the tooltip window in TTN_SHOW.
+-		// Win98/Win2000: Customize the tooltip window in CDDS_POSTPAINT.
+-		if (pNMCD->nmcd.dwDrawStage == CDDS_PREPAINT) {
+-			// PROBLEM: Windows will draw the default tooltip during the non-DT_CALCRECT cycle,
+-			// and if the system is very slow (or when using remote desktop), the default tooltip
+-			// may be visible for a second. However, we need to draw the customized tooltip after
+-			// CDDS_POSTPAINT otherwise it won't be visible at all.
+-
+-			// Cheap solution: Let windows draw the text with the background color, so the glitch
+-			// is not that much visible.
+-			SetTextColor(pNMCD->nmcd.hdc, m_crTooltipBkColor);
+-			*pResult = CDRF_NOTIFYPOSTPAINT;
+-			return;
+-		}
+-		if (pNMCD->nmcd.dwDrawStage == CDDS_POSTPAINT) {
+-			CustomPaint(pNMCD);
+-			*pResult = CDRF_SKIPDEFAULT;
+-			return;
+-		}
+-	} else {
+-		// XP/Vista: Resize, position and customize the tooltip window all in 'CDDS_PREPAINT'.
+-		if (pNMCD->nmcd.dwDrawStage == CDDS_PREPAINT) {
+-			CustomPaint(pNMCD);
+-			*pResult = CDRF_SKIPDEFAULT;
+-			return;
+-		}
++	// Resize, position and customize the tooltip window all in 'CDDS_PREPAINT'.
++	if (pNMCD->nmcd.dwDrawStage == CDDS_PREPAINT) {
++		CustomPaint(pNMCD);
++		*pResult = CDRF_SKIPDEFAULT;
++		return;
+ 	}
+ 	*pResult = CDRF_DODEFAULT;
+ }
+\ No newline at end of file
+diff --git a/srchybrid/ToolbarWnd.cpp b/srchybrid/ToolbarWnd.cpp
+index 9c2466d..b79cb07 100644
+--- a/srchybrid/ToolbarWnd.cpp
++++ b/srchybrid/ToolbarWnd.cpp
+@@ -133,25 +133,12 @@ LRESULT CToolbarWnd::OnInitDialog(WPARAM, LPARAM)
+ 	for (unsigned i = 0; i < _countof(sIconNames); ++i)
+ 		iml.Add(CTempIconLoader(sIconNames[i]));
+ 
+-	// older Windows versions image list cannot create monochrome (disabled) icons with alpha support
+-	// so we have to take care of this ourselves
+-	if (thePrefs.GetWindowsVersion() < _WINVER_VISTA_ && nFlags != ILC_COLOR4) {
+-		CImageList iml2;
+-		iml2.Create(16, 16, nFlags, 1, 1);
+-		for (unsigned i = 0; i < _countof(sIconNames); ++i)
+-			VERIFY(AddIconGreyedToImageList(iml2, CTempIconLoader(sIconNames[i])) >= 0);
+-
+-		CImageList *pImlOld = m_btnBar.SetDisabledImageList(&iml2);
+-		iml2.Detach();
+-		if (pImlOld)
+-			pImlOld->DeleteImageList();
+-	}
+ 	CImageList *pImlOld = m_btnBar.SetImageList(&iml);
+ 	iml.Detach();
+ 	if (pImlOld)
+ 		pImlOld->DeleteImageList();
+ 
+-	m_btnBar.ModifyStyle((theApp.m_ullComCtrlVer >= MAKEDLLVERULL(6, 16, 0, 0)) ? TBSTYLE_TRANSPARENT : 0, 0);
++	m_btnBar.ModifyStyle(TBSTYLE_TRANSPARENT, 0);
+ 	m_btnBar.SetMaxTextRows(0);
+ 
+ 	Localize();
+diff --git a/srchybrid/TransferWnd.cpp b/srchybrid/TransferWnd.cpp
+index 5a56858..a9865b2 100644
+--- a/srchybrid/TransferWnd.cpp
++++ b/srchybrid/TransferWnd.cpp
+@@ -1618,7 +1618,7 @@ void CTransferWnd::ResetTransToolbar(bool bShowToolbar, bool bResetLists)
+ 
+ 	if (bShowToolbar) {
+ 		// Vista: Remove the TBSTYLE_TRANSPARENT to avoid flickering (can be done only after the toolbar was initially created with TBSTYLE_TRANSPARENT !?)
+-		m_btnWnd1.ModifyStyle((theApp.m_ullComCtrlVer >= MAKEDLLVERULL(6, 16, 0, 0)) ? TBSTYLE_TRANSPARENT : 0, TBSTYLE_TOOLTIPS);
++		m_btnWnd1.ModifyStyle(TBSTYLE_TRANSPARENT, TBSTYLE_TOOLTIPS);
+ 		m_btnWnd1.SetExtendedStyle(m_btnWnd1.GetExtendedStyle() | TBSTYLE_EX_MIXEDBUTTONS);
+ 
+ 		TBBUTTON atb1[1 + WND1_NUM_BUTTONS] = {};
+@@ -1671,26 +1671,18 @@ void CTransferWnd::ResetTransToolbar(bool bShowToolbar, bool bResetLists)
+ 		tbbi.cx = WND1_BUTTON_WIDTH;
+ 		m_btnWnd1.SetButtonInfo(0, &tbbi);
+ 
+-		// 'GetMaxSize' does not work properly under:
+-		//	- Win98SE with COMCTL32 v5.80
+-		//	- Win2000 with COMCTL32 v5.81
+-		// The value returned by 'GetMaxSize' is just couple of pixels too small so that the
+-		// last toolbar button is nearly not visible at all.
+-		// So, to circumvent such problems, the toolbar control should be created right with
+-		// the needed size so that we do not really need to call the 'GetMaxSize' function.
+-		// Although it would be better to call it to adapt for system metrics basically.
+-		if (theApp.m_ullComCtrlVer > MAKEDLLVERULL(5, 81, 0, 0)) {
++		{
+ 			CSize size;
+ 			m_btnWnd1.GetMaxSize(&size);
+ 			m_btnWnd1.GetWindowRect(&rcBtn1);
+ 			ScreenToClient(&rcBtn1);
+-			// the with of the toolbar should already match the needed size (see comment above)
++			// the with of the toolbar should already match the needed size
+ 			ASSERT(size.cx == rcBtn1.Width());
+ 			m_btnWnd1.MoveWindow(rcBtn1.left, rcBtn1.top, size.cx, rcBtn1.Height());
+ 		}
+ 		/*---*/
+ 				// Vista: Remove the TBSTYLE_TRANSPARENT to avoid flickering (can be done only after the toolbar was initially created with TBSTYLE_TRANSPARENT !?)
+-		m_btnWnd2.ModifyStyle((theApp.m_ullComCtrlVer >= MAKEDLLVERULL(6, 16, 0, 0)) ? TBSTYLE_TRANSPARENT : 0, TBSTYLE_TOOLTIPS);
++		m_btnWnd2.ModifyStyle(TBSTYLE_TRANSPARENT, TBSTYLE_TOOLTIPS);
+ 		m_btnWnd2.SetExtendedStyle(m_btnWnd2.GetExtendedStyle() | TBSTYLE_EX_MIXEDBUTTONS);
+ 
+ 		TBBUTTON atb2[1 + WND2_NUM_BUTTONS] = {};
+@@ -1731,32 +1723,24 @@ void CTransferWnd::ResetTransToolbar(bool bShowToolbar, bool bResetLists)
+ 		tbbi.cx = WND2_BUTTON_WIDTH;
+ 		m_btnWnd2.SetButtonInfo(0, &tbbi);
+ 
+-		// 'GetMaxSize' does not work properly under:
+-		//	- Win98SE with COMCTL32 v5.80
+-		//	- Win2000 with COMCTL32 v5.81
+-		// The value returned by 'GetMaxSize' is just couple of pixels too small so that the
+-		// last toolbar button is nearly not visible at all.
+-		// So, to circumvent such problems, the toolbar control should be created right with
+-		// the needed size so that we do not really need to call the 'GetMaxSize' function.
+-		// Although it would be better to call it to adapt for system metrics basically.
+-		if (theApp.m_ullComCtrlVer > MAKEDLLVERULL(5, 81, 0, 0)) {
++		{
+ 			SIZE size;
+ 			m_btnWnd2.GetMaxSize(&size);
+ 			CRect rc;
+ 			m_btnWnd2.GetWindowRect(&rc);
+ 			ScreenToClient(&rc);
+-			// the with of the toolbar should already match the needed size (see comment above)
++			// the with of the toolbar should already match the needed size
+ 			ASSERT(size.cx == rc.Width());
+ 			m_btnWnd2.MoveWindow(rc.left, rc.top, size.cx, rc.Height());
+ 		}
+ 	} else {
+ 		// Vista: Remove the TBSTYLE_TRANSPARENT to avoid flickering (can be done only after the toolbar was initially created with TBSTYLE_TRANSPARENT !?)
+-		m_btnWnd1.ModifyStyle(TBSTYLE_TOOLTIPS | ((theApp.m_ullComCtrlVer >= MAKEDLLVERULL(6, 16, 0, 0)) ? TBSTYLE_TRANSPARENT : 0), 0);
++		m_btnWnd1.ModifyStyle(TBSTYLE_TOOLTIPS | TBSTYLE_TRANSPARENT, 0);
+ 		m_btnWnd1.SetExtendedStyle(m_btnWnd1.GetExtendedStyle() & ~TBSTYLE_EX_MIXEDBUTTONS);
+ 		m_btnWnd1.RecalcLayout(true);
+ 
+ 		// Vista: Remove the TBSTYLE_TRANSPARENT to avoid flickering (can be done only after the toolbar was initially created with TBSTYLE_TRANSPARENT !?)
+-		m_btnWnd2.ModifyStyle(TBSTYLE_TOOLTIPS | ((theApp.m_ullComCtrlVer >= MAKEDLLVERULL(6, 16, 0, 0)) ? TBSTYLE_TRANSPARENT : 0), 0);
++		m_btnWnd2.ModifyStyle(TBSTYLE_TOOLTIPS | TBSTYLE_TRANSPARENT, 0);
+ 		m_btnWnd2.SetExtendedStyle(m_btnWnd2.GetExtendedStyle() & ~TBSTYLE_EX_MIXEDBUTTONS);
+ 		m_btnWnd2.RecalcLayout(true);
+ 	}
+diff --git a/srchybrid/UPnPImplWinServ.cpp b/srchybrid/UPnPImplWinServ.cpp
+index 545c796..8adce72 100644
+--- a/srchybrid/UPnPImplWinServ.cpp
++++ b/srchybrid/UPnPImplWinServ.cpp
+@@ -97,24 +97,8 @@ CUPnPImplWinServ::~CUPnPImplWinServ()
+ // Helper function to check if UPnP Device Host service is healthy
+ // Although SSPD service is dependent on this service but sometimes it may lock up.
+ // This will result in application lockup when we call any methods of IUPnPDeviceFinder.
+-// ToDo: Add a support for WinME.
+ bool CUPnPImplWinServ::IsReady()
+ {
+-	switch (thePrefs.GetWindowsVersion()) {
+-	case _WINVER_ME_:
+-		return true;
+-	case _WINVER_2K_:
+-	case _WINVER_XP_:
+-	case _WINVER_2003_:
+-	case _WINVER_VISTA_:
+-	case _WINVER_7_:
+-	case _WINVER_8_:
+-	case _WINVER_8_1_:
+-	case _WINVER_10_:
+-		break;
+-	default:
+-		return false;
+-	}
+ 	Init();
+ 
+ 	bool bResult = false;
+@@ -215,9 +199,7 @@ void CUPnPImplWinServ::ProcessAsyncFind(CComBSTR bsSearchType)
+ void CUPnPImplWinServ::StopAsyncFind()
+ {
+ 	// This will stop the async find if it is in progress
+-	// ToDo: Locks up in WinME, cancelling is required <- critical
+-
+-	if (m_bInited && thePrefs.GetWindowsVersion() != _WINVER_ME_ && IsAsyncFindRunning()) {
++	if (m_bInited && IsAsyncFindRunning()) {
+ 		if (FAILED(m_pDeviceFinder->CancelAsyncFind(m_nAsyncFindHandle)))
+ 			DebugLogError(_T("Cancel AsyncFind failed in UPnP finder."));
+ 	}
+diff --git a/srchybrid/emule.rc b/srchybrid/emule.rc
+index 8dc11be..2ff7716 100644
+--- a/srchybrid/emule.rc
++++ b/srchybrid/emule.rc
+@@ -375,7 +375,6 @@ BEGIN
+     LTEXT           "Static",IDC_MAXCONLABEL,117,143,86,8
+     LTEXT           "TCP",IDC_STATIC,11,86,17,8
+     GROUPBOX        "Network",IDC_CONNECTION_NETWORK,153,174,74,34
+-    PUSHBUTTON      "Set up ports on WinXP SP1 firewall",IDC_OPENPORTS,83,84,137,12,WS_DISABLED
+     CONTROL         "Use UPnP to set up Port Forwarding",IDC_PREF_UPNPONSTART,
+                     "Button",BS_AUTOCHECKBOX | WS_TABSTOP,11,116,208,10
+ END
+@@ -701,13 +700,12 @@ BEGIN
+                     "Button",BS_AUTOCHECKBOX | WS_TABSTOP,11,120,209,10
+     CONTROL         "Disable support for obfuscated connections",IDC_DISABLEOBFUSCATION,
+                     "Button",BS_AUTOCHECKBOX | WS_TABSTOP,11,130,209,10
+-    GROUPBOX        "Misc",IDC_SEC_MISC,4,149,223,55,WS_GROUP
++    GROUPBOX        "Misc",IDC_SEC_MISC,4,149,223,45,WS_GROUP
+     CONTROL         "Use secure Identification",IDC_USESECIDENT,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,11,159,209,10
+-    CONTROL         "Run eMule as unprivileged user",IDC_RUNASUSER,"Button",BS_AUTOCHECKBOX | WS_DISABLED | WS_TABSTOP,11,169,209,10
+     CONTROL         "Enable spam filter for search results",IDC_SEARCHSPAMFILTER,
+-                    "Button",BS_AUTOCHECKBOX | WS_TABSTOP,11,179,209,10
++                    "Button",BS_AUTOCHECKBOX | WS_TABSTOP,11,169,209,10
+     CONTROL         "Warn when opening untrusted files",IDC_CHECK_FILE_OPEN,
+-                    "Button",BS_AUTOCHECKBOX | WS_TABSTOP,11,189,209,10
++                    "Button",BS_AUTOCHECKBOX | WS_TABSTOP,11,179,209,10
+ END
+ 
+ IDD_EXITBOX DIALOGEX 0, 0, 188, 96
+diff --git a/srchybrid/emule.vcxproj b/srchybrid/emule.vcxproj
+index 5b2946a..2dfb5e2 100644
+--- a/srchybrid/emule.vcxproj
++++ b/srchybrid/emule.vcxproj
+@@ -46,8 +46,7 @@
+   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+   <PropertyGroup Label="Configuration">
+     <CharacterSet>Unicode</CharacterSet>
+-    <PlatformToolset Condition="'$(Platform)'!='ARM64'">v141_xp</PlatformToolset>
+-    <PlatformToolset Condition="'$(Platform)'=='ARM64'">v145</PlatformToolset>
++    <PlatformToolset>v145</PlatformToolset>
+     <UseOfMfc>Static</UseOfMfc>
+   </PropertyGroup>
+   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+@@ -80,12 +79,11 @@
+       <Optimization>Disabled</Optimization>
+       <PrecompiledHeader>Use</PrecompiledHeader>
+       <PreprocessorDefinitions>ID3LIB_LINKOPTION=1;MINIUPNP_STATICLIB;SUPPORT_LARGE_FILES;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+-      <PreprocessorDefinitions Condition="'$(Platform)'!='ARM64'">XP_BUILD;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+       <WarningLevel>EnableAllWarnings</WarningLevel>
+     </ClCompile>
+     <Link>
+-      <AdditionalDependencies>ADSIId.lib;crypt32.lib;delayimp.lib;iphlpapi.lib;version.lib;winmm.lib;ws2_32.lib;..\cryptopp\$(Platform)\$(Configuration)\cryptlib.lib;..\id3lib\libprj\$(Platform)\$(Configuration)\id3lib.lib;..\mbedtls\visualc\vs2017\$(Platform)\$(Configuration)\mbedtls.lib;..\miniupnpc\msvc\$(Platform)\$(Configuration)\miniupnpc.lib;..\resizablelib\$(Platform)\$(Configuration)\resizablelib.lib;..\zlib\contrib\vstudio\vc\$(Platform)\$(Configuration)\zlib.lib;%(AdditionalDependencies)</AdditionalDependencies>
++      <AdditionalDependencies>crypt32.lib;delayimp.lib;iphlpapi.lib;version.lib;winmm.lib;ws2_32.lib;..\cryptopp\$(Platform)\$(Configuration)\cryptlib.lib;..\id3lib\libprj\$(Platform)\$(Configuration)\id3lib.lib;..\mbedtls\visualc\vs2017\$(Platform)\$(Configuration)\mbedtls.lib;..\miniupnpc\msvc\$(Platform)\$(Configuration)\miniupnpc.lib;..\resizablelib\$(Platform)\$(Configuration)\resizablelib.lib;..\zlib\contrib\vstudio\vc\$(Platform)\$(Configuration)\zlib.lib;%(AdditionalDependencies)</AdditionalDependencies>
+       <AdditionalOptions Condition="'$(Platform)'=='Win32'">/safeseh</AdditionalOptions>
+       <DelayLoadDLLs>gdiplus.dll;msimg32.dll;oleacc.dll;ws2_32.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
+       <IgnoreSpecificDefaultLibraries>mpr.lib;rasapi32.lib;secur32.lib;sensapi.lib;vfw32.lib;%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
+@@ -110,11 +108,10 @@
+       <OmitFramePointers>true</OmitFramePointers>
+       <PrecompiledHeader>Use</PrecompiledHeader>
+       <PreprocessorDefinitions>ID3LIB_LINKOPTION=1;MINIUPNP_STATICLIB;SUPPORT_LARGE_FILES;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+-      <PreprocessorDefinitions Condition="'$(Platform)'!='ARM64'">XP_BUILD;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+       <WarningLevel>EnableAllWarnings</WarningLevel>
+     </ClCompile>
+     <Link>
+-      <AdditionalDependencies>ADSIId.lib;crypt32.lib;delayimp.lib;iphlpapi.lib;version.lib;winmm.lib;ws2_32.lib;..\cryptopp\$(Platform)\$(Configuration)\cryptlib.lib;..\id3lib\libprj\$(Platform)\$(Configuration)\id3lib.lib;..\mbedtls\visualc\vs2017\$(Platform)\$(Configuration)\mbedtls.lib;..\miniupnpc\msvc\$(Platform)\$(Configuration)\miniupnpc.lib;..\resizablelib\$(Platform)\$(Configuration)\resizablelib.lib;..\zlib\contrib\vstudio\vc\$(Platform)\$(Configuration)\zlib.lib;%(AdditionalDependencies)</AdditionalDependencies>
++      <AdditionalDependencies>crypt32.lib;delayimp.lib;iphlpapi.lib;version.lib;winmm.lib;ws2_32.lib;..\cryptopp\$(Platform)\$(Configuration)\cryptlib.lib;..\id3lib\libprj\$(Platform)\$(Configuration)\id3lib.lib;..\mbedtls\visualc\vs2017\$(Platform)\$(Configuration)\mbedtls.lib;..\miniupnpc\msvc\$(Platform)\$(Configuration)\miniupnpc.lib;..\resizablelib\$(Platform)\$(Configuration)\resizablelib.lib;..\zlib\contrib\vstudio\vc\$(Platform)\$(Configuration)\zlib.lib;%(AdditionalDependencies)</AdditionalDependencies>
+       <AdditionalOptions Condition="'$(Platform)'=='Win32'">/safeseh</AdditionalOptions>
+       <DelayLoadDLLs>gdiplus.dll;msimg32.dll;oleacc.dll;ws2_32.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
+       <IgnoreSpecificDefaultLibraries>mpr.lib;rasapi32.lib;secur32.lib;sensapi.lib;vfw32.lib;%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
+@@ -137,12 +134,11 @@
+       <Optimization>Disabled</Optimization>
+       <PrecompiledHeader>Use</PrecompiledHeader>
+       <PreprocessorDefinitions>ID3LIB_LINKOPTION=1;MINIUPNP_STATICLIB;SUPPORT_LARGE_FILES;_BOOTSTRAPNODESDAT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+-      <PreprocessorDefinitions Condition="'$(Platform)'!='ARM64'">XP_BUILD;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+       <WarningLevel>EnableAllWarnings</WarningLevel>
+     </ClCompile>
+     <Link>
+-      <AdditionalDependencies>ADSIId.lib;crypt32.lib;delayimp.lib;iphlpapi.lib;version.lib;winmm.lib;ws2_32.lib;..\cryptopp\$(Platform)\Debug\cryptlib.lib;..\id3lib\libprj\$(Platform)\Debug\id3lib.lib;..\mbedtls\visualc\vs2017\$(Platform)\Debug\mbedtls.lib;..\miniupnpc\msvc\$(Platform)\Debug\miniupnpc.lib;..\resizablelib\$(Platform)\Debug\resizablelib.lib;..\zlib\contrib\vstudio\vc\$(Platform)\Debug\zlib.lib;%(AdditionalDependencies)</AdditionalDependencies>
++      <AdditionalDependencies>crypt32.lib;delayimp.lib;iphlpapi.lib;version.lib;winmm.lib;ws2_32.lib;..\cryptopp\$(Platform)\Debug\cryptlib.lib;..\id3lib\libprj\$(Platform)\Debug\id3lib.lib;..\mbedtls\visualc\vs2017\$(Platform)\Debug\mbedtls.lib;..\miniupnpc\msvc\$(Platform)\Debug\miniupnpc.lib;..\resizablelib\$(Platform)\Debug\resizablelib.lib;..\zlib\contrib\vstudio\vc\$(Platform)\Debug\zlib.lib;%(AdditionalDependencies)</AdditionalDependencies>
+       <AdditionalOptions Condition="'$(Platform)'=='Win32'">/safeseh</AdditionalOptions>
+       <DelayLoadDLLs>gdiplus.dll;msimg32.dll;oleacc.dll;ws2_32.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
+       <IgnoreSpecificDefaultLibraries>mpr.lib;rasapi32.lib;secur32.lib;sensapi.lib;vfw32.lib;%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
+@@ -224,7 +220,6 @@
+     <ClCompile Include="FileDetailDlgStatistics.cpp" />
+     <ClCompile Include="FileIdentifier.cpp" />
+     <ClCompile Include="FileInfoDialog.cpp" />
+-    <ClCompile Include="FirewallOpener.cpp" />
+     <ClCompile Include="FrameGrabThread.cpp" />
+     <ClCompile Include="Friend.cpp" />
+     <ClCompile Include="FriendList.cpp" />
+@@ -335,7 +330,7 @@
+     <ClCompile Include="RichEditStream.cpp" />
+     <ClCompile Include="SafeFile.cpp" />
+     <ClCompile Include="Scanner.cpp">
+-      <PreprocessorDefinitions Condition="'$(Platform)'=='Win32'">_CRT_SECURE_NO_DEPRECATE;_USE_32BIT_TIME_T;%(PreprocessorDefinitions)</PreprocessorDefinitions>
++      <PreprocessorDefinitions Condition="'$(Platform)'=='Win32'">_CRT_SECURE_NO_DEPRECATE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+       <PreprocessorDefinitions Condition="'$(Platform)'=='x64'">_CRT_SECURE_NO_DEPRECATE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+       <PrecompiledHeader />
+     </ClCompile>
+@@ -346,7 +341,6 @@
+     <ClCompile Include="SearchListCtrl.cpp" />
+     <ClCompile Include="SearchParamsWnd.cpp" />
+     <ClCompile Include="SearchResultsWnd.cpp" />
+-    <ClCompile Include="SecRunAsUser.cpp" />
+     <ClCompile Include="SelfTest.cpp" />
+     <ClCompile Include="SendMail.cpp" />
+     <ClCompile Include="Server.cpp" />
+@@ -499,7 +493,6 @@
+     <ClInclude Include="FileDetailDlgStatistics.h" />
+     <ClInclude Include="FileIdentifier.h" />
+     <ClInclude Include="FileInfoDialog.h" />
+-    <ClInclude Include="FirewallOpener.h" />
+     <ClInclude Include="FrameGrabThread.h" />
+     <ClInclude Include="Friend.h" />
+     <ClInclude Include="FriendList.h" />
+@@ -633,7 +626,6 @@
+     <ClInclude Include="SearchParams.h" />
+     <ClInclude Include="SearchParamsWnd.h" />
+     <ClInclude Include="SearchResultsWnd.h" />
+-    <ClInclude Include="SecRunAsUser.h" />
+     <ClInclude Include="Server.h" />
+     <ClInclude Include="ServerConnect.h" />
+     <ClInclude Include="ServerList.h" />
+diff --git a/srchybrid/emule_site_config.h b/srchybrid/emule_site_config.h
+index 1c06482..2d9f8c0 100644
+--- a/srchybrid/emule_site_config.h
++++ b/srchybrid/emule_site_config.h
+@@ -12,10 +12,6 @@
+ #define HAVE_WIN7_SDK_H
+ #define HAVE_VISTA_SDK
+ 
+-#ifdef XP_BUILD
+-#define _WIN32_WINNT _WIN32_WINNT_WINXP
+-#define NTDDI_VERSION NTDDI_WINXP
+-#endif //XP_BUILD
+ #if _MSC_VER<1937 //before VS2022 17.7
+ #define NOEXCEPT noexcept
+ #else
