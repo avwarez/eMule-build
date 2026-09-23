@@ -176,14 +176,15 @@ target_compile_definitions(emule PRIVATE
 # CRT headers and ~1900 from the Windows SDK - 96% of the total, none of it
 # actionable here. Only 605 lines (146 unique warnings) came from srchybrid.
 # /external:W0 silences the external ones while /Wall stays fully in force on
-# our own translation units. Crypto++ is reached through quoted includes
-# (#include "cryptopp/rsa.h"), so anglebrackets alone does not cover it and the
-# directory has to be named explicitly.
+# our own translation units. Crypto++ and zlib are reached through quoted
+# includes (#include "cryptopp/rsa.h", "zlib/zlib.h"), so anglebrackets alone
+# does not cover them and their directories have to be named explicitly.
 target_compile_options(emule PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/Wall>
     $<$<CXX_COMPILER_ID:MSVC>:/external:anglebrackets>
     $<$<CXX_COMPILER_ID:MSVC>:/external:W0>
     $<$<CXX_COMPILER_ID:MSVC>:/external:I${CMAKE_SOURCE_DIR}/cryptopp>
+    $<$<CXX_COMPILER_ID:MSVC>:/external:I${CMAKE_SOURCE_DIR}/zlib>
     # C4755 comes from atlmfc/atlalloc.h but is emitted by the optimizer during
     # code generation, where the warning is no longer attributed to the include
     # that produced it - so /external:W0 above does not reach it (confirmed by a
