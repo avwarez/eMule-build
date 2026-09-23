@@ -1,0 +1,37 @@
+diff --git a/srchybrid/WebSocket.cpp b/srchybrid/WebSocket.cpp
+index d0824de..bf358d9 100644
+--- a/srchybrid/WebSocket.cpp
++++ b/srchybrid/WebSocket.cpp
+@@ -279,6 +279,14 @@ UINT AFX_CDECL WebSocketAcceptedFunc(LPVOID pD)
+ 
+ 	ASSERT(INVALID_SOCKET != hSocket);
+ 
++	// The TLS layer used to get &hSocket as its mbedtls_net_context, but that
++	// context holds an int fd while SOCKET is pointer-sized: on x64 and ARM64
++	// mbedTLS read and wrote only the low half of the handle. A real context,
++	// filled the way mbedtls_net_accept() fills its own, is what it expects.
++	mbedtls_net_context netCtx;
++	mbedtls_net_init(&netCtx);
++	netCtx.fd = (int)hSocket;
++
+ 	HANDLE hEvent = CreateEvent(NULL, FALSE, TRUE, NULL);
+ 	if (hEvent) {
+ 		if (!WSAEventSelect(hSocket, hEvent, FD_READ | FD_CLOSE | FD_WRITE)) {
+@@ -305,7 +313,7 @@ UINT AFX_CDECL WebSocketAcceptedFunc(LPVOID pD)
+ 				int ret = mbedtls_ssl_setup(&ssl, &conf);
+ 				if (ret)
+ 					goto thread_exit;
+-				mbedtls_ssl_set_bio(&ssl, (void*)&hSocket, mbedtls_net_send, mbedtls_net_recv, NULL);
++				mbedtls_ssl_set_bio(&ssl, &netCtx, mbedtls_net_send, mbedtls_net_recv, NULL);
+ 				while ((ret = mbedtls_ssl_handshake(&ssl)) != 0)
+ 					if (ret != MBEDTLS_ERR_SSL_WANT_READ && ret != MBEDTLS_ERR_SSL_WANT_WRITE) {
+ 						DebugLogWarning(_T("Web Interface handshake failed: %s"), (LPCTSTR)SSLerror(ret));
+@@ -414,7 +422,7 @@ thread_exit:
+ 		VERIFY(::CloseHandle(hEvent));
+ 	}
+ 	if (thePrefs.GetWebUseHttps())
+-		mbedtls_net_free((mbedtls_net_context*)&hSocket);
++		mbedtls_net_free(&netCtx);
+ 	else
+ 		VERIFY(!closesocket(hSocket));
+ 	return 0;
