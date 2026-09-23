@@ -1,17 +1,20 @@
 diff --git a/srchybrid/EmuleDlg.cpp b/srchybrid/EmuleDlg.cpp
-index 14b6f2c..b5c4fd2 100644
+index ac22135..5bcb9ac 100644
 --- a/srchybrid/EmuleDlg.cpp
 +++ b/srchybrid/EmuleDlg.cpp
-@@ -1400,10 +1400,9 @@ LRESULT CemuleDlg::OnWMData(WPARAM, LPARAM lParam)
+@@ -1393,10 +1393,11 @@ LRESULT CemuleDlg::OnWMData(WPARAM, LPARAM lParam)
  					else
  						uid = IDS_DISCONNECTED;
  					_ftprintf(file, _T("%s\n"), (LPCTSTR)GetResString(uid));
 -#pragma warning(push)
 -#pragma warning(disable:4774)
-+					// the format is the translated IDS_UPDOWNSMALL, which cannot be a literal
-+#pragma warning(suppress: 4774)
- 					_ftprintf(file, (LPCTSTR)GetResString(IDS_UPDOWNSMALL), (float)theApp.uploadqueue->GetDatarate() / 1024, (float)theApp.downloadqueue->GetDatarate() / 1024);
+-					_ftprintf(file, (LPCTSTR)GetResString(IDS_UPDOWNSMALL), (float)theApp.uploadqueue->GetDatarate() / 1024, (float)theApp.downloadqueue->GetDatarate() / 1024);
 -#pragma warning(pop)
++					// the format is the translated IDS_UPDOWNSMALL, which cannot be a literal:
++					// format it the way the tray tooltip does, then write the result
++					CString sUpDown;
++					sUpDown.Format(GetResString(IDS_UPDOWNSMALL), (float)theApp.uploadqueue->GetDatarate() / 1024, (float)theApp.downloadqueue->GetDatarate() / 1024);
++					_ftprintf(file, _T("%s"), (LPCTSTR)sUpDown);
  					// next string (getTextList) is already prefixed with '\n'!
  					_ftprintf(file, _T("%s\n"), (LPCTSTR)transferwnd->GetDownloadList().getTextList());
  
@@ -104,19 +107,22 @@ index 1bf3a46..32ccf9b 100644
  
  uint64 CPreferences::GetMaxDownloadInBytesPerSec(bool bDynamic)
 diff --git a/srchybrid/TreeOptionsCtrlEx.cpp b/srchybrid/TreeOptionsCtrlEx.cpp
-index 611a90a..0af141f 100644
+index 611a90a..33b74c5 100644
 --- a/srchybrid/TreeOptionsCtrlEx.cpp
 +++ b/srchybrid/TreeOptionsCtrlEx.cpp
-@@ -411,13 +411,13 @@ void EditTextWithFormat(CDataExchange *pDX, int nIDC, HTREEITEM hItem, LPCTSTR l
- 		void *pResult = va_arg(pData, void*);
+@@ -408,16 +408,14 @@ void EditTextWithFormat(CDataExchange *pDX, int nIDC, HTREEITEM hItem, LPCTSTR l
+ 	ASSERT(pCtrlTreeOptions->IsKindOf(RUNTIME_CLASS(CTreeOptionsCtrl)));
+ 
+ 	if (pDX->m_bSaveAndValidate) {
+-		void *pResult = va_arg(pData, void*);
  		// the following works for %d, %u, %ld, %lu
  		CString sText(pCtrlTreeOptions->GetEditText(hItem));
 -#pragma warning(push)
 -#pragma warning(disable:4774)
-+		// lpszFormat is the caller's, as in MFC's DDX_TextWithFormat(); every caller
-+		// below passes a literal matching the type it hands over
-+#pragma warning(suppress: 4774)
- 		if (_stscanf(sText, lpszFormat, pResult) != 1) {
+-		if (_stscanf(sText, lpszFormat, pResult) != 1) {
++		// lpszFormat is the caller's, as in MFC's DDX_TextWithFormat(); the pointer to
++		// the result is the variadic argument, read from pData like the value below
++		if (_vstscanf(sText, lpszFormat, pData) != 1) {
  			AfxMessageBox(nIDPrompt);
  			pDX->Fail();	// throws exception
  		}
