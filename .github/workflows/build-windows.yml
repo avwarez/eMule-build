@@ -232,7 +232,15 @@ jobs:
         # GitHub Release tag/title carry the exact same stamp; every run gets
         # its own permanent, chronologically sortable identifier instead of one
         # being overwritten by the next.
-        run: echo "tag=${{ github.ref_name }}-$(date -u +%Y%m%d-%H%M%S)" >> "$GITHUB_OUTPUT"
+        #
+        # "ref" is the branch name with every '/' turned into '-': a branch such
+        # as probe/foo would otherwise put a directory separator into the zip
+        # and artifact names, and zip then fails to create the file.
+        run: |
+          ref="${{ github.ref_name }}"
+          ref="${ref//\//-}"
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+          echo "tag=$ref-$(date -u +%Y%m%d-%H%M%S)" >> "$GITHUB_OUTPUT"
 
       - name: Assemble the per-platform release folder and zip it
         # download-artifact restores each of the 6 upload-artifact names
@@ -259,7 +267,7 @@ jobs:
             [ -d "$dir" ] || continue
             name=$(basename "$dir")                                   # emule-x64-Release
             platform=${name#emule-}; platform=${platform%-Release}    # x64 / Win32 / ARM64
-            stage="staging/eMule-${{ github.ref_name }}"
+            stage="staging/eMule-${{ steps.meta.outputs.ref }}"
             rm -rf "$stage" && mkdir -p "$stage/lang"
             cp -a emule_build/dist/. "$stage"/                        # vendored payload
             # config/eMule.tmpl is the one dist file that also exists in git:
@@ -270,7 +278,7 @@ jobs:
             cp "emule/srchybrid/webinterface/eMule.tmpl" "$stage/config/eMule.tmpl"
             cp "$dir/emule.exe" "$stage"/                             # this arch's exe
             cp "$dir"/lang/*.dll "$stage/lang"/                       # this arch's language DLLs
-            ( cd staging && zip -r -q "${GITHUB_WORKSPACE}/release-assets/eMule-${{ steps.meta.outputs.tag }}-${platform}.zip" "eMule-${{ github.ref_name }}" )
+            ( cd staging && zip -r -q "${GITHUB_WORKSPACE}/release-assets/eMule-${{ steps.meta.outputs.tag }}-${platform}.zip" "eMule-${{ steps.meta.outputs.ref }}" )
           done
           ls -l release-assets
           echo "--- contents of one asset ---"
@@ -285,7 +293,7 @@ jobs:
         # zips to a permanent Release.
         uses: actions/upload-artifact@v4
         with:
-          name: release-zips-${{ github.ref_name }}
+          name: release-zips-${{ steps.meta.outputs.ref }}
           path: release-assets/*.zip
           if-no-files-found: error
           retention-days: 14
