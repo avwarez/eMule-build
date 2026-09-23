@@ -1,0 +1,150 @@
+diff --git a/srchybrid/IPFilter.cpp b/srchybrid/IPFilter.cpp
+index de8bcd1..cc0a0ea 100644
+--- a/srchybrid/IPFilter.cpp
++++ b/srchybrid/IPFilter.cpp
+@@ -74,8 +74,6 @@ INT_PTR	CIPFilter::LoadFromDefaultFile(bool bShowResponse)
+ 	return AddFromFile(GetDefaultFilePath(), bShowResponse);
+ }
+ 
+-#pragma warning(push)
+-#pragma warning(disable:4701) //local variables 'level' 'end' 'start'
+ INT_PTR CIPFilter::AddFromFile(LPCTSTR pszFilePath, bool bShowResponse)
+ {
+ 	const DWORD dwStart = ::GetTickCount();
+@@ -187,7 +185,7 @@ INT_PTR CIPFilter::AddFromFile(LPCTSTR pszFilePath, bool bShowResponse)
+ 					}
+ 
+ 					bool bValid;
+-					uint32 start, end, level;
++					uint32 start = 0, end = 0, level = 0;
+ 					CStringA desc;
+ 					if (eFileType == FilterDat)
+ 						bValid = ParseFilterLine1(sbuffer, start, end, level, desc);
+@@ -264,7 +262,6 @@ INT_PTR CIPFilter::AddFromFile(LPCTSTR pszFilePath, bool bShowResponse)
+ 	}
+ 	return m_iplist.GetCount();
+ }
+-#pragma warning(pop)
+ 
+ 
+ void CIPFilter::SaveToDefaultFile()
+diff --git a/srchybrid/MediaInfo.cpp b/srchybrid/MediaInfo.cpp
+index 37f33a7..e5f5eaa 100644
+--- a/srchybrid/MediaInfo.cpp
++++ b/srchybrid/MediaInfo.cpp
+@@ -302,8 +302,6 @@ bool IsEqualFOURCC(FOURCC fccA, FOURCC fccB)
+ 	return true;
+ }
+ 
+-#pragma warning(push)
+-#pragma warning(disable:4701) //local variable 'fcc'
+ static CString GetVideoFormatDisplayName(DWORD biCompression)
+ {
+ 	CString sName;
+@@ -330,9 +328,9 @@ static CString GetVideoFormatDisplayName(DWORD biCompression)
+ 	default:
+ 		{
+ 			sName = CStringA((LPCSTR)&biCompression, 4);
+-			DWORD fcc;
++			DWORD fcc = 0;
+ 			for (unsigned i = 0; i < sizeof(DWORD); ++i)
+-				((byte*)&fcc)[i] = (byte)toupper(((unsigned char*)&biCompression)[i]);
++				fcc |= (DWORD)(byte)toupper((int)((biCompression >> (8 * i)) & 0xFF)) << (8 * i);
+ 
+ 			switch (fcc) {
+ 			case MAKEFOURCC('D', 'I', 'V', '3'):
+@@ -426,7 +424,6 @@ static CString GetVideoFormatDisplayName(DWORD biCompression)
+ 		sName += pFormat;
+ 	return sName;
+ }
+-#pragma warning(pop)
+ 
+ CString GetVideoFormatName(DWORD biCompression)
+ {
+diff --git a/srchybrid/MuleSystrayDlg.cpp b/srchybrid/MuleSystrayDlg.cpp
+index d21b42b..9bb976d 100644
+--- a/srchybrid/MuleSystrayDlg.cpp
++++ b/srchybrid/MuleSystrayDlg.cpp
+@@ -107,8 +107,6 @@ void CMuleSystrayDlg::OnMouseMove(UINT nFlags, CPoint point)
+ 	CDialog::OnMouseMove(nFlags, point);
+ }
+ 
+-#pragma warning(push)
+-#pragma warning(disable:4701) //local variable 'lfStaticFont'
+ BOOL CMuleSystrayDlg::OnInitDialog()
+ {
+ 	CDialog::OnInitDialog();
+@@ -119,7 +117,7 @@ BOOL CMuleSystrayDlg::OnInitDialog()
+ 	m_ctrlUpArrow.SetIcon(m_hUpArrow);
+ 	m_ctrlDownArrow.SetIcon(m_hDownArrow);
+ 
+-	LOGFONT lfStaticFont;
++	LOGFONT lfStaticFont = {};
+ 
+ 	CWnd *p = GetDlgItem(IDC_SPEED);
+ 	bool bValidFont = (p != NULL);
+@@ -304,7 +302,6 @@ BOOL CMuleSystrayDlg::OnInitDialog()
+ 	return TRUE;  // return TRUE unless you set the focus to the control
+ 				  // EXCEPTION: OCX Property Pages should return FALSE
+ }
+-#pragma warning(pop)
+ 
+ void CMuleSystrayDlg::OnChangeDowntxt()
+ {
+diff --git a/srchybrid/SearchResultsWnd.cpp b/srchybrid/SearchResultsWnd.cpp
+index 769cb12..d564a23 100644
+--- a/srchybrid/SearchResultsWnd.cpp
++++ b/srchybrid/SearchResultsWnd.cpp
+@@ -1392,13 +1392,11 @@ void CSearchResultsWnd::DeleteSelectedSearch()
+ 	}
+ }
+ 
+-#pragma warning(push)
+-#pragma warning(disable:4701) //local variable 'ti'
+ void CSearchResultsWnd::DeleteSearch(uint32 uSearchID)
+ {
+ 	Kademlia::CSearchManager::StopSearch(uSearchID, false);
+ 
+-	TCITEM ti;
++	TCITEM ti = {};
+ 	ti.mask = TCIF_PARAM;
+ 	int i = searchselect.GetItemCount();
+ 	while (--i >= 0 && !(searchselect.GetItem(i, &ti) && ti.lParam && reinterpret_cast<SSearchParams*>(ti.lParam)->dwSearchID == uSearchID));
+@@ -1443,7 +1441,6 @@ void CSearchResultsWnd::DeleteSearch(uint32 uSearchID)
+ 	} else
+ 		NoTabItems();
+ }
+-#pragma warning(pop)
+ 
+ void CSearchResultsWnd::DeleteAllSearches()
+ {
+diff --git a/srchybrid/SharedDirsTreeCtrl.cpp b/srchybrid/SharedDirsTreeCtrl.cpp
+index 5637d9e..57d98dd 100644
+--- a/srchybrid/SharedDirsTreeCtrl.cpp
++++ b/srchybrid/SharedDirsTreeCtrl.cpp
+@@ -542,8 +542,6 @@ void CSharedDirsTreeCtrl::OnRButtonDown(UINT, CPoint point)
+ 	}
+ }
+ 
+-#pragma warning(push)
+-#pragma warning(disable:4701) //local variable 'pri'
+ BOOL CSharedDirsTreeCtrl::OnCommand(WPARAM wParam, LPARAM)
+ {
+ 	CTypedPtrList<CPtrList, CShareableFile*> selectedList;
+@@ -652,7 +650,7 @@ BOOL CSharedDirsTreeCtrl::OnCommand(WPARAM wParam, LPARAM)
+ 			for (POSITION pos = selectedList.GetHeadPosition(); pos != NULL;) {
+ 				CKnownFile *file = static_cast<CKnownFile*>(selectedList.GetNext(pos));
+ 				if (file->IsKindOf(RUNTIME_CLASS(CKnownFile))) {
+-					uint8 pri;
++					uint8 pri = PR_NORMAL;
+ 					switch (wParam) {
+ 					case MP_PRIOVERYLOW:
+ 						pri = PR_VERYLOW;
+@@ -690,7 +688,6 @@ BOOL CSharedDirsTreeCtrl::OnCommand(WPARAM wParam, LPARAM)
+ 	}
+ 	return TRUE;
+ }
+-#pragma warning(pop)
+ 
+ void CSharedDirsTreeCtrl::ShowFileDialog(CTypedPtrList<CPtrList, CShareableFile*> &aFiles, UINT uInvokePage)
+ {
