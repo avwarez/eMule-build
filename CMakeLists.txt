@@ -189,6 +189,11 @@ set(ZLIB_BUILD_STATIC ON CACHE BOOL "eMule only needs the static zlib lib" FORCE
 set(ZLIB_BUILD_TESTING OFF CACHE BOOL "Don't build zlib's own example programs" FORCE)
 set(ZLIB_INSTALL OFF CACHE BOOL "Don't add install() rules for a vendored submodule" FORCE)
 add_subdirectory(zlib)
+# zlib ships no Visual Studio project; its own MSVC build (win32/Makefile.msc)
+# compiles at -W3, which is also what CMake passed by default before policy
+# CMP0092. zlib's CMakeLists.txt sets that policy NEW and names no warning level
+# of its own, so it is stated here to keep the same level as upstream intends.
+target_compile_options(zlibstatic PRIVATE $<$<C_COMPILER_ID:MSVC>:/W3>)
 
 # ---------------------------------------------------------------------------
 # id3lib - vanilla git submodule (id3lib/, avwarez/id3lib pinned to v3.9.1),
