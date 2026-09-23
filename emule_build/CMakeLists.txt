@@ -29,7 +29,7 @@ list(LENGTH EMULE_SOURCES _n_sources)
 message(STATUS "eMule: ${_n_sources} source files read from emule.vcxproj")
 
 # ---------------------------------------------------------------------------
-# Platform (Win32/x64/ARM64) - still needed below for the SAFESEH/
+# Platform (Win32/x64/ARM64) - still needed below for the XP_BUILD/SAFESEH/
 # arch-specific compile and link options.
 # ---------------------------------------------------------------------------
 if(CMAKE_VS_PLATFORM_NAME)
@@ -104,10 +104,16 @@ set_target_properties(emule PROPERTIES
 # ---------------------------------------------------------------------------
 target_compile_features(emule PRIVATE cxx_std_23)
 
-# emule.vcxproj targets PlatformToolset v145 (Windows 10 is the oldest Windows
-# eMule supports); id3lib.vcxproj wants v141, ResizableLib.vcxproj v140_xp.
-# Every target here uses whatever toolset ships with the installed VS
-# generator instead, which the vcxproj's v145 matches.
+# KNOWN LIMITATION: emule.vcxproj targets PlatformToolset v141_xp for Win32/x64
+# (a Windows-XP-compatible VS2017 toolset) and v145 for ARM64; id3lib.vcxproj
+# wants v141, ResizableLib.vcxproj wants v140_xp. None of those toolsets are
+# installed here - every target in this build instead uses whatever toolset
+# ships with the installed VS generator (confirmed: only MSVC 14.50/14.51 are
+# present, no v14x_xp/v141/v140_xp component). Accepted as-is for now; install
+# the matching "Windows XP support for C++" / VS2017/VS2015 toolset components
+# via the Visual Studio Installer and set PlatformToolset (top-level
+# CMakeLists.txt, before add_subdirectory(emule_build)/(id3lib_build)/
+# (resizablelib_build)) if XP-compatible code generation is ever required.
 
 # Stdafx.h directly #includes <afximpl.h>, an MFC *implementation* header
 # under ATLMFC\src\mfc - not part of the public ATLMFC\include tree that
@@ -151,6 +157,7 @@ target_compile_definitions(emule PRIVATE
     SUPPORT_LARGE_FILES
     UNICODE
     _UNICODE
+    $<$<NOT:$<STREQUAL:${EMULE_PLATFORM_DIR},ARM64>>:XP_BUILD>
     $<$<CONFIG:Release>:NDEBUG>
 )
 # _DEBUG is deliberately NOT in the list above for C++ compilation: emule.vcxproj's
@@ -186,18 +193,19 @@ target_compile_options(emule PRIVATE
 target_precompile_headers(emule PRIVATE "${EMULE_SRC_DIR}/Stdafx.h")
 set_source_files_properties("${EMULE_SRC_DIR}/Parser.cpp" "${EMULE_SRC_DIR}/Scanner.cpp" PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
 
-# Scanner.cpp per-file PreprocessorDefinitions from the vcxproj: both Win32
-# and x64 get _CRT_SECURE_NO_DEPRECATE.
-# ARM64 does not get it - the vcxproj has no ARM64 condition for this file at all
+# Scanner.cpp per-file PreprocessorDefinitions from the vcxproj: only Win32
+# gets _USE_32BIT_TIME_T; both Win32 and x64 get _CRT_SECURE_NO_DEPRECATE.
+# ARM64 gets neither - the vcxproj has no ARM64 condition for this file at all
 # (never updated when the ARM64 platform was added), replicated as-is.
 set_source_files_properties("${EMULE_SRC_DIR}/Scanner.cpp" PROPERTIES
-    COMPILE_DEFINITIONS "$<$<OR:$<STREQUAL:${EMULE_PLATFORM_DIR},Win32>,$<STREQUAL:${EMULE_PLATFORM_DIR},x64>>:_CRT_SECURE_NO_DEPRECATE>"
+    COMPILE_DEFINITIONS "$<$<STREQUAL:${EMULE_PLATFORM_DIR},Win32>:_USE_32BIT_TIME_T;>$<$<OR:$<STREQUAL:${EMULE_PLATFORM_DIR},Win32>,$<STREQUAL:${EMULE_PLATFORM_DIR},x64>>:_CRT_SECURE_NO_DEPRECATE>"
 )
 
 # ---------------------------------------------------------------------------
 # Linking
 # ---------------------------------------------------------------------------
 target_link_libraries(emule PRIVATE
+    ADSIId.lib
     crypt32.lib
     delayimp.lib
     iphlpapi.lib
