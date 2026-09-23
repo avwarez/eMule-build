@@ -29,7 +29,7 @@ list(LENGTH EMULE_SOURCES _n_sources)
 message(STATUS "eMule: ${_n_sources} source files read from emule.vcxproj")
 
 # ---------------------------------------------------------------------------
-# Platform (Win32/x64/ARM64) - still needed below for the XP_BUILD/SAFESEH/
+# Platform (Win32/x64/ARM64) - still needed below for the SAFESEH/
 # arch-specific compile and link options.
 # ---------------------------------------------------------------------------
 if(CMAKE_VS_PLATFORM_NAME)
@@ -157,9 +157,13 @@ target_compile_definitions(emule PRIVATE
     SUPPORT_LARGE_FILES
     UNICODE
     _UNICODE
-    $<$<NOT:$<STREQUAL:${EMULE_PLATFORM_DIR},ARM64>>:XP_BUILD>
     $<$<CONFIG:Release>:NDEBUG>
 )
+# XP_BUILD, which emule.vcxproj sets for Win32 and x64, is deliberately left out
+# on every platform, as it already was on ARM64. The binaries cannot run on XP
+# anyway (mbedTLS 4 imports bcrypt.dll), so all it did was pin the SDK headers
+# to XP and, on Win32, force a 32-bit time_t that mbedTLS does not share - its
+# mbedtls_ssl_ticket_context came out smaller in eMule than in the library.
 # _DEBUG is deliberately NOT in the list above for C++ compilation: emule.vcxproj's
 # Debug <ClCompile> block does not define it either (confirmed - absent from its
 # PreprocessorDefinitions), so MFC's ASSERT/VERIFY/TRACE stay compiled out even in
@@ -193,12 +197,14 @@ target_compile_options(emule PRIVATE
 target_precompile_headers(emule PRIVATE "${EMULE_SRC_DIR}/Stdafx.h")
 set_source_files_properties("${EMULE_SRC_DIR}/Parser.cpp" "${EMULE_SRC_DIR}/Scanner.cpp" PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
 
-# Scanner.cpp per-file PreprocessorDefinitions from the vcxproj: only Win32
-# gets _USE_32BIT_TIME_T; both Win32 and x64 get _CRT_SECURE_NO_DEPRECATE.
-# ARM64 gets neither - the vcxproj has no ARM64 condition for this file at all
-# (never updated when the ARM64 platform was added), replicated as-is.
+# Scanner.cpp per-file PreprocessorDefinitions from the vcxproj: both Win32 and
+# x64 get _CRT_SECURE_NO_DEPRECATE; ARM64 does not - the vcxproj has no ARM64
+# condition for this file at all (never updated when the ARM64 platform was
+# added), replicated as-is. The vcxproj also gives Win32 _USE_32BIT_TIME_T here,
+# the per-file twin of the one XP_BUILD sets in Stdafx.h; with XP_BUILD gone it
+# is dropped too, so this file keeps the same time_t as the rest of eMule.
 set_source_files_properties("${EMULE_SRC_DIR}/Scanner.cpp" PROPERTIES
-    COMPILE_DEFINITIONS "$<$<STREQUAL:${EMULE_PLATFORM_DIR},Win32>:_USE_32BIT_TIME_T;>$<$<OR:$<STREQUAL:${EMULE_PLATFORM_DIR},Win32>,$<STREQUAL:${EMULE_PLATFORM_DIR},x64>>:_CRT_SECURE_NO_DEPRECATE>"
+    COMPILE_DEFINITIONS "$<$<OR:$<STREQUAL:${EMULE_PLATFORM_DIR},Win32>,$<STREQUAL:${EMULE_PLATFORM_DIR},x64>>:_CRT_SECURE_NO_DEPRECATE>"
 )
 
 # ---------------------------------------------------------------------------
