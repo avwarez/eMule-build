@@ -1,0 +1,17 @@
+diff --git a/srchybrid/qedit.h b/srchybrid/qedit.h
+index ede722f..f7e8c1d 100644
+--- a/srchybrid/qedit.h
++++ b/srchybrid/qedit.h
+@@ -9906,7 +9906,11 @@ DxtKey;
+ /* [local] */
+ 
+ 
+-enum __MIDL___MIDL_itf_qedit_0474_0001
++// C4865: 0x80040400 and up do not fit in int, so without an explicit
++// underlying type the enum is int under the default rules and unsigned int
++// under /Zc:enumTypes (the ARM64 build). Pinned to unsigned int, the type
++// the standard rules already pick; none of these values is used by eMule.
++enum __MIDL___MIDL_itf_qedit_0474_0001 : unsigned int
+     {	E_NOTINTREE	= 0x80040400,
+ 	E_RENDER_ENGINE_IS_BROKEN	= 0x80040401,
+ 	E_MUST_INIT_RENDERER	= 0x80040402,
