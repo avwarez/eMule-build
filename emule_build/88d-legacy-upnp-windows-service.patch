@@ -166,7 +166,7 @@ index 930e8c3..031d87a 100644
  	static void		SetLastWorkingUPnPImpl(int val)		{ m_nLastWorkingImpl = val; }
 diff --git a/srchybrid/UPnPImplWinServ.cpp b/srchybrid/UPnPImplWinServ.cpp
 deleted file mode 100644
-index 545c796..0000000
+index 91c5bf6..0000000
 --- a/srchybrid/UPnPImplWinServ.cpp
 +++ /dev/null
 @@ -1,1260 +0,0 @@
@@ -1352,7 +1352,7 @@ index 545c796..0000000
 -{
 -	if (hr >= UPNP_E_ACTION_SPECIFIC_BASE && hr <= UPNP_E_ACTION_SPECIFIC_MAX)
 -		return CString(_T("Action Specific Error"));
--	LPCTSTR p;
+-	TCHAR *p;
 -	switch (hr) {
 -	case UPNP_E_ROOT_ELEMENT_EXPECTED:
 -		p = _T("Root Element Expected");
@@ -1433,7 +1433,7 @@ index 545c796..0000000
 \ No newline at end of file
 diff --git a/srchybrid/UPnPImplWinServ.h b/srchybrid/UPnPImplWinServ.h
 deleted file mode 100644
-index c102396..0000000
+index b416a52..0000000
 --- a/srchybrid/UPnPImplWinServ.h
 +++ /dev/null
 @@ -1,232 +0,0 @@
@@ -1552,14 +1552,14 @@ index c102396..0000000
 -
 -// Implementation
 -	static FinderPointer CreateFinderInstance();
--	struct FindDevice
+-	struct FindDevice : private std::unary_function<DevicePointer, bool>
 -	{
 -		explicit FindDevice(const CComBSTR &udn)
 -			: m_udn(udn)
 -		{
 -		}
 -
--		bool operator()(DevicePointer device) const
+-		result_type operator()(argument_type device) const
 -		{
 -			CComBSTR deviceName;
 -			HRESULT hr = device->get_UniqueDeviceName(&deviceName);

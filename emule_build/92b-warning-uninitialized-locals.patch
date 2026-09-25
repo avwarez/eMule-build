@@ -1,3 +1,16 @@
+diff --git a/srchybrid/CreditsThread.cpp b/srchybrid/CreditsThread.cpp
+index 853c775..dece069 100644
+--- a/srchybrid/CreditsThread.cpp
++++ b/srchybrid/CreditsThread.cpp
+@@ -85,7 +85,7 @@ void CCreditsThread::SingleStep()
+ 
+ 	// timer variables
+ 	LARGE_INTEGER nFrequency;
+-	LARGE_INTEGER nStart;
++	LARGE_INTEGER nStart{};	// C4701: only read when bTimerValid, which the compiler cannot see
+ 
+ 	bool bTimerValid = QueryPerformanceFrequency(&nFrequency);
+ 	if (bTimerValid)
 diff --git a/srchybrid/IPFilter.cpp b/srchybrid/IPFilter.cpp
 index de8bcd1..cc0a0ea 100644
 --- a/srchybrid/IPFilter.cpp
@@ -92,10 +105,10 @@ index d21b42b..9bb976d 100644
  void CMuleSystrayDlg::OnChangeDowntxt()
  {
 diff --git a/srchybrid/SearchResultsWnd.cpp b/srchybrid/SearchResultsWnd.cpp
-index 769cb12..d564a23 100644
+index e3b20d8..eb822ed 100644
 --- a/srchybrid/SearchResultsWnd.cpp
 +++ b/srchybrid/SearchResultsWnd.cpp
-@@ -1392,13 +1392,11 @@ void CSearchResultsWnd::DeleteSelectedSearch()
+@@ -1389,13 +1389,11 @@ void CSearchResultsWnd::DeleteSelectedSearch()
  	}
  }
  
@@ -110,7 +123,7 @@ index 769cb12..d564a23 100644
  	ti.mask = TCIF_PARAM;
  	int i = searchselect.GetItemCount();
  	while (--i >= 0 && !(searchselect.GetItem(i, &ti) && ti.lParam && reinterpret_cast<SSearchParams*>(ti.lParam)->dwSearchID == uSearchID));
-@@ -1443,7 +1441,6 @@ void CSearchResultsWnd::DeleteSearch(uint32 uSearchID)
+@@ -1440,7 +1438,6 @@ void CSearchResultsWnd::DeleteSearch(uint32 uSearchID)
  	} else
  		NoTabItems();
  }
@@ -119,7 +132,7 @@ index 769cb12..d564a23 100644
  void CSearchResultsWnd::DeleteAllSearches()
  {
 diff --git a/srchybrid/SharedDirsTreeCtrl.cpp b/srchybrid/SharedDirsTreeCtrl.cpp
-index 5637d9e..57d98dd 100644
+index 7e57bc6..63eb078 100644
 --- a/srchybrid/SharedDirsTreeCtrl.cpp
 +++ b/srchybrid/SharedDirsTreeCtrl.cpp
 @@ -542,8 +542,6 @@ void CSharedDirsTreeCtrl::OnRButtonDown(UINT, CPoint point)
@@ -148,3 +161,16 @@ index 5637d9e..57d98dd 100644
  
  void CSharedDirsTreeCtrl::ShowFileDialog(CTypedPtrList<CPtrList, CShareableFile*> &aFiles, UINT uInvokePage)
  {
+diff --git a/srchybrid/WebServer.cpp b/srchybrid/WebServer.cpp
+index 35996bc..9f34aff 100644
+--- a/srchybrid/WebServer.cpp
++++ b/srchybrid/WebServer.cpp
+@@ -450,7 +450,7 @@ void CWebServer::_ProcessURL(const ThreadData &Data)
+ 			_RemoveSession(Data, lSession);
+ 
+ 		TCHAR *gzipOut = NULL;
+-		uLongf gzipLen;
++		uLongf gzipLen = 0;	// C4701: only read when bUseGzip, which the compiler cannot see
+ 		CString Out;
+ 		if (_IsLoggedIn(Data, lSession)) {
+ 			bool bAdmin = _IsSessionAdmin(Data, sSession);

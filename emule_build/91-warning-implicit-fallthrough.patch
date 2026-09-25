@@ -11,10 +11,10 @@ index 6943e62..6620292 100644
  				rcItem.left += sm_iSubItemInset;
  				dc.DrawText(sItem, &rcItem, MLC_DT_TEXT | uDrawTextAlignment);
 diff --git a/srchybrid/DownloadClient.cpp b/srchybrid/DownloadClient.cpp
-index 75959b5..e278bb5 100644
+index ab40a7a..eabd9ca 100644
 --- a/srchybrid/DownloadClient.cpp
 +++ b/srchybrid/DownloadClient.cpp
-@@ -2186,6 +2186,7 @@ void CUpDownClient::ProcessAICHFileHash(CSafeMemFile *data, CPartFile *file, con
+@@ -2184,6 +2184,7 @@ void CUpDownClient::ProcessAICHFileHash(CSafeMemFile *data, CPartFile *file, con
  					pPartFile->SetAICHHashSetNeeded(true);
  					m_fHashsetRequestingAICH = false;
  				}
@@ -35,7 +35,7 @@ index 5675d44..a174171 100644
  				rcItem.left += sm_iSubItemInset;
  				rcItem.right -= sm_iSubItemInset;
 diff --git a/srchybrid/DownloadListCtrl.cpp b/srchybrid/DownloadListCtrl.cpp
-index 2849fad..8084367 100644
+index 2849fad..3903fd8 100644
 --- a/srchybrid/DownloadListCtrl.cpp
 +++ b/srchybrid/DownloadListCtrl.cpp
 @@ -717,6 +717,7 @@ void CDownloadListCtrl::DrawItem(LPDRAWITEMSTRUCT lpDrawItemStruct)
@@ -67,7 +67,7 @@ index c224761..9f7c445 100644
  		//Don't use this type... Some clients will process it wrong.
  		break;
 diff --git a/srchybrid/EMSocket.cpp b/srchybrid/EMSocket.cpp
-index 975aec0..c3c5a53 100644
+index 749f251..cd8e44c 100644
 --- a/srchybrid/EMSocket.cpp
 +++ b/srchybrid/EMSocket.cpp
 @@ -976,6 +976,7 @@ int CEMSocket::OnLayerCallback(std::vector<t_callbackMsg> &callbacks)
@@ -79,10 +79,10 @@ index 975aec0..c3c5a53 100644
  					// We are connected to the proxy but it failed to connect to the peer.
  					if (thePrefs.GetVerbose() && iter->str && iter->str[0] != '\0')
 diff --git a/srchybrid/EmuleDlg.cpp b/srchybrid/EmuleDlg.cpp
-index 8d7bdec..ac22135 100644
+index 2480a0a..780d8f6 100644
 --- a/srchybrid/EmuleDlg.cpp
 +++ b/srchybrid/EmuleDlg.cpp
-@@ -681,6 +681,7 @@ void CALLBACK CemuleDlg::StartupTimer(HWND /*hwnd*/, UINT /*uiMsg*/, UINT_PTR /*
+@@ -680,6 +680,7 @@ void CALLBACK CemuleDlg::StartupTimer(HWND /*hwnd*/, UINT /*uiMsg*/, UINT_PTR /*
  			++theApp.emuledlg->status;
  			theApp.sharedfiles->SetOutputCtrl(&theApp.emuledlg->sharedfileswnd->sharedfilesctrl);
  			++theApp.emuledlg->status;
@@ -90,7 +90,7 @@ index 8d7bdec..ac22135 100644
  		case 1:
  			break;
  		case 2:
-@@ -692,6 +693,7 @@ void CALLBACK CemuleDlg::StartupTimer(HWND /*hwnd*/, UINT /*uiMsg*/, UINT_PTR /*
+@@ -691,6 +692,7 @@ void CALLBACK CemuleDlg::StartupTimer(HWND /*hwnd*/, UINT /*uiMsg*/, UINT_PTR /*
  				LogError(LOG_STATUSBAR, _T("Failed to initialize server list - Unknown exception"));
  			}
  			++theApp.emuledlg->status;
@@ -98,7 +98,7 @@ index 8d7bdec..ac22135 100644
  		case 3:
  			break;
  		case 4:
-@@ -1302,6 +1304,7 @@ void CemuleDlg::ProcessED2KLink(LPCWSTR pszData)
+@@ -1301,6 +1303,7 @@ void CemuleDlg::ProcessED2KLink(LPCWSTR pszData)
  				SetActiveDialog(searchwnd);
  				searchwnd->ProcessEd2kSearchLinkRequest(pListLink->GetSearchTerm());
  			}
@@ -107,7 +107,7 @@ index 8d7bdec..ac22135 100644
  			break;
  		}
 diff --git a/srchybrid/FileInfoDialog.cpp b/srchybrid/FileInfoDialog.cpp
-index b9746b6..0332d0a 100644
+index 709a812..9761875 100644
 --- a/srchybrid/FileInfoDialog.cpp
 +++ b/srchybrid/FileInfoDialog.cpp
 @@ -927,6 +927,7 @@ bool CGetMediaInfoThread::GetMediaInfo(HWND hWndOwner, const CShareableFile *pFi
@@ -172,7 +172,7 @@ index 584f2e6..a0bb28e 100644
  		case SB_LINEUP:
  			break;
 diff --git a/srchybrid/PartFile.cpp b/srchybrid/PartFile.cpp
-index 8f45164..7d277b0 100644
+index bd13bcc..b5ce3e3 100644
 --- a/srchybrid/PartFile.cpp
 +++ b/srchybrid/PartFile.cpp
 @@ -2245,6 +2245,7 @@ uint32 CPartFile::Process(uint32 factor, UINT icounter)
@@ -200,10 +200,10 @@ index 8f45164..7d277b0 100644
  				continue;
  			case PB_ERROR:
 diff --git a/srchybrid/Preferences.cpp b/srchybrid/Preferences.cpp
-index 8508c78..1bf3a46 100644
+index 772a0f7..d681d64 100644
 --- a/srchybrid/Preferences.cpp
 +++ b/srchybrid/Preferences.cpp
-@@ -2954,6 +2954,7 @@ CString CPreferences::GetDefaultDirectory(EDefaultDirectory eDirectory, bool bCr
+@@ -2925,6 +2925,7 @@ CString CPreferences::GetDefaultDirectory(EDefaultDirectory eDirectory, bool bCr
  								strSelectedDataBaseDirectory = strPublicDownloads + _T("eMule\\");
  								strSelectedConfigBaseDirectory = strProgramData + _T("eMule\\");
  								strSelectedExpansionBaseDirectory = strProgramData + _T("eMule\\");
@@ -224,7 +224,7 @@ index 2825b14..1ee31ac 100644
  				rcItem.left += sm_iSubItemInset;
  				rcItem.right -= sm_iSubItemInset;
 diff --git a/srchybrid/SearchListCtrl.cpp b/srchybrid/SearchListCtrl.cpp
-index 4fa5238..30a17c5 100644
+index f529d03..55128a3 100644
 --- a/srchybrid/SearchListCtrl.cpp
 +++ b/srchybrid/SearchListCtrl.cpp
 @@ -1291,6 +1291,7 @@ void CSearchListCtrl::DrawItem(LPDRAWITEMSTRUCT lpDrawItemStruct)
@@ -287,7 +287,7 @@ index c6fc64c..7e57bc6 100644
  			break;
  		}
 diff --git a/srchybrid/SharedFilesCtrl.cpp b/srchybrid/SharedFilesCtrl.cpp
-index e9a69b1..75f82da 100644
+index e0ba896..b4cfdd8 100644
 --- a/srchybrid/SharedFilesCtrl.cpp
 +++ b/srchybrid/SharedFilesCtrl.cpp
 @@ -565,6 +565,7 @@ void CSharedFilesCtrl::DrawItem(LPDRAWITEMSTRUCT lpDrawItemStruct)
@@ -311,7 +311,7 @@ index eacd888..33ae4d2 100644
  	case IDT_WAITING:
  		RedrawWindow(&m_rcText);
 diff --git a/srchybrid/TransferWnd.cpp b/srchybrid/TransferWnd.cpp
-index 5182375..4f75c5d 100644
+index 5a56858..18f849d 100644
 --- a/srchybrid/TransferWnd.cpp
 +++ b/srchybrid/TransferWnd.cpp
 @@ -453,6 +453,7 @@ void CTransferWnd::UpdateListCount(EWnd2 listindex, int iCount /*=-1*/)

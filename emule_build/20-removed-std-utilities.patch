@@ -47,24 +47,3 @@ index 7d49d1f..a25e659 100644
  
  		// Reload the icons from the property pages.
  		int nTotalPageCount = rSheet.GetPageCount();
-diff --git a/srchybrid/UPnPImplWinServ.h b/srchybrid/UPnPImplWinServ.h
-index b416a52..c102396 100644
---- a/srchybrid/UPnPImplWinServ.h
-+++ b/srchybrid/UPnPImplWinServ.h
-@@ -113,14 +113,14 @@ protected:
- 
- // Implementation
- 	static FinderPointer CreateFinderInstance();
--	struct FindDevice : private std::unary_function<DevicePointer, bool>
-+	struct FindDevice
- 	{
- 		explicit FindDevice(const CComBSTR &udn)
- 			: m_udn(udn)
- 		{
- 		}
- 
--		result_type operator()(argument_type device) const
-+		bool operator()(DevicePointer device) const
- 		{
- 			CComBSTR deviceName;
- 			HRESULT hr = device->get_UniqueDeviceName(&deviceName);

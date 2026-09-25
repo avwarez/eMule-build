@@ -1,8 +1,8 @@
 diff --git a/srchybrid/EmuleDlg.cpp b/srchybrid/EmuleDlg.cpp
-index ac22135..5bcb9ac 100644
+index 780d8f6..34edf0a 100644
 --- a/srchybrid/EmuleDlg.cpp
 +++ b/srchybrid/EmuleDlg.cpp
-@@ -1393,10 +1393,11 @@ LRESULT CemuleDlg::OnWMData(WPARAM, LPARAM lParam)
+@@ -1392,10 +1392,11 @@ LRESULT CemuleDlg::OnWMData(WPARAM, LPARAM lParam)
  					else
  						uid = IDS_DISCONNECTED;
  					_ftprintf(file, _T("%s\n"), (LPCTSTR)GetResString(uid));
@@ -69,10 +69,10 @@ index 8fd11e8..19a7822 100644
  COLORREF CIni::GetColRef(LPCTSTR lpszEntry, COLORREF crDefault, LPCTSTR lpszSection)
  {
 diff --git a/srchybrid/Preferences.cpp b/srchybrid/Preferences.cpp
-index 1bf3a46..32ccf9b 100644
+index d681d64..48fe58c 100644
 --- a/srchybrid/Preferences.cpp
 +++ b/srchybrid/Preferences.cpp
-@@ -671,24 +671,15 @@ bool CPreferences::IsTempFile(const CString &rstrDirectory, const CString &rstrN
+@@ -664,24 +664,15 @@ bool CPreferences::IsTempFile(const CString &rstrDirectory, const CString &rstrN
  	CString strNameLower(rstrName);
  	strNameLower.MakeLower();
  	strNameLower += _T("|"); // append an EOS character which we can query for

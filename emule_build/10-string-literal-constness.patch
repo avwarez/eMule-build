@@ -122,16 +122,3 @@ index 61a79d7..b4650cf 100644
  
  			CRYPT_ENCRYPT_MESSAGE_PARA EncryptParams = {};
  			EncryptParams.cbSize = (DWORD)sizeof EncryptParams;
-diff --git a/srchybrid/UPnPImplWinServ.cpp b/srchybrid/UPnPImplWinServ.cpp
-index 91c5bf6..545c796 100644
---- a/srchybrid/UPnPImplWinServ.cpp
-+++ b/srchybrid/UPnPImplWinServ.cpp
-@@ -1180,7 +1180,7 @@ CString translateUPnPResult(HRESULT hr)
- {
- 	if (hr >= UPNP_E_ACTION_SPECIFIC_BASE && hr <= UPNP_E_ACTION_SPECIFIC_MAX)
- 		return CString(_T("Action Specific Error"));
--	TCHAR *p;
-+	LPCTSTR p;
- 	switch (hr) {
- 	case UPNP_E_ROOT_ELEMENT_EXPECTED:
- 		p = _T("Root Element Expected");

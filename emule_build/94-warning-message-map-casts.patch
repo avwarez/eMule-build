@@ -235,10 +235,10 @@ index 03acd39..97e935c 100644
  CDownloadListCtrl::CDownloadListCtrl()
  	: CDownloadListListCtrlItemWalk(this)
 diff --git a/srchybrid/EmuleDlg.cpp b/srchybrid/EmuleDlg.cpp
-index 5bcb9ac..2066e94 100644
+index 34edf0a..f50c67f 100644
 --- a/srchybrid/EmuleDlg.cpp
 +++ b/srchybrid/EmuleDlg.cpp
-@@ -123,6 +123,8 @@ static const UINT UWM_TASK_BUTTON_CREATED = RegisterWindowMessage(_T("TaskbarBut
+@@ -122,6 +122,8 @@ static const UINT UWM_TASK_BUTTON_CREATED = RegisterWindowMessage(_T("TaskbarBut
  
  IMPLEMENT_DYNAMIC(CMsgBoxException, CException)
  
@@ -247,7 +247,7 @@ index 5bcb9ac..2066e94 100644
  BEGIN_MESSAGE_MAP(CemuleDlg, CTrayDialog)
  	///////////////////////////////////////////////////////////////////////////
  	// Windows messages
-@@ -203,6 +205,7 @@ BEGIN_MESSAGE_MAP(CemuleDlg, CTrayDialog)
+@@ -202,6 +204,7 @@ BEGIN_MESSAGE_MAP(CemuleDlg, CTrayDialog)
  #endif
  
  END_MESSAGE_MAP()
@@ -255,7 +255,7 @@ index 5bcb9ac..2066e94 100644
  
  CemuleDlg::CemuleDlg(CWnd *pParent /*=NULL*/)
  	: CTrayDialog(CemuleDlg::IDD, pParent)
-@@ -376,8 +379,10 @@ BOOL CemuleDlg::OnInitDialog()
+@@ -375,8 +378,10 @@ BOOL CemuleDlg::OnInitDialog()
  		m_bInitedCOM = SUCCEEDED(::CoInitialize(NULL));
  		if (m_bInitedCOM) {
  			typedef BOOL(WINAPI *PChangeWindowMessageFilter)(UINT message, DWORD dwFlag);
@@ -370,10 +370,10 @@ index f4ab80c..0b37353 100644
  CMetaDataDlg::CMetaDataDlg()
  	: CResizablePage(CMetaDataDlg::IDD)
 diff --git a/srchybrid/PPgConnection.cpp b/srchybrid/PPgConnection.cpp
-index 9fcf937..be852ea 100644
+index 83d08c7..bb10d03 100644
 --- a/srchybrid/PPgConnection.cpp
 +++ b/srchybrid/PPgConnection.cpp
-@@ -42,6 +42,8 @@ static char THIS_FILE[] = __FILE__;
+@@ -41,6 +41,8 @@ static char THIS_FILE[] = __FILE__;
  
  IMPLEMENT_DYNAMIC(CPPgConnection, CPropertyPage)
  
@@ -382,7 +382,7 @@ index 9fcf937..be852ea 100644
  BEGIN_MESSAGE_MAP(CPPgConnection, CPropertyPage)
  	ON_BN_CLICKED(IDC_STARTTEST, OnStartPortTest)
  	ON_EN_CHANGE(IDC_DOWNLOAD_CAP, OnSettingsChange)
-@@ -65,6 +67,7 @@ BEGIN_MESSAGE_MAP(CPPgConnection, CPropertyPage)
+@@ -64,6 +66,7 @@ BEGIN_MESSAGE_MAP(CPPgConnection, CPropertyPage)
  	ON_WM_HELPINFO()
  	ON_BN_CLICKED(IDC_PREF_UPNPONSTART, OnSettingsChange)
  END_MESSAGE_MAP()

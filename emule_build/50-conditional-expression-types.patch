@@ -94,19 +94,6 @@ index 370fae1..f1248fe 100644
  
  		if (theApp.LoadSkinColorAlt(strKey + _T("Bk"), _T("DefLvBk"), m_crWindow))
  			m_crWindowTextBk = m_crWindow;
-diff --git a/srchybrid/Pinger.cpp b/srchybrid/Pinger.cpp
-index 2eebd5e..cf84a90 100644
---- a/srchybrid/Pinger.cpp
-+++ b/srchybrid/Pinger.cpp
-@@ -405,7 +405,7 @@ void Pinger::PIcmpErr(LPCTSTR pszMsg, DWORD nICMPErr)
- 	bool b = (nICMPErr >= IP_STATUS_BASE && nICMPErr < IP_STATUS_BASE + _countof(aszSendEchoErr));
- 	theApp.QueueDebugLogLine(false, _T("%sPinger: %s")
- 		, pszMsg ? pszMsg : _T("")
--		, (LPCTSTR)(b ? aszSendEchoErr[nICMPErr - IP_STATUS_BASE] : GetErrorMessage(nICMPErr, 1)));
-+		, b ? aszSendEchoErr[nICMPErr - IP_STATUS_BASE] : (LPCTSTR)GetErrorMessage(nICMPErr, 1));
- #else
- 	DWORD dwSize = 511;
- 	CStringW sErr;
 diff --git a/srchybrid/Server.cpp b/srchybrid/Server.cpp
 index 1659d9f..cfac7ed 100644
 --- a/srchybrid/Server.cpp
