@@ -1,0 +1,862 @@
+diff --git a/srchybrid/Emule.cpp b/srchybrid/Emule.cpp
+index 0595c1f..e2e1a13 100644
+--- a/srchybrid/Emule.cpp
++++ b/srchybrid/Emule.cpp
+@@ -55,7 +55,6 @@
+ #include "Server.h"
+ #include "ED2KLink.h"
+ #include "Preferences.h"
+-#include "secrunasuser.h"
+ #include "SafeFile.h"
+ #include "emuleDlg.h"
+ #include "enbitmap.h"
+@@ -493,17 +492,6 @@ BOOL CemuleApp::InitInstance()
+ 	thePrefs.Init();
+ 	theStats.Init();
+ 
+-	// check if we have to restart eMule as Secure user
+-	if (thePrefs.IsRunAsUserEnabled()) {
+-		CSecRunAsUser rau;
+-		eResult res = rau.RestartSecure();
+-		if (res == RES_OK_NEED_RESTART)
+-			return FALSE; // emule restart as secure user, kill this instance
+-		if (res == RES_FAILED)
+-			// something went wrong
+-			theApp.QueueLogLine(false, GetResString(IDS_RAU_FAILED), (LPCWSTR)rau.GetCurrentUserW());
+-	}
+-
+ 	if (thePrefs.GetRTLWindowsLayout())
+ 		EnableRTLWindowsLayout();
+ 
+diff --git a/srchybrid/PPgSecurity.cpp b/srchybrid/PPgSecurity.cpp
+index 5b3be83..671f38c 100644
+--- a/srchybrid/PPgSecurity.cpp
++++ b/srchybrid/PPgSecurity.cpp
+@@ -53,7 +53,6 @@ BEGIN_MESSAGE_MAP(CPPgSecurity, CPropertyPage)
+ 	ON_EN_CHANGE(IDC_UPDATEURL, OnEnChangeUpdateUrl)
+ 	ON_BN_CLICKED(IDC_DD, OnDDClicked)
+ 	ON_WM_HELPINFO()
+-	ON_BN_CLICKED(IDC_RUNASUSER, OnBnClickedRunAsUser)
+ 	ON_WM_DESTROY()
+ 	ON_BN_CLICKED(IDC_SEESHARE1, OnSettingsChange)
+ 	ON_BN_CLICKED(IDC_SEESHARE2, OnSettingsChange)
+@@ -83,10 +82,6 @@ void CPPgSecurity::LoadSettings()
+ 
+ 	CheckDlgButton(IDC_USESECIDENT, thePrefs.m_bUseSecureIdent);
+ 
+-	WORD wv = thePrefs.GetWindowsVersion();
+-	GetDlgItem(IDC_RUNASUSER)->EnableWindow(wv >= _WINVER_2K_ && wv <= _WINVER_2003_ && thePrefs.m_nCurrentUserDirMode == 2);
+-	CheckDlgButton(IDC_RUNASUSER, thePrefs.IsRunAsUserEnabled());
+-
+ 	CheckDlgButton(IDC_DISABLEOBFUSCATION, static_cast<UINT>(!thePrefs.IsCryptLayerEnabled()));
+ 	GetDlgItem(IDC_ENABLEOBFUSCATION)->EnableWindow(thePrefs.IsCryptLayerEnabled());
+ 	CheckDlgButton(IDC_ENABLEOBFUSCATION, static_cast<UINT>(thePrefs.IsCryptLayerPreferred()));
+@@ -139,7 +134,6 @@ BOOL CPPgSecurity::OnApply()
+ 		theApp.emuledlg->serverwnd->serverlistctrl.RemoveAllFilteredServers();
+ 
+ 	thePrefs.m_bUseSecureIdent = IsDlgButtonChecked(IDC_USESECIDENT) != 0;
+-	thePrefs.m_bRunAsUser = IsDlgButtonChecked(IDC_RUNASUSER) != 0;
+ 
+ 	thePrefs.m_bCryptLayerRequested = IsDlgButtonChecked(IDC_ENABLEOBFUSCATION) != 0;
+ 	thePrefs.m_bCryptLayerRequired = IsDlgButtonChecked(IDC_ONLYOBFUSCATED) != 0;
+@@ -172,7 +166,6 @@ void CPPgSecurity::Localize()
+ 
+ 		SetDlgItemText(IDC_SEC_MISC, GetResString(IDS_PW_MISC));
+ 		SetDlgItemText(IDC_USESECIDENT, GetResString(IDS_USESECIDENT));
+-		SetDlgItemText(IDC_RUNASUSER, GetResString(IDS_RUNASUSER));
+ 
+ 		SetDlgItemText(IDC_STATIC_UPDATEFROM, GetResString(IDS_UPDATEFROM));
+ 		SetDlgItemText(IDC_LOADURL, GetResString(IDS_LOADURL));
+@@ -476,15 +469,6 @@ BOOL CPPgSecurity::OnHelpInfo(HELPINFO*)
+ 	return TRUE;
+ }
+ 
+-void CPPgSecurity::OnBnClickedRunAsUser()
+-{
+-	if (IsDlgButtonChecked(IDC_RUNASUSER))
+-		if (LocMessageBox(IDS_RAU_WARNING, MB_OKCANCEL | MB_ICONINFORMATION, 0) == IDCANCEL)
+-			CheckDlgButton(IDC_RUNASUSER, BST_UNCHECKED);
+-
+-	OnSettingsChange();
+-}
+-
+ void CPPgSecurity::OnObfuscatedDisabledChange()
+ {
+ 	GetDlgItem(IDC_ENABLEOBFUSCATION)->EnableWindow(!IsDlgButtonChecked(IDC_DISABLEOBFUSCATION));
+diff --git a/srchybrid/PPgSecurity.h b/srchybrid/PPgSecurity.h
+index fd50dfd..4a679e5 100644
+--- a/srchybrid/PPgSecurity.h
++++ b/srchybrid/PPgSecurity.h
+@@ -37,7 +37,6 @@ protected:
+ 	afx_msg void OnDDClicked();
+ 	afx_msg void OnHelp();
+ 	afx_msg BOOL OnHelpInfo(HELPINFO*);
+-	afx_msg void OnBnClickedRunAsUser();
+ 	afx_msg void OnDestroy();
+ 	afx_msg void OnObfuscatedDisabledChange();
+ 	afx_msg void OnObfuscatedRequestedChange();
+diff --git a/srchybrid/Preferences.cpp b/srchybrid/Preferences.cpp
+index 8555c01..44093f2 100644
+--- a/srchybrid/Preferences.cpp
++++ b/srchybrid/Preferences.cpp
+@@ -442,8 +442,6 @@ Preferences_Ext_Struct *CPreferences::prefsExt;
+ CArray<Category_Struct*> CPreferences::catArr;
+ UINT	CPreferences::m_nWebMirrorAlertLevel;
+ WORD	CPreferences::m_wWinVer;
+-bool	CPreferences::m_bRunAsUser;
+-bool	CPreferences::m_bPreferRestrictedOverUser;
+ bool	CPreferences::m_bUseOldTimeRemaining;
+ 
+ int		CPreferences::m_byLogLevel;
+@@ -1747,7 +1745,6 @@ void CPreferences::SavePreferences()
+ 	ini.WriteBool(_T("A4AFSaveCpu"), m_bA4AFSaveCpu); // ZZ:DownloadManager
+ 	ini.WriteBool(_T("HighresTimer"), m_bHighresTimer);
+ 	ini.WriteInt(_T("WebMirrorAlertLevel"), m_nWebMirrorAlertLevel);
+-	ini.WriteBool(_T("RunAsUnprivilegedUser"), m_bRunAsUser);
+ 	ini.WriteInt(_T("DebugLogLevel"), m_byLogLevel);
+ 	ini.WriteInt(_T("WinXPSP2OrHigher"), static_cast<int>(IsRunningXPSP2OrHigher()));
+ 	ini.WriteBool(_T("RememberCancelledFiles"), m_bRememberCancelledFiles);
+@@ -2304,8 +2301,6 @@ void CPreferences::LoadPreferences()
+ 
+ 	m_bA4AFSaveCpu = ini.GetBool(_T("A4AFSaveCpu"), false); // ZZ:DownloadManager
+ 	m_bHighresTimer = ini.GetBool(_T("HighresTimer"), false);
+-	m_bRunAsUser = ini.GetBool(_T("RunAsUnprivilegedUser"), false);
+-	m_bPreferRestrictedOverUser = ini.GetBool(_T("PreferRestrictedOverUser"), false);
+ 	m_byLogLevel = ini.GetInt(_T("DebugLogLevel"), DLP_VERYLOW);
+ 	m_bTrustEveryHash = ini.GetBool(_T("AICHTrustEveryHash"), false);
+ 	m_bRememberCancelledFiles = ini.GetBool(_T("RememberCancelledFiles"), true);
+@@ -2708,17 +2703,6 @@ UINT CPreferences::GetWebMirrorAlertLevel()
+ 	return UpdateNotify() ? m_nWebMirrorAlertLevel : 0;
+ }
+ 
+-bool CPreferences::IsRunAsUserEnabled()
+-{
+-	switch (GetWindowsVersion()) {
+-	case _WINVER_2K_:
+-	case _WINVER_XP_:
+-	case _WINVER_2003_:
+-		return m_bRunAsUser && m_nCurrentUserDirMode == 2;
+-	}
+-	return false;
+-}
+-
+ bool CPreferences::GetUseReBarToolbar()
+ {
+ 	return GetReBarToolbar() && theApp.m_ullComCtrlVer >= MAKEDLLVERULL(5, 8, 0, 0);
+diff --git a/srchybrid/Preferences.h b/srchybrid/Preferences.h
+index fd8bee3..930e8c3 100644
+--- a/srchybrid/Preferences.h
++++ b/srchybrid/Preferences.h
+@@ -606,8 +606,6 @@ public:
+ 
+ 	static int		m_iDbgHeap;
+ 	static UINT		m_nWebMirrorAlertLevel;
+-	static bool		m_bRunAsUser;
+-	static bool		m_bPreferRestrictedOverUser;
+ 
+ 	static bool		m_bUseOldTimeRemaining;
+ 
+@@ -1321,8 +1319,6 @@ public:
+ 	static UINT		GetWebMirrorAlertLevel();
+ 	static bool		UseSimpleTimeRemainingComputation()	{ return m_bUseOldTimeRemaining; }
+ 
+-	static bool		IsRunAsUserEnabled();
+-	static bool		IsPreferingRestrictedOverUser()		{ return m_bPreferRestrictedOverUser; }
+ 
+ 	// Verbose log options
+ 	static bool		GetEnableVerboseOptions()			{ return m_bEnableVerboseOptions; }
+diff --git a/srchybrid/Resource.h b/srchybrid/Resource.h
+index e75edf5..aa656c4 100644
+--- a/srchybrid/Resource.h
++++ b/srchybrid/Resource.h
+@@ -1642,7 +1642,6 @@
+ #define IDC_SHOWOVERHEAD                2132
+ #define IDC_INDICATERATINGS             2133
+ #define IDC_USESECIDENT                 2134
+-#define IDC_RUNASUSER                   2135
+ #define IDC_MMENABLED                   2136
+ #define IDC_ENABLEOBFUSCATION           2136
+ #define IDC_ONLYOBFUSCATED              2137
+diff --git a/srchybrid/SecRunAsUser.cpp b/srchybrid/SecRunAsUser.cpp
+deleted file mode 100644
+index c41ab9a..0000000
+--- a/srchybrid/SecRunAsUser.cpp
++++ /dev/null
+@@ -1,502 +0,0 @@
+-//this file is part of eMule
+-//Copyright (C)2004-2026 Merkur ( devs@emule-project.net / https://www.emule-project.net )
+-//
+-//This program is free software; you can redistribute it and/or
+-//modify it under the terms of the GNU General Public License
+-//as published by the Free Software Foundation; either
+-//version 2 of the License, or (at your option) any later version.
+-//
+-//This program is distributed in the hope that it will be useful,
+-//but WITHOUT ANY WARRANTY; without even the implied warranty of
+-//MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+-//GNU General Public License for more details.
+-//
+-//You should have received a copy of the GNU General Public License
+-//along with this program; if not, write to the Free Software
+-//Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+-#include "StdAfx.h"
+-#include <aclapi.h>
+-#include "emule.h"
+-#include "secrunasuser.h"
+-#include "Preferences.h"
+-#include "otherfunctions.h"
+-#include "Log.h"
+-
+-#ifdef _DEBUG
+-#define new DEBUG_NEW
+-#undef THIS_FILE
+-static char THIS_FILE[] = __FILE__;
+-#endif
+-
+-
+-CSecRunAsUser::CSecRunAsUser()
+-	: m_hACTIVEDS_DLL()
+-	, m_bRunningAsEmule()
+-	, m_bRunningRestricted()
+-{
+-}
+-
+-CSecRunAsUser::~CSecRunAsUser()
+-{
+-	FreeAPI();
+-}
+-
+-eResult CSecRunAsUser::PrepareUser()
+-{
+-	if (!LoadAPI())
+-		return RES_FAILED;
+-
+-	(void)::CoInitialize(NULL);
+-	bool bResult = false;
+-	try {
+-		IADsContainerPtr pUsers;
+-		try {
+-			IADsWinNTSystemInfoPtr pNTsys;
+-			if (FAILED(CoCreateInstance(CLSID_WinNTSystemInfo, NULL, CLSCTX_INPROC_SERVER, IID_IADsWinNTSystemInfo, (LPVOID*)&pNTsys)))
+-				throwCStr(_T("Failed to create IADsWinNTSystemInfo"));
+-			// check if we are already running on our eMule Account
+-			// todo: check if the current account is an administrator
+-
+-			CComBSTR bstrUserName;
+-			pNTsys->get_UserName(&bstrUserName);
+-			m_strCurrentUser = bstrUserName;
+-
+-			if (m_strCurrentUser == EMULEACCOUNTW) {
+-				m_bRunningAsEmule = true;
+-				throwCStr(_T("Already running as eMule_Secure Account (everything is fine)"));
+-			}
+-			CComBSTR bstrCompName;
+-			pNTsys->get_ComputerName(&bstrCompName);
+-			const CStringW cscompName(bstrCompName);
+-
+-			CComBSTR bstrDomainName;
+-			pNTsys->get_DomainName(&bstrDomainName);
+-			m_strDomain = bstrDomainName;
+-
+-			ADSPath.Format(L"WinNT://%s,computer", (LPCWSTR)cscompName);
+-			if (FAILED(ADsGetObject(ADSPath.AllocSysString(), IID_IADsContainer, (void**)&pUsers)))
+-				throwCStr(_T("Failed ADsGetObject()"));
+-
+-			IEnumVARIANTPtr pEnum;
+-			if (FAILED(ADsBuildEnumerator(pUsers, &pEnum)))
+-				throwCStr(_T("ADsBuildEnumerator()"));
+-
+-			_variant_t vChild;
+-			ULONG ulFetched;
+-			while (SUCCEEDED(ADsEnumerateNext(pEnum, 1, &vChild, &ulFetched)) && ulFetched > 0) {
+-				IADsUserPtr pChild;
+-				if (SUCCEEDED(V_DISPATCH(&vChild)->QueryInterface(IID_IADsUser, (void **)&pChild))) {
+-					//If the object in the container is user then get properties
+-					CComBSTR bstrName;
+-					pChild->get_Name(&bstrName);
+-
+-					// find the emule user account if possible
+-					if (bstrName == EMULEACCOUNTW) {
+-						// account found, set new random password and save it
+-						m_strPassword = CreateRandomPW();
+-						bResult = SUCCEEDED(pChild->SetPassword(m_strPassword.AllocSysString()));
+-						if (bResult)
+-							break;
+-						throwCStr(_T("Failed to set password"));
+-					}
+-				}
+-			}
+-		} catch (const CString &error) {
+-			// clean up and abort
+-			theApp.QueueDebugLogLine(false, _T("Run as unprivileged user: Exception while preparing user account: %s!"), (LPCTSTR)error);
+-			::CoUninitialize();
+-			return m_bRunningAsEmule ? RES_OK : RES_FAILED;
+-		}
+-		if (bResult || CreateEmuleUser(pUsers))
+-			bResult = SetDirectoryPermissions();
+-	} catch (...) {
+-		// clean up and abort
+-		theApp.QueueDebugLogLine(false, _T("Run as unprivileged user: Unexpected fatal error while preparing user account!"));
+-		bResult = false;
+-	}
+-
+-	::CoUninitialize();
+-	FreeAPI();
+-	return bResult ? RES_OK_NEED_RESTART : RES_FAILED;
+-}
+-
+-bool CSecRunAsUser::CreateEmuleUser(IADsContainerPtr pUsers)
+-{
+-	IDispatchPtr pDisp;
+-	if (FAILED(pUsers->Create(CComBSTR(L"user"), CString(EMULEACCOUNTW).AllocSysString(), &pDisp)))
+-		return false;
+-
+-	IADsUserPtr pUser;
+-	if (FAILED(pDisp->QueryInterface(&pUser)))
+-		return false;
+-
+-	VARIANT_BOOL bAccountDisabled = VARIANT_FALSE;
+-	VARIANT_BOOL bIsLocked = VARIANT_FALSE;
+-	VARIANT_BOOL bPwRequired = VARIANT_TRUE;
+-	pUser->put_AccountDisabled(bAccountDisabled);
+-	pUser->put_IsAccountLocked(bIsLocked);
+-	pUser->put_PasswordRequired(bPwRequired);
+-	pUser->put_Description(CStringW(L"Account used to run eMule with additional security").AllocSysString());
+-	pUser->SetInfo();
+-	m_strPassword = CreateRandomPW();
+-	return SUCCEEDED(pUser->SetPassword(m_strPassword.AllocSysString()));
+-}
+-
+-CStringW CSecRunAsUser::CreateRandomPW()
+-{
+-	CStringW strResult;
+-	while (strResult.GetLength() < 10) {
+-		char chRnd = (char)('0' + (rand() % ('z' - '0' + 1))); //'0'..'z'
+-		if (isalnum(chRnd) || chRnd == '_')
+-			strResult += chRnd;
+-	}
+-	return strResult;
+-}
+-
+-bool CSecRunAsUser::SetDirectoryPermissions()
+-{
+-#define FULLACCESS ADS_RIGHT_GENERIC_ALL
+-	// shared files list: read permission only
+-	// we odnt check for success here, for emule will also run if one dir fails for some reason
+-	// if there is a dir which is also an incoming dir, rights will be overwritten below
+-	for (POSITION pos = thePrefs.shareddir_list.GetHeadPosition(); pos != NULL;)
+-		VERIFY(SetObjectPermission(thePrefs.shareddir_list.GetNext(pos), (DWORD)ADS_RIGHT_GENERIC_READ));
+-
+-	// set special permission for emule account on needed folders
+-
+-	// verify permissions on the most important folders. Keep in mind that this is mainly for WinXP-PublicUser-Installs,
+-	// and is not really needed for MultiUser or Vista Setups
+-	bool bSucceeded = SetObjectPermission(thePrefs.GetMuleDirectory(EMULE_CONFIGBASEDIR), FULLACCESS)
+-				   && SetObjectPermission(thePrefs.GetMuleDirectory(EMULE_INCOMINGDIR), FULLACCESS)
+-				   && SetObjectPermission(thePrefs.GetMuleDirectory(EMULE_CONFIGDIR), FULLACCESS);
+-	for (INT_PTR i = thePrefs.GetTempDirCount(); --i >= 0;)
+-		bSucceeded = bSucceeded && SetObjectPermission(thePrefs.GetTempDir(i), FULLACCESS);
+-
+-	for (INT_PTR i = thePrefs.GetCatCount(); --i >= 0;)
+-		if (!thePrefs.GetCatPath(i).IsEmpty())
+-			bSucceeded = bSucceeded && SetObjectPermission(thePrefs.GetCatPath(i), FULLACCESS);
+-
+-	if (!bSucceeded)
+-		theApp.QueueDebugLogLine(false, _T("Run as unprivileged user: Error: Failed to set directory permissions!"));
+-
+-	return bSucceeded;
+-}
+-
+-bool CSecRunAsUser::SetObjectPermission(const CString &strDirFile, DWORD lGrantedAccess)
+-{
+-	if (strDirFile.IsEmpty())
+-		return true;
+-
+-	SID_NAME_USE snuType;
+-	WCHAR *szDomain = NULL;
+-	LPVOID pUserSID = NULL;
+-	PACL pNewACL = NULL;
+-	PSECURITY_DESCRIPTOR pSD = NULL;
+-	BOOL fAPISuccess;
+-
+-	try {
+-		// get user SID
+-		DWORD cbDomain = 0;
+-		DWORD cbUserSID = 0;
+-		fAPISuccess = ::LookupAccountNameW(NULL, EMULEACCOUNTW, pUserSID, &cbUserSID, szDomain, &cbDomain, &snuType);
+-		if ((!fAPISuccess) && ::GetLastError() != ERROR_INSUFFICIENT_BUFFER)
+-			throwCStr(_T("Run as unprivileged user: Error: LookupAccountName() failed,"));
+-
+-		pUserSID = MHeapAlloc(cbUserSID);
+-		if (!pUserSID)
+-			throwCStr(_T("Run as unprivileged user: Error: Allocating memory failed,"));
+-
+-		szDomain = (WCHAR*)MHeapAlloc(cbDomain * sizeof(WCHAR));
+-		if (!szDomain)
+-			throwCStr(_T("Run as unprivileged user: Error: Allocating memory failed,"));
+-
+-		fAPISuccess = ::LookupAccountNameW(NULL, EMULEACCOUNTW, pUserSID, &cbUserSID, szDomain, &cbDomain, &snuType);
+-		if (!fAPISuccess)
+-			throwCStr(_T("Run as unprivileged user: Error: LookupAccountName()2 failed"));
+-
+-		if (szDomain != m_strDomain)
+-			throwCStr(_T("Run as unprivileged user: Logical Error: Domain name mismatch"));
+-
+-		// get old ACL
+-		PACL pOldACL = NULL;
+-		fAPISuccess = ::GetNamedSecurityInfo(strDirFile, SE_FILE_OBJECT, DACL_SECURITY_INFORMATION, NULL, NULL, &pOldACL, NULL, &pSD);
+-		if (fAPISuccess != ERROR_SUCCESS)
+-			throwCStr(_T("Run as unprivileged user: Error: GetNamedSecurityInfo() failed"));
+-
+-		// calculate size for new ACL
+-		ACL_SIZE_INFORMATION AclInfo;
+-		AclInfo.AceCount = 0; // Assume NULL DACL.
+-		AclInfo.AclBytesFree = 0;
+-		AclInfo.AclBytesInUse = sizeof(ACL);
+-
+-		if (pOldACL != NULL && !::GetAclInformation(pOldACL, &AclInfo, sizeof(ACL_SIZE_INFORMATION), AclSizeInformation))
+-			throwCStr(_T("Run as unprivileged user: Error: GetAclInformation() failed"));
+-
+-		// Create new ACL
+-		DWORD cbNewACL = (DWORD)(AclInfo.AclBytesInUse + sizeof(ACCESS_ALLOWED_ACE) + ::GetLengthSid(pUserSID) - sizeof(DWORD));
+-
+-		pNewACL = (PACL)MHeapAlloc(cbNewACL);
+-		if (!pNewACL)
+-			throwCStr(_T("Run as unprivileged user: Error: Allocating memory failed,"));
+-
+-		if (!::InitializeAcl(pNewACL, cbNewACL, ACL_REVISION2))
+-			throwCStr(_T("Run as unprivileged user: Error: Allocating memory failed,"));
+-
+-
+-		// copy the entries form the old acl into the new one and enter a new ace in the right order
+-		uint32 CurrentAceIndex = 0;
+-		if (AclInfo.AceCount) {
+-			for (CurrentAceIndex = 0; CurrentAceIndex < AclInfo.AceCount; ++CurrentAceIndex) {
+-				LPVOID pTempAce;
+-				if (!::GetAce(pOldACL, CurrentAceIndex, &pTempAce))
+-					throwCStr(_T("Run as unprivileged user: Error: GetAce() failed,"));
+-
+-				if (((ACCESS_ALLOWED_ACE*)pTempAce)->Header.AceFlags & INHERITED_ACE)
+-					break;
+-				// no multiple entries
+-				if (::EqualSid(pUserSID, &(((ACCESS_ALLOWED_ACE*)pTempAce)->SidStart)))
+-					continue;
+-
+-				if (!::AddAce(pNewACL, ACL_REVISION, MAXDWORD, pTempAce, ((PACE_HEADER)pTempAce)->AceSize))
+-					throwCStr(_T("Run as unprivileged user: Error: AddAce()1 failed,"));
+-			}
+-		}
+-		// here we add the actually entry
+-		if (!::AddAccessAllowedAceEx(pNewACL, ACL_REVISION2, CONTAINER_INHERIT_ACE | OBJECT_INHERIT_ACE, lGrantedAccess, pUserSID))
+-			throwCStr(_T("Run as unprivileged user: Error: AddAccessAllowedAceEx() failed,"));
+-
+-		// copy the rest
+-		if (AclInfo.AceCount) {
+-			for (; CurrentAceIndex < AclInfo.AceCount; ++CurrentAceIndex) {
+-				LPVOID pTempAce;
+-				if (!::GetAce(pOldACL, CurrentAceIndex, &pTempAce))
+-					throwCStr(_T("Run as unprivileged user: Error: GetAce()2 failed,"));
+-
+-				if (!::AddAce(pNewACL, ACL_REVISION, MAXDWORD, pTempAce, ((PACE_HEADER)pTempAce)->AceSize))
+-					throwCStr(_T("Run as unprivileged user: Error: AddAce()2 failed,"));
+-			}
+-		}
+-
+-		fAPISuccess = ::SetNamedSecurityInfo(const_cast<LPTSTR>((LPCTSTR)strDirFile), SE_FILE_OBJECT, DACL_SECURITY_INFORMATION, NULL, NULL, pNewACL, NULL);
+-		if (fAPISuccess != ERROR_SUCCESS)
+-			throwCStr(_T("Run as unprivileged user: Error: SetNamedSecurityInfo() failed,"));
+-		fAPISuccess = TRUE;
+-	} catch (const CString &error) {
+-		fAPISuccess = FALSE;
+-		theApp.QueueDebugLogLine(false, error);
+-	}
+-	// clean up
+-	if (pUserSID != NULL)
+-		MHeapFree(pUserSID);
+-	if (szDomain != NULL)
+-		MHeapFree(szDomain);
+-	if (pNewACL != NULL)
+-		MHeapFree(pNewACL);
+-	if (pSD != NULL)
+-		::LocalFree(pSD);
+-
+-	// finished
+-	return fAPISuccess != FALSE;
+-}
+-
+-eResult CSecRunAsUser::RestartAsUser()
+-{
+-	if (m_bRunningRestricted || m_bRunningAsEmule)
+-		return RES_OK;
+-	if (!LoadAPI())
+-		return RES_FAILED;
+-
+-	WCHAR szAppPath[MAX_PATH + 2];
+-	DWORD dwModPathLen = ::GetModuleFileNameW(NULL, &szAppPath[1], MAX_PATH);
+-	if (dwModPathLen == 0 || dwModPathLen == _countof(szAppPath))
+-		return RES_FAILED;
+-	szAppPath[0] = L'"';
+-	szAppPath[++dwModPathLen] = L'"';
+-	szAppPath[++dwModPathLen] = L'\0';
+-
+-	ASSERT(!m_strPassword.IsEmpty());
+-	BOOL bResult;
+-	try {
+-		PROCESS_INFORMATION ProcessInfo = {};
+-
+-		STARTUPINFOW StartInf = {};
+-		StartInf.cb = (DWORD)sizeof StartInf;
+-		StartInf.dwFlags = STARTF_USESHOWWINDOW;
+-		StartInf.wShowWindow = SW_NORMAL;
+-
+-		// remove the current mutex, so that the restart emule can create its own without problems
+-		// in the rare case CreateProcessWithLogonW fails, this will allow multiple instances,
+-		// but if that function fails we have other problems anyway
+-		::CloseHandle(theApp.m_hMutexOneInstance);
+-
+-		bResult = ::CreateProcessWithLogonW(EMULEACCOUNTW, m_strDomain, m_strPassword
+-			, LOGON_WITH_PROFILE, NULL, szAppPath, 0, NULL, NULL, &StartInf, &ProcessInfo);
+-		::CloseHandle(ProcessInfo.hProcess);
+-		::CloseHandle(ProcessInfo.hThread);
+-	} catch (...) {
+-		theApp.QueueDebugLogLine(false, _T("Run as unprivileged user: Error: Unexpected exception while loading advapi32.dll"));
+-		FreeAPI();
+-		return RES_FAILED;
+-	}
+-	FreeAPI();
+-	if (bResult)
+-		return RES_OK_NEED_RESTART;
+-
+-	theApp.QueueDebugLogLine(false, _T("Run as unprivileged user: Error: Failed to restart eMule as different user! Error Code: %i"), ::GetLastError());
+-	return RES_FAILED;
+-}
+-
+-CStringW CSecRunAsUser::GetCurrentUserW() const
+-{
+-	return m_strCurrentUser.IsEmpty() ? CStringW(L"Unknown") : m_strCurrentUser;
+-}
+-
+-bool CSecRunAsUser::LoadAPI()
+-{
+-	if (!m_hACTIVEDS_DLL) {
+-		m_hACTIVEDS_DLL = ::LoadLibrary(_T("ActiveDS"));
+-		if (!m_hACTIVEDS_DLL) {
+-			AddDebugLogLine(false, _T("Failed to load ActiveDS.dll!"));
+-			return false;
+-		}
+-	}
+-
+-	bool bSucceeded = (ADsGetObject = (TADsGetObject)::GetProcAddress(m_hACTIVEDS_DLL,"ADsGetObject")) != NULL
+-				   && (ADsBuildEnumerator = (TADsBuildEnumerator)::GetProcAddress(m_hACTIVEDS_DLL,"ADsBuildEnumerator")) != NULL
+-				   && (ADsEnumerateNext = (TADsEnumerateNext)::GetProcAddress(m_hACTIVEDS_DLL,"ADsEnumerateNext")) != NULL;
+-
+-	if (!bSucceeded) {
+-		AddDebugLogLine(false, _T("Failed to load all functions from ActiveDS.dll!"));
+-		FreeAPI();
+-	}
+-	return bSucceeded;
+-}
+-
+-void CSecRunAsUser::FreeAPI()
+-{
+-	if (m_hACTIVEDS_DLL) {
+-		::FreeLibrary(m_hACTIVEDS_DLL);
+-		m_hACTIVEDS_DLL = 0;
+-	}
+-}
+-
+-eResult CSecRunAsUser::RestartAsRestricted()
+-{
+-	if (m_bRunningRestricted || m_bRunningAsEmule)
+-		return RES_OK;
+-	if (!LoadAPI())
+-		return RES_FAILED;
+-
+-	HANDLE hProcessToken = NULL;
+-	HANDLE hRestrictedToken = NULL;
+-	PTOKEN_USER pstructUserToken = NULL;
+-
+-	try {
+-		// get our access token from the process
+-		if (!::OpenProcessToken(GetCurrentProcess(), TOKEN_DUPLICATE | TOKEN_ASSIGN_PRIMARY | TOKEN_READ, &hProcessToken))
+-			throwCStr(_T("Failed to retrieve access token from process"));
+-
+-		// there is no easy way to check if we have already restricted token when not using the restricted SID list
+-		// so just check if we set the SANDBOX_INERT flag and hope no one else did
+-		// (which is unlikely tho because AFAIK you would only set it when using CreateRestirctedToken) :)
+-		DWORD dwLen = 0;
+-		DWORD dwInertFlag;
+-		if (!::GetTokenInformation(hProcessToken, TokenSandBoxInert, &dwInertFlag, sizeof(dwInertFlag), &dwLen))
+-			throwCStr(_T("Failed to Flag-Status from AccessToken"));
+-
+-		if (dwInertFlag != 0) {
+-			m_bRunningRestricted = true;
+-			throwCStr(_T("Already using a restricted Token it seems (everything is fine!)"));
+-		}
+-
+-		// get the user account SID to disable it in our new token
+-		dwLen = 0;
+-		while (!::GetTokenInformation(hProcessToken, TokenUser, pstructUserToken, dwLen, &dwLen)) {
+-			if (::GetLastError() != ERROR_INSUFFICIENT_BUFFER || pstructUserToken != NULL)
+-				throwCStr(_T("Failed to retrieve UserSID from AccessToken"));
+-			pstructUserToken = (PTOKEN_USER)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, dwLen);
+-		}
+-		if (pstructUserToken == NULL)
+-			throwCStr(_T("Failed to retrieve UserSID from AccessToken"));
+-
+-		// disabling our primary token would make sense from a Security POV, but this would cause file acces conflicts
+-		// in the default settings (since we cannot access files we created ourself if they don't have the write flag for the group "users")
+-		// so it stays enabled for now and we only reduce privileges
+-
+-		// create the new token
+-		if (!::CreateRestrictedToken(hProcessToken, DISABLE_MAX_PRIVILEGE | SANDBOX_INERT, 0 /*disabled*/, &pstructUserToken->User, 0, NULL, 0, NULL, &hRestrictedToken))
+-			throwCStr(_T("Failed to create Restricted Token"));
+-
+-		// do the starting job
+-		TCHAR szAppPath[MAX_PATH + 2];
+-		DWORD dwModPathLen = ::GetModuleFileName(NULL, &szAppPath[1], MAX_PATH);
+-		if (dwModPathLen == 0 || dwModPathLen >= MAX_PATH)
+-			throwCStr(_T("Failed to get module file path"));
+-		szAppPath[0] = _T('"');
+-		szAppPath[++dwModPathLen] = _T('"');
+-		szAppPath[++dwModPathLen] = _T('\0');
+-		//CString strAppName;
+-		//strAppName.Format(_T("\"%s\""), szAppPath);
+-
+-		STARTUPINFO StartInf = {};
+-		StartInf.cb = sizeof StartInf;
+-		StartInf.dwFlags = STARTF_USESHOWWINDOW;
+-		StartInf.wShowWindow = SW_NORMAL;
+-
+-		// remove the current mutex, so that the restart emule can create its own without problems
+-		// in the rare case CreateProcessWithLogonW fails, this will allow multiple instances,
+-		// but if this function fails we have other problems anyway
+-		::CloseHandle(theApp.m_hMutexOneInstance);
+-
+-		PROCESS_INFORMATION ProcessInfo = {};
+-		if (!::CreateProcessAsUser(hRestrictedToken, NULL, szAppPath, NULL, NULL, FALSE, NORMAL_PRIORITY_CLASS, NULL, NULL, &StartInf, &ProcessInfo)) {
+-			CString e;
+-			GetErrorMessage(::GetLastError(), e, 0);
+-			e.Insert(0, _T("CreateProcessAsUser failed: "));
+-			throw e;
+-		}
+-		::CloseHandle(ProcessInfo.hProcess);
+-		::CloseHandle(ProcessInfo.hThread);
+-
+-		// cleanup
+-		HeapFree(GetProcessHeap(), 0, (LPVOID)pstructUserToken);
+-		pstructUserToken = NULL;
+-		::CloseHandle(hRestrictedToken);
+-		::CloseHandle(hProcessToken);
+-	} catch (const CString &strError) {
+-		if (hProcessToken != NULL)
+-			::CloseHandle(hProcessToken);
+-		if (hRestrictedToken != NULL)
+-			::CloseHandle(hRestrictedToken);
+-		if (pstructUserToken != NULL)
+-			::HeapFree(GetProcessHeap(), 0, (LPVOID)pstructUserToken);
+-
+-		theApp.QueueDebugLogLine(false, _T("SecureShellExecute exception: %s!"), (LPCTSTR)strError);
+-		return m_bRunningRestricted ? RES_OK : RES_FAILED;
+-	}
+-	return RES_OK_NEED_RESTART;
+-}
+-
+-eResult CSecRunAsUser::RestartSecure()
+-{
+-	eResult res;
+-
+-	if (!thePrefs.IsPreferingRestrictedOverUser()) {
+-		res = PrepareUser();
+-		if (res == RES_OK) {
+-			theApp.QueueLogLine(false, GetResString(IDS_RAU_RUNNING), EMULEACCOUNTW);
+-			return res;
+-		}
+-		if (res == RES_OK_NEED_RESTART) {
+-			res = RestartAsUser();
+-			if (res != RES_FAILED)
+-				return res;
+-		}
+-	}
+-
+-	res = RestartAsRestricted();
+-	if (res == RES_OK)
+-		theApp.QueueLogLine(false, GetResString(IDS_RUNNINGRESTRICTED));
+-
+-	return res;
+-}
+\ No newline at end of file
+diff --git a/srchybrid/SecRunAsUser.h b/srchybrid/SecRunAsUser.h
+deleted file mode 100644
+index 9f00fff..0000000
+--- a/srchybrid/SecRunAsUser.h
++++ /dev/null
+@@ -1,99 +0,0 @@
+-//this file is part of eMule
+-//Copyright (C)2004-2026 Merkur ( devs@emule-project.net / https://www.emule-project.net )
+-//
+-//This program is free software; you can redistribute it and/or
+-//modify it under the terms of the GNU General Public License
+-//as published by the Free Software Foundation; either
+-//version 2 of the License, or (at your option) any later version.
+-//
+-//This program is distributed in the hope that it will be useful,
+-//but WITHOUT ANY WARRANTY; without even the implied warranty of
+-//MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+-//GNU General Public License for more details.
+-//
+-//You should have received a copy of the GNU General Public License
+-//along with this program; if not, write to the Free Software
+-//Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+-#pragma once
+-#include <comdef.h>
+-#include <Iads.h>
+-
+-#define LOGON_WITH_PROFILE			0x00000001
+-#define LOGON_NETCREDENTIALS_ONLY	0x00000002
+-
+-enum eResult
+-{
+-	RES_OK_NEED_RESTART = 0,
+-	RES_OK,
+-	RES_FAILED
+-};
+-
+-typedef HRESULT(WINAPI *TADsGetObject)
+-(
+-	LPWSTR	lpszPathName,
+-	REFIID	iid,
+-	LPVOID	*ppObject
+-);
+-
+-typedef HRESULT(WINAPI *TADsBuildEnumerator)
+-(
+-	IADsContainer *pADsContainer,
+-	IEnumVARIANT **ppEnumVariant
+-);
+-
+-typedef HRESULT(WINAPI *TADsEnumerateNext)
+-(
+-	IEnumVARIANT *pEnumVariant,
+-	ULONG cElements,
+-	VARIANT *pvar,
+-	ULONG *pcElementsFetched
+-);
+-
+-typedef _com_ptr_t<_com_IIID<IADsContainer, &IID_IADsContainer> >  IADsContainerPtr;
+-typedef _com_ptr_t<_com_IIID<IADs, &IID_IADs> >  IADsPtr;
+-typedef _com_ptr_t<_com_IIID<IADsUser, &IID_IADsUser> >  IADsUserPtr;
+-typedef _com_ptr_t<_com_IIID<IADsAccessControlEntry, &IID_IADsAccessControlEntry> >  IIADsAccessControlEntryPtr;
+-typedef _com_ptr_t<_com_IIID<IADsSecurityDescriptor, &IID_IADsSecurityDescriptor> >  IADsSecurityDescriptorPtr;
+-typedef _com_ptr_t<_com_IIID<IADsWinNTSystemInfo, &IID_IADsWinNTSystemInfo> >  IADsWinNTSystemInfoPtr;
+-#define MHeapAlloc(x) (::HeapAlloc(::GetProcessHeap(), HEAP_ZERO_MEMORY, x))
+-#define MHeapFree(x)  (::HeapFree(::GetProcessHeap(), 0, x))
+-
+-#define EMULEACCOUNTW L"eMule_Secure"
+-
+-class CSecRunAsUser
+-{
+-public:
+-	CSecRunAsUser();
+-	~CSecRunAsUser();
+-
+-	eResult	RestartSecure();
+-	bool	IsRunningEmuleAccount() const	{ return m_bRunningAsEmule; }
+-	bool	IsRunningRestricted() const		{ return m_bRunningRestricted; }
+-	bool	IsRunningSecure() const			{ return m_bRunningRestricted || m_bRunningAsEmule; }
+-	CStringW	GetCurrentUserW() const;
+-
+-protected:
+-	eResult	PrepareUser();
+-	eResult	RestartAsUser();
+-	eResult	RestartAsRestricted();
+-
+-	bool	SetDirectoryPermissions();
+-	bool	CreateEmuleUser(IADsContainerPtr pUsers);
+-	static CStringW	CreateRandomPW();
+-	bool	SetObjectPermission(const CString &strDirFile, DWORD lGrantedAccess);
+-	bool	LoadAPI();
+-	void	FreeAPI();
+-
+-private:
+-	CStringW ADSPath;
+-	CStringW m_strPassword;
+-	CStringW m_strDomain;
+-	CStringW m_strCurrentUser;
+-	HMODULE m_hACTIVEDS_DLL;
+-	bool m_bRunningAsEmule;
+-	bool m_bRunningRestricted;
+-
+-	TADsGetObject ADsGetObject;
+-	TADsBuildEnumerator ADsBuildEnumerator;
+-	TADsEnumerateNext ADsEnumerateNext;
+-};
+\ No newline at end of file
+diff --git a/srchybrid/emule.rc b/srchybrid/emule.rc
+index 0722d29..2ff7716 100644
+--- a/srchybrid/emule.rc
++++ b/srchybrid/emule.rc
+@@ -700,13 +700,12 @@ BEGIN
+                     "Button",BS_AUTOCHECKBOX | WS_TABSTOP,11,120,209,10
+     CONTROL         "Disable support for obfuscated connections",IDC_DISABLEOBFUSCATION,
+                     "Button",BS_AUTOCHECKBOX | WS_TABSTOP,11,130,209,10
+-    GROUPBOX        "Misc",IDC_SEC_MISC,4,149,223,55,WS_GROUP
++    GROUPBOX        "Misc",IDC_SEC_MISC,4,149,223,45,WS_GROUP
+     CONTROL         "Use secure Identification",IDC_USESECIDENT,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,11,159,209,10
+-    CONTROL         "Run eMule as unprivileged user",IDC_RUNASUSER,"Button",BS_AUTOCHECKBOX | WS_DISABLED | WS_TABSTOP,11,169,209,10
+     CONTROL         "Enable spam filter for search results",IDC_SEARCHSPAMFILTER,
+-                    "Button",BS_AUTOCHECKBOX | WS_TABSTOP,11,179,209,10
++                    "Button",BS_AUTOCHECKBOX | WS_TABSTOP,11,169,209,10
+     CONTROL         "Warn when opening untrusted files",IDC_CHECK_FILE_OPEN,
+-                    "Button",BS_AUTOCHECKBOX | WS_TABSTOP,11,189,209,10
++                    "Button",BS_AUTOCHECKBOX | WS_TABSTOP,11,179,209,10
+ END
+ 
+ IDD_EXITBOX DIALOGEX 0, 0, 188, 96
+diff --git a/srchybrid/emule.vcxproj b/srchybrid/emule.vcxproj
+index 9d0a409..5f571ff 100644
+--- a/srchybrid/emule.vcxproj
++++ b/srchybrid/emule.vcxproj
+@@ -85,7 +85,7 @@
+       <WarningLevel>EnableAllWarnings</WarningLevel>
+     </ClCompile>
+     <Link>
+-      <AdditionalDependencies>ADSIId.lib;crypt32.lib;delayimp.lib;iphlpapi.lib;version.lib;winmm.lib;ws2_32.lib;..\cryptopp\$(Platform)\$(Configuration)\cryptlib.lib;..\id3lib\libprj\$(Platform)\$(Configuration)\id3lib.lib;..\mbedtls\visualc\vs2017\$(Platform)\$(Configuration)\mbedtls.lib;..\miniupnpc\msvc\$(Platform)\$(Configuration)\miniupnpc.lib;..\resizablelib\$(Platform)\$(Configuration)\resizablelib.lib;..\zlib\contrib\vstudio\vc\$(Platform)\$(Configuration)\zlib.lib;%(AdditionalDependencies)</AdditionalDependencies>
++      <AdditionalDependencies>crypt32.lib;delayimp.lib;iphlpapi.lib;version.lib;winmm.lib;ws2_32.lib;..\cryptopp\$(Platform)\$(Configuration)\cryptlib.lib;..\id3lib\libprj\$(Platform)\$(Configuration)\id3lib.lib;..\mbedtls\visualc\vs2017\$(Platform)\$(Configuration)\mbedtls.lib;..\miniupnpc\msvc\$(Platform)\$(Configuration)\miniupnpc.lib;..\resizablelib\$(Platform)\$(Configuration)\resizablelib.lib;..\zlib\contrib\vstudio\vc\$(Platform)\$(Configuration)\zlib.lib;%(AdditionalDependencies)</AdditionalDependencies>
+       <AdditionalOptions Condition="'$(Platform)'=='Win32'">/safeseh</AdditionalOptions>
+       <DelayLoadDLLs>gdiplus.dll;msimg32.dll;oleacc.dll;ws2_32.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
+       <IgnoreSpecificDefaultLibraries>mpr.lib;rasapi32.lib;secur32.lib;sensapi.lib;vfw32.lib;%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
+@@ -114,7 +114,7 @@
+       <WarningLevel>EnableAllWarnings</WarningLevel>
+     </ClCompile>
+     <Link>
+-      <AdditionalDependencies>ADSIId.lib;crypt32.lib;delayimp.lib;iphlpapi.lib;version.lib;winmm.lib;ws2_32.lib;..\cryptopp\$(Platform)\$(Configuration)\cryptlib.lib;..\id3lib\libprj\$(Platform)\$(Configuration)\id3lib.lib;..\mbedtls\visualc\vs2017\$(Platform)\$(Configuration)\mbedtls.lib;..\miniupnpc\msvc\$(Platform)\$(Configuration)\miniupnpc.lib;..\resizablelib\$(Platform)\$(Configuration)\resizablelib.lib;..\zlib\contrib\vstudio\vc\$(Platform)\$(Configuration)\zlib.lib;%(AdditionalDependencies)</AdditionalDependencies>
++      <AdditionalDependencies>crypt32.lib;delayimp.lib;iphlpapi.lib;version.lib;winmm.lib;ws2_32.lib;..\cryptopp\$(Platform)\$(Configuration)\cryptlib.lib;..\id3lib\libprj\$(Platform)\$(Configuration)\id3lib.lib;..\mbedtls\visualc\vs2017\$(Platform)\$(Configuration)\mbedtls.lib;..\miniupnpc\msvc\$(Platform)\$(Configuration)\miniupnpc.lib;..\resizablelib\$(Platform)\$(Configuration)\resizablelib.lib;..\zlib\contrib\vstudio\vc\$(Platform)\$(Configuration)\zlib.lib;%(AdditionalDependencies)</AdditionalDependencies>
+       <AdditionalOptions Condition="'$(Platform)'=='Win32'">/safeseh</AdditionalOptions>
+       <DelayLoadDLLs>gdiplus.dll;msimg32.dll;oleacc.dll;ws2_32.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
+       <IgnoreSpecificDefaultLibraries>mpr.lib;rasapi32.lib;secur32.lib;sensapi.lib;vfw32.lib;%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
+@@ -142,7 +142,7 @@
+       <WarningLevel>EnableAllWarnings</WarningLevel>
+     </ClCompile>
+     <Link>
+-      <AdditionalDependencies>ADSIId.lib;crypt32.lib;delayimp.lib;iphlpapi.lib;version.lib;winmm.lib;ws2_32.lib;..\cryptopp\$(Platform)\Debug\cryptlib.lib;..\id3lib\libprj\$(Platform)\Debug\id3lib.lib;..\mbedtls\visualc\vs2017\$(Platform)\Debug\mbedtls.lib;..\miniupnpc\msvc\$(Platform)\Debug\miniupnpc.lib;..\resizablelib\$(Platform)\Debug\resizablelib.lib;..\zlib\contrib\vstudio\vc\$(Platform)\Debug\zlib.lib;%(AdditionalDependencies)</AdditionalDependencies>
++      <AdditionalDependencies>crypt32.lib;delayimp.lib;iphlpapi.lib;version.lib;winmm.lib;ws2_32.lib;..\cryptopp\$(Platform)\Debug\cryptlib.lib;..\id3lib\libprj\$(Platform)\Debug\id3lib.lib;..\mbedtls\visualc\vs2017\$(Platform)\Debug\mbedtls.lib;..\miniupnpc\msvc\$(Platform)\Debug\miniupnpc.lib;..\resizablelib\$(Platform)\Debug\resizablelib.lib;..\zlib\contrib\vstudio\vc\$(Platform)\Debug\zlib.lib;%(AdditionalDependencies)</AdditionalDependencies>
+       <AdditionalOptions Condition="'$(Platform)'=='Win32'">/safeseh</AdditionalOptions>
+       <DelayLoadDLLs>gdiplus.dll;msimg32.dll;oleacc.dll;ws2_32.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
+       <IgnoreSpecificDefaultLibraries>mpr.lib;rasapi32.lib;secur32.lib;sensapi.lib;vfw32.lib;%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
+@@ -344,7 +344,6 @@
+     <ClCompile Include="SearchListCtrl.cpp" />
+     <ClCompile Include="SearchParamsWnd.cpp" />
+     <ClCompile Include="SearchResultsWnd.cpp" />
+-    <ClCompile Include="SecRunAsUser.cpp" />
+     <ClCompile Include="SelfTest.cpp" />
+     <ClCompile Include="SendMail.cpp" />
+     <ClCompile Include="Server.cpp" />
+@@ -629,7 +628,6 @@
+     <ClInclude Include="SearchParams.h" />
+     <ClInclude Include="SearchParamsWnd.h" />
+     <ClInclude Include="SearchResultsWnd.h" />
+-    <ClInclude Include="SecRunAsUser.h" />
+     <ClInclude Include="Server.h" />
+     <ClInclude Include="ServerConnect.h" />
+     <ClInclude Include="ServerList.h" />

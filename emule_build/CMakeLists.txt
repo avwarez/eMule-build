@@ -211,7 +211,6 @@ set_source_files_properties("${EMULE_SRC_DIR}/Scanner.cpp" PROPERTIES
 # Linking
 # ---------------------------------------------------------------------------
 target_link_libraries(emule PRIVATE
-    ADSIId.lib
     crypt32.lib
     delayimp.lib
     iphlpapi.lib
