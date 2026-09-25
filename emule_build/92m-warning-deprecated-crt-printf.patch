@@ -1,0 +1,360 @@
+diff --git a/srchybrid/BaseClient.cpp b/srchybrid/BaseClient.cpp
+index 5bcda5b..da891c9 100644
+--- a/srchybrid/BaseClient.cpp
++++ b/srchybrid/BaseClient.cpp
+@@ -1634,24 +1634,24 @@ void CUpDownClient::InitClientSoftwareVersion()
+ 		TCHAR szSoftware[128];
+ 		if (m_byEmuleVersion == 0) {
+ 			m_nClientVersion = MAKE_CLIENT_VERSION(0, 0, 0);
+-			iLen = _sntprintf(szSoftware, _countof(szSoftware), _T("%s"), pszSoftware);
++			iLen = _sntprintf_s(szSoftware, _countof(szSoftware), _TRUNCATE, _T("%s"), pszSoftware);
+ 		} else if (m_byEmuleVersion != 0x99) {
+ 			UINT nClientMinVersion = (m_byEmuleVersion >> 4) * 10 + (m_byEmuleVersion & 0x0f);
+ 			m_nClientVersion = MAKE_CLIENT_VERSION(0, nClientMinVersion, 0);
+-			iLen = _sntprintf(szSoftware, _countof(szSoftware), _T("%s v0.%u"), pszSoftware, nClientMinVersion);
++			iLen = _sntprintf_s(szSoftware, _countof(szSoftware), _TRUNCATE, _T("%s v0.%u"), pszSoftware, nClientMinVersion);
+ 		} else {
+ 			UINT nClientMajVersion = (m_nClientVersion >> 17) & 0x7f;
+ 			UINT nClientMinVersion = (m_nClientVersion >> 10) & 0x7f;
+ 			UINT nClientUpVersion = (m_nClientVersion >> 7) & 0x07;
+ 			m_nClientVersion = MAKE_CLIENT_VERSION(nClientMajVersion, nClientMinVersion, nClientUpVersion);
+ 			if (m_clientSoft == SO_EMULE)
+-				iLen = _sntprintf(szSoftware, _countof(szSoftware), _T("%s v%u.%u%c"), pszSoftware, nClientMajVersion, nClientMinVersion, _T('a') + nClientUpVersion);
++				iLen = _sntprintf_s(szSoftware, _countof(szSoftware), _TRUNCATE, _T("%s v%u.%u%c"), pszSoftware, nClientMajVersion, nClientMinVersion, _T('a') + nClientUpVersion);
+ 			else if (m_clientSoft == SO_AMULE || nClientUpVersion != 0)
+-				iLen = _sntprintf(szSoftware, _countof(szSoftware), _T("%s v%u.%u.%u"), pszSoftware, nClientMajVersion, nClientMinVersion, nClientUpVersion);
++				iLen = _sntprintf_s(szSoftware, _countof(szSoftware), _TRUNCATE, _T("%s v%u.%u.%u"), pszSoftware, nClientMajVersion, nClientMinVersion, nClientUpVersion);
+ 			else if (m_clientSoft == SO_LPHANT)
+-				iLen = _sntprintf(szSoftware, _countof(szSoftware), _T("%s v%u.%02u"), pszSoftware, (nClientMajVersion - 1), nClientMinVersion);
++				iLen = _sntprintf_s(szSoftware, _countof(szSoftware), _TRUNCATE, _T("%s v%u.%02u"), pszSoftware, (nClientMajVersion - 1), nClientMinVersion);
+ 			else
+-				iLen = _sntprintf(szSoftware, _countof(szSoftware), _T("%s v%u.%u"), pszSoftware, nClientMajVersion, nClientMinVersion);
++				iLen = _sntprintf_s(szSoftware, _countof(szSoftware), _TRUNCATE, _T("%s v%u.%u"), pszSoftware, nClientMajVersion, nClientMinVersion);
+ 		}
+ 		if (iLen > 0) {
+ 			memcpy(m_strClientSoftware.GetBuffer(iLen), szSoftware, iLen * sizeof(TCHAR));
+@@ -1718,9 +1718,9 @@ void CUpDownClient::InitClientSoftwareVersion()
+ 		int iLen;
+ 		TCHAR szSoftware[128];
+ 		if (nClientUpVersion)
+-			iLen = _sntprintf(szSoftware, _countof(szSoftware), _T("eDonkeyHybrid v%u.%u.%u"), nClientMajVersion, nClientMinVersion, nClientUpVersion);
++			iLen = _sntprintf_s(szSoftware, _countof(szSoftware), _TRUNCATE, _T("eDonkeyHybrid v%u.%u.%u"), nClientMajVersion, nClientMinVersion, nClientUpVersion);
+ 		else
+-			iLen = _sntprintf(szSoftware, _countof(szSoftware), _T("eDonkeyHybrid v%u.%u"), nClientMajVersion, nClientMinVersion);
++			iLen = _sntprintf_s(szSoftware, _countof(szSoftware), _TRUNCATE, _T("eDonkeyHybrid v%u.%u"), nClientMajVersion, nClientMinVersion);
+ 		if (iLen > 0) {
+ 			memcpy(m_strClientSoftware.GetBuffer(iLen), szSoftware, iLen * sizeof(TCHAR));
+ 			m_strClientSoftware.ReleaseBuffer(iLen);
+@@ -1733,7 +1733,7 @@ void CUpDownClient::InitClientSoftwareVersion()
+ 		UINT nClientMinVersion = m_nClientVersion;
+ 		m_nClientVersion = MAKE_CLIENT_VERSION(0, nClientMinVersion, 0);
+ 		TCHAR szSoftware[128];
+-		int iLen = _sntprintf(szSoftware, _countof(szSoftware), _T("MLdonkey v0.%u"), nClientMinVersion);
++		int iLen = _sntprintf_s(szSoftware, _countof(szSoftware), _TRUNCATE, _T("MLdonkey v0.%u"), nClientMinVersion);
+ 		if (iLen > 0) {
+ 			memcpy(m_strClientSoftware.GetBuffer(iLen), szSoftware, iLen * sizeof(TCHAR));
+ 			m_strClientSoftware.ReleaseBuffer(iLen);
+@@ -1746,7 +1746,7 @@ void CUpDownClient::InitClientSoftwareVersion()
+ 		UINT nClientMinVersion = m_nClientVersion;
+ 		m_nClientVersion = MAKE_CLIENT_VERSION(0, nClientMinVersion, 0);
+ 		TCHAR szSoftware[128];
+-		int iLen = _sntprintf(szSoftware, _countof(szSoftware), _T("Old eMule v0.%u"), nClientMinVersion);
++		int iLen = _sntprintf_s(szSoftware, _countof(szSoftware), _TRUNCATE, _T("Old eMule v0.%u"), nClientMinVersion);
+ 		if (iLen > 0) {
+ 			memcpy(m_strClientSoftware.GetBuffer(iLen), szSoftware, iLen * sizeof(TCHAR));
+ 			m_strClientSoftware.ReleaseBuffer(iLen);
+@@ -1758,7 +1758,7 @@ void CUpDownClient::InitClientSoftwareVersion()
+ 	UINT nClientMinVersion = m_nClientVersion;
+ 	m_nClientVersion = MAKE_CLIENT_VERSION(0, nClientMinVersion, 0);
+ 	TCHAR szSoftware[128];
+-	int iLen = _sntprintf(szSoftware, _countof(szSoftware), _T("eDonkey v0.%u"), nClientMinVersion);
++	int iLen = _sntprintf_s(szSoftware, _countof(szSoftware), _TRUNCATE, _T("eDonkey v0.%u"), nClientMinVersion);
+ 	if (iLen > 0) {
+ 		memcpy(m_strClientSoftware.GetBuffer(iLen), szSoftware, iLen * sizeof(TCHAR));
+ 		m_strClientSoftware.ReleaseBuffer(iLen);
+diff --git a/srchybrid/Emule.cpp b/srchybrid/Emule.cpp
+index beb0208..cc206d3 100644
+--- a/srchybrid/Emule.cpp
++++ b/srchybrid/Emule.cpp
+@@ -500,7 +500,7 @@ BOOL CemuleApp::InitInstance()
+ 		EnableRTLWindowsLayout();
+ 
+ #ifdef _DEBUG
+-	_sntprintf(s_szCrtDebugReportFilePath, _countof(s_szCrtDebugReportFilePath) - 1, _T("%s%s"), (LPCTSTR)thePrefs.GetMuleDirectory(EMULE_LOGDIR, false), APP_CRT_DEBUG_LOG_FILE);
++	_sntprintf_s(s_szCrtDebugReportFilePath, _countof(s_szCrtDebugReportFilePath), _TRUNCATE, _T("%s%s"), (LPCTSTR)thePrefs.GetMuleDirectory(EMULE_LOGDIR, false), APP_CRT_DEBUG_LOG_FILE);
+ #endif
+ 	VERIFY(theLog.SetFilePath(thePrefs.GetMuleDirectory(EMULE_LOGDIR, thePrefs.GetLog2Disk()) + _T("eMule.log")));
+ 	VERIFY(theVerboseLog.SetFilePath(thePrefs.GetMuleDirectory(EMULE_LOGDIR, false) + _T("eMule_Verbose.log")));
+@@ -1589,7 +1589,7 @@ BOOL WINAPI ConsoleCtrlHandler(DWORD dwCtrlType) noexcept
+ 			pszCtrlType = _T("CTRL_SHUTDOWN_EVENT");
+ 			break;
+ 		default:
+-			_sntprintf(szCtrlType, _countof(szCtrlType), _T("0x%08lx"), dwCtrlType);
++			_sntprintf_s(szCtrlType, _countof(szCtrlType), _TRUNCATE, _T("0x%08lx"), dwCtrlType);
+ 			szCtrlType[_countof(szCtrlType) - 1] = _T('\0');
+ 			pszCtrlType = szCtrlType;
+ 		}
+diff --git a/srchybrid/EmuleDlg.cpp b/srchybrid/EmuleDlg.cpp
+index 34edf0a..4808345 100644
+--- a/srchybrid/EmuleDlg.cpp
++++ b/srchybrid/EmuleDlg.cpp
+@@ -905,7 +905,7 @@ void CemuleDlg::AddLogText(UINT uFlags, LPCTSTR pszText)
+ 		return;
+ 
+ 	TCHAR temp[1060];
+-	int iLen = _sntprintf(temp, _countof(temp), _T("%s: %s\r\n"), (LPCTSTR)CTime::GetCurrentTime().Format(thePrefs.GetDateTimeFormat4Log()), pszText);
++	int iLen = _sntprintf_s(temp, _countof(temp), _TRUNCATE, _T("%s: %s\r\n"), (LPCTSTR)CTime::GetCurrentTime().Format(thePrefs.GetDateTimeFormat4Log()), pszText);
+ 	if (iLen >= 0) {
+ 		if (!(uFlags & LOG_DEBUG)) {
+ 			serverwnd->logbox->AddTyped(temp, iLen, uFlags & LOGMSGTYPEMASK);
+diff --git a/srchybrid/Ini2.cpp b/srchybrid/Ini2.cpp
+index c4141f9..ed8ba36 100644
+--- a/srchybrid/Ini2.cpp
++++ b/srchybrid/Ini2.cpp
+@@ -283,7 +283,7 @@ CStringW CIni::GetStringUTF8(LPCTSTR lpszEntry, LPCTSTR lpszDefault, LPCTSTR lps
+ double CIni::GetDouble(LPCTSTR lpszEntry, double fDefault, LPCTSTR lpszSection)
+ {
+ 	TCHAR szDefault[MAX_PATH];
+-	_sntprintf(szDefault, _countof(szDefault), _T("%g"), fDefault);
++	_sntprintf_s(szDefault, _countof(szDefault), _TRUNCATE, _T("%g"), fDefault);
+ 	szDefault[_countof(szDefault) - 1] = _T('\0');
+ 	return _tstof(GetString(lpszEntry, szDefault, lpszSection));
+ }
+@@ -291,7 +291,7 @@ double CIni::GetDouble(LPCTSTR lpszEntry, double fDefault, LPCTSTR lpszSection)
+ float CIni::GetFloat(LPCTSTR lpszEntry, float fDefault, LPCTSTR lpszSection)
+ {
+ 	TCHAR szDefault[MAX_PATH];
+-	_sntprintf(szDefault, _countof(szDefault), _T("%g"), fDefault);
++	_sntprintf_s(szDefault, _countof(szDefault), _TRUNCATE, _T("%g"), fDefault);
+ 	szDefault[_countof(szDefault) - 1] = _T('\0');
+ 	return (float)_tstof(GetString(lpszEntry, szDefault, lpszSection));
+ }
+@@ -299,7 +299,7 @@ float CIni::GetFloat(LPCTSTR lpszEntry, float fDefault, LPCTSTR lpszSection)
+ int CIni::GetInt(LPCTSTR lpszEntry, int nDefault, LPCTSTR lpszSection)
+ {
+ 	TCHAR szDefault[MAX_PATH];
+-	_sntprintf(szDefault, _countof(szDefault), _T("%d"), nDefault);
++	_sntprintf_s(szDefault, _countof(szDefault), _TRUNCATE, _T("%d"), nDefault);
+ 	szDefault[_countof(szDefault) - 1] = _T('\0');
+ 	return _tstoi(GetString(lpszEntry, szDefault, lpszSection));
+ }
+@@ -307,7 +307,7 @@ int CIni::GetInt(LPCTSTR lpszEntry, int nDefault, LPCTSTR lpszSection)
+ ULONGLONG CIni::GetUInt64(LPCTSTR lpszEntry, ULONGLONG nDefault, LPCTSTR lpszSection)
+ {
+ 	TCHAR szDefault[MAX_PATH];
+-	_sntprintf(szDefault, _countof(szDefault), _T("%I64u"), nDefault);
++	_sntprintf_s(szDefault, _countof(szDefault), _TRUNCATE, _T("%I64u"), nDefault);
+ 	szDefault[_countof(szDefault) - 1] = _T('\0');
+ 	ULONGLONG nResult;
+ 	if (_stscanf(GetString(lpszEntry, szDefault, lpszSection), _T("%I64u"), &nResult) != 1)
+@@ -318,7 +318,7 @@ ULONGLONG CIni::GetUInt64(LPCTSTR lpszEntry, ULONGLONG nDefault, LPCTSTR lpszSec
+ WORD CIni::GetWORD(LPCTSTR lpszEntry, WORD nDefault, LPCTSTR lpszSection)
+ {
+ 	TCHAR szDefault[MAX_PATH];
+-	_sntprintf(szDefault, _countof(szDefault), _T("%u"), nDefault);
++	_sntprintf_s(szDefault, _countof(szDefault), _TRUNCATE, _T("%u"), nDefault);
+ 	szDefault[_countof(szDefault) - 1] = _T('\0');
+ 	return (WORD)_tstoi(GetString(lpszEntry, szDefault, lpszSection));
+ }
+@@ -326,7 +326,7 @@ WORD CIni::GetWORD(LPCTSTR lpszEntry, WORD nDefault, LPCTSTR lpszSection)
+ bool CIni::GetBool(LPCTSTR lpszEntry, bool bDefault, LPCTSTR lpszSection)
+ {
+ 	TCHAR szDefault[MAX_PATH];
+-	_sntprintf(szDefault, _countof(szDefault), _T("%d"), bDefault);
++	_sntprintf_s(szDefault, _countof(szDefault), _TRUNCATE, _T("%d"), bDefault);
+ 	szDefault[_countof(szDefault) - 1] = _T('\0');
+ 	return _tstoi(GetString(lpszEntry, szDefault, lpszSection)) != 0;
+ }
+@@ -394,7 +394,7 @@ void CIni::WriteDouble(LPCTSTR lpszEntry, double f, LPCTSTR lpszSection)
+ 	if (lpszSection != NULL)
+ 		m_strSection = lpszSection;
+ 	TCHAR szBuffer[MAX_PATH];
+-	_sntprintf(szBuffer, _countof(szBuffer), _T("%g"), f);
++	_sntprintf_s(szBuffer, _countof(szBuffer), _TRUNCATE, _T("%g"), f);
+ 	szBuffer[_countof(szBuffer) - 1] = _T('\0');
+ 	Write(m_strSection, lpszEntry, szBuffer);
+ }
+@@ -404,7 +404,7 @@ void CIni::WriteFloat(LPCTSTR lpszEntry, float f, LPCTSTR lpszSection)
+ 	if (lpszSection != NULL)
+ 		m_strSection = lpszSection;
+ 	TCHAR szBuffer[MAX_PATH];
+-	_sntprintf(szBuffer, _countof(szBuffer), _T("%g"), f);
++	_sntprintf_s(szBuffer, _countof(szBuffer), _TRUNCATE, _T("%g"), f);
+ 	szBuffer[_countof(szBuffer) - 1] = _T('\0');
+ 	Write(m_strSection, lpszEntry, szBuffer);
+ }
+@@ -441,7 +441,7 @@ void CIni::WriteBool(LPCTSTR lpszEntry, bool b, LPCTSTR lpszSection)
+ 	if (lpszSection != NULL)
+ 		m_strSection = lpszSection;
+ 	TCHAR szBuffer[MAX_PATH];
+-	_sntprintf(szBuffer, _countof(szBuffer), _T("%d"), (int)b);
++	_sntprintf_s(szBuffer, _countof(szBuffer), _TRUNCATE, _T("%d"), (int)b);
+ 	szBuffer[_countof(szBuffer) - 1] = _T('\0');
+ 	Write(m_strSection, lpszEntry, szBuffer);
+ }
+diff --git a/srchybrid/Log.cpp b/srchybrid/Log.cpp
+index 18559d3..068403f 100644
+--- a/srchybrid/Log.cpp
++++ b/srchybrid/Log.cpp
+@@ -200,7 +200,7 @@ void AddLogTextV(UINT uFlags, EDebugLogPriority dlpPriority, LPCTSTR pszLine, va
+ 		return;
+ 
+ 	TCHAR szLogLine[1000];
+-	_vsntprintf(szLogLine, _countof(szLogLine), pszLine, argptr);
++	_vsntprintf_s(szLogLine, _countof(szLogLine), _TRUNCATE, pszLine, argptr);
+ 	szLogLine[_countof(szLogLine) - 1] = _T('\0');
+ 
+ 	if (theApp.emuledlg)
+@@ -209,7 +209,7 @@ void AddLogTextV(UINT uFlags, EDebugLogPriority dlpPriority, LPCTSTR pszLine, va
+ 		TRACE(_T("App Log: %s\n"), szLogLine);
+ 
+ 		TCHAR szFullLogLine[1060];
+-		int iLen = _sntprintf(szFullLogLine, _countof(szFullLogLine), _T("%s: %s\r\n"), (LPCTSTR)CTime::GetCurrentTime().Format(thePrefs.GetDateTimeFormat4Log()), szLogLine);
++		int iLen = _sntprintf_s(szFullLogLine, _countof(szFullLogLine), _TRUNCATE, _T("%s: %s\r\n"), (LPCTSTR)CTime::GetCurrentTime().Format(thePrefs.GetDateTimeFormat4Log()), szLogLine);
+ 		if (iLen > 0) {
+ 			if (!(uFlags & LOG_DEBUG) && thePrefs.GetLog2Disk())
+ 				theLog.Log(szFullLogLine, iLen);
+@@ -367,12 +367,12 @@ bool CLogFile::Logf(LPCTSTR pszFmt, ...)
+ 	va_start(argp, pszFmt);
+ 
+ 	TCHAR szMsg[1024];
+-	_vsntprintf(szMsg, _countof(szMsg), pszFmt, argp);
++	_vsntprintf_s(szMsg, _countof(szMsg), _TRUNCATE, pszFmt, argp);
+ 	szMsg[_countof(szMsg) - 1] = _T('\0');
+ 	va_end(argp);
+ 
+ 	TCHAR szFullMsg[1060];
+-	int iLen = _sntprintf(szFullMsg, _countof(szFullMsg), _T("%s: %s\r\n"), (LPCTSTR)CTime::GetCurrentTime().Format(thePrefs.GetDateTimeFormat4Log()), szMsg);
++	int iLen = _sntprintf_s(szFullMsg, _countof(szFullMsg), _TRUNCATE, _T("%s: %s\r\n"), (LPCTSTR)CTime::GetCurrentTime().Format(thePrefs.GetDateTimeFormat4Log()), szMsg);
+ 
+ 	return (iLen > 0) && Log(szFullMsg, iLen);
+ }
+diff --git a/srchybrid/Mdump.cpp b/srchybrid/Mdump.cpp
+index c19f478..25dfcf4 100644
+--- a/srchybrid/Mdump.cpp
++++ b/srchybrid/Mdump.cpp
+@@ -100,7 +100,7 @@ LONG WINAPI CMiniDumper::TopLevelFilter(struct _EXCEPTION_POINTERS *pExceptionIn
+ 			// Do *NOT* localize that string (in fact, do not use MFC to load it)!
+ 			if (theCrashDumper.uCreateCrashDump == 2 || MessageBox(NULL, CRASHTEXT, m_szAppName, MB_ICONSTOP | MB_YESNO) == IDYES) {
+ 				TCHAR szBaseName[MAX_PATH];
+-				_sntprintf(szBaseName, MAX_PATH, _T("%s_%4d%02d%02d-%02d%02d%02d")
++				_sntprintf_s(szBaseName, MAX_PATH, _TRUNCATE, _T("%s_%4d%02d%02d-%02d%02d%02d")
+ 					, m_szAppName, t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond);
+ 				szBaseName[_countof(szBaseName) - 1] = _T('\0');
+ 				// Replace spaces and dots in file name.
+@@ -112,7 +112,7 @@ LONG WINAPI CMiniDumper::TopLevelFilter(struct _EXCEPTION_POINTERS *pExceptionIn
+ 
+ 				// Create full path for the dump file
+ 				TCHAR szDumpPath[MAX_PATH];
+-				_sntprintf(szDumpPath, MAX_PATH, _T("%s%s.dmp"), m_szDumpDir, szBaseName);
++				_sntprintf_s(szDumpPath, MAX_PATH, _TRUNCATE, _T("%s%s.dmp"), m_szDumpDir, szBaseName);
+ 				szDumpPath[_countof(szDumpPath) - 1] = _T('\0');
+ 
+ 				TCHAR szResult[MAX_PATH + 1024];
+@@ -123,8 +123,8 @@ LONG WINAPI CMiniDumper::TopLevelFilter(struct _EXCEPTION_POINTERS *pExceptionIn
+ 					BOOL bOK = (*pfnMiniDumpWriteDump)(GetCurrentProcess(), GetCurrentProcessId(), hFile, MiniDumpNormal, &ExInfo, NULL, NULL);
+ 					if (bOK) {
+ 						// Do *NOT* localize this string (in fact, do not use MFC to load it)!
+-						_sntprintf(szResult, _countof(szResult)
+-							, _T("Saved dump file to \"%s\".\r\n\r\n")
++						_sntprintf_s(szResult, _countof(szResult)
++							, _TRUNCATE, _T("Saved dump file to \"%s\".\r\n\r\n")
+ 							  _T("Please attach this file to a detailed bug report at forum.emule-project.net\r\n\r\n")
+ 							  _T("Thank you for helping to improve eMule!")
+ 							, szDumpPath);
+@@ -134,14 +134,14 @@ LONG WINAPI CMiniDumper::TopLevelFilter(struct _EXCEPTION_POINTERS *pExceptionIn
+ #endif
+ 					} else {
+ 						// Do *NOT* localize this string (in fact, do not use MFC to load it)!
+-						_sntprintf(szResult, _countof(szResult), _T("Failed to save dump file to \"%s\".\r\n\r\nError: %lu")
++						_sntprintf_s(szResult, _countof(szResult), _TRUNCATE, _T("Failed to save dump file to \"%s\".\r\n\r\nError: %lu")
+ 							, szDumpPath, ::GetLastError());
+ 						szResult[_countof(szResult) - 1] = _T('\0');
+ 					}
+ 					::CloseHandle(hFile);
+ 				} else {
+ 					// Do *NOT* localize this string (in fact, do not use MFC to load it)!
+-					_sntprintf(szResult, _countof(szResult), _T("Failed to create dump file \"%s\".\r\n\r\nError: %lu")
++					_sntprintf_s(szResult, _countof(szResult), _TRUNCATE, _T("Failed to create dump file \"%s\".\r\n\r\nError: %lu")
+ 						, szDumpPath, ::GetLastError());
+ 					szResult[_countof(szResult) - 1] = _T('\0');
+ 				}
+diff --git a/srchybrid/MuleToolBarCtrl.cpp b/srchybrid/MuleToolBarCtrl.cpp
+index 932584d..3b2122a 100644
+--- a/srchybrid/MuleToolBarCtrl.cpp
++++ b/srchybrid/MuleToolBarCtrl.cpp
+@@ -571,7 +571,7 @@ BOOL CMuleToolbarCtrl::OnCommand(WPARAM wParam, LPARAM)
+ 	case MP_SELECTTOOLBARBITMAPDIR:
+ 		{
+ 			TCHAR buffer[MAX_PATH];
+-			_sntprintf(buffer, _countof(buffer), _T("%s"), (LPCTSTR)thePrefs.GetMuleDirectory(EMULE_TOOLBARDIR));
++			_sntprintf_s(buffer, _countof(buffer), _TRUNCATE, _T("%s"), (LPCTSTR)thePrefs.GetMuleDirectory(EMULE_TOOLBARDIR));
+ 			buffer[_countof(buffer) - 1] = _T('\0');
+ 			if (SelectDir(m_hWnd, buffer, GetResString(IDS_SELECTTOOLBARBITMAPDIR)))
+ 				thePrefs.SetMuleDirectory(EMULE_TOOLBARDIR, buffer);
+@@ -634,7 +634,7 @@ BOOL CMuleToolbarCtrl::OnCommand(WPARAM wParam, LPARAM)
+ 	case MP_SELECT_SKIN_DIR:
+ 		{
+ 			TCHAR buffer[MAX_PATH];
+-			_sntprintf(buffer, _countof(buffer), _T("%s"), (LPCTSTR)thePrefs.GetMuleDirectory(EMULE_SKINDIR, false));
++			_sntprintf_s(buffer, _countof(buffer), _TRUNCATE, _T("%s"), (LPCTSTR)thePrefs.GetMuleDirectory(EMULE_SKINDIR, false));
+ 			buffer[_countof(buffer) - 1] = _T('\0');
+ 			if (SelectDir(m_hWnd, buffer, GetResString(IDS_SELSKINPROFILEDIR)))
+ 				thePrefs.SetMuleDirectory(EMULE_SKINDIR, buffer);
+diff --git a/srchybrid/SmileySelector.cpp b/srchybrid/SmileySelector.cpp
+index 2e767ae..0f25a81 100644
+--- a/srchybrid/SmileySelector.cpp
++++ b/srchybrid/SmileySelector.cpp
+@@ -252,7 +252,7 @@ void CSmileySelector::OnTbnSmileyGetInfoTip(LPNMHDR pNMHDR, LRESULT *pResult)
+ 	if (pNMTBGIT->cchTextMax) {
+ 		int iButtons = m_tb.GetButtonCount();
+ 		if (pNMTBGIT->iItem >= SMSEL_CMD_START && pNMTBGIT->iItem < SMSEL_CMD_START + iButtons) {
+-			_sntprintf(pNMTBGIT->pszText, pNMTBGIT->cchTextMax, _T(" %s "), g_aSmileys[pNMTBGIT->iItem - SMSEL_CMD_START].pszSmileys);
++			_sntprintf_s(pNMTBGIT->pszText, pNMTBGIT->cchTextMax, _TRUNCATE, _T(" %s "), g_aSmileys[pNMTBGIT->iItem - SMSEL_CMD_START].pszSmileys);
+ 			pNMTBGIT->pszText[pNMTBGIT->cchTextMax - 1] = _T('\0');
+ 		}
+ 	}
+diff --git a/srchybrid/TreeOptionsCtrlEx.cpp b/srchybrid/TreeOptionsCtrlEx.cpp
+index 33b74c5..2852700 100644
+--- a/srchybrid/TreeOptionsCtrlEx.cpp
++++ b/srchybrid/TreeOptionsCtrlEx.cpp
+@@ -389,7 +389,7 @@ void EditTextFloatFormat(CDataExchange *pDX, int nIDC, HTREEITEM hItem, void *pD
+ 			*((double*)pData) = d;
+ 	} else {
+ 		TCHAR szBuffer[400];
+-		_sntprintf(szBuffer, _countof(szBuffer), _T("%.*g"), nSizeGcvt, value);
++		_sntprintf_s(szBuffer, _countof(szBuffer), _TRUNCATE, _T("%.*g"), nSizeGcvt, value);
+ 		szBuffer[_countof(szBuffer) - 1] = _T('\0');
+ 		pCtrlTreeOptions->SetEditText(hItem, szBuffer);
+ 	}
+@@ -418,7 +418,7 @@ void EditTextWithFormat(CDataExchange *pDX, int nIDC, HTREEITEM hItem, LPCTSTR l
+ 		}
+ 	} else {
+ 		TCHAR szT[64];
+-		_vsntprintf(szT, _countof(szT), lpszFormat, pData);
++		_vsntprintf_s(szT, _countof(szT), _TRUNCATE, lpszFormat, pData);
+ 		szT[_countof(szT) - 1] = _T('\0');
+ 		// does not support floating point numbers - see dlgfloat.cpp
+ 		pCtrlTreeOptions->SetEditText(hItem, szT);
+diff --git a/srchybrid/kademlia/utils/ThreadName.cpp b/srchybrid/kademlia/utils/ThreadName.cpp
+index 37bc78a..68c8ac1 100644
+--- a/srchybrid/kademlia/utils/ThreadName.cpp
++++ b/srchybrid/kademlia/utils/ThreadName.cpp
+@@ -54,7 +54,7 @@ namespace Kademlia
+ 				iLenBuf += 128;
+ 				delete[] pcharBuffer;
+ 				pcharBuffer = new char[iLenBuf];
+-				iLenResult = _vsnprintf(pcharBuffer, iLenBuf, szThreadName, args);
++				iLenResult = _vsnprintf_s(pcharBuffer, iLenBuf, _TRUNCATE, szThreadName, args);
+ 			} while (iLenResult == -1);
+ 			va_end(args);
+ 			THREADNAME_INFO info;
+@@ -89,7 +89,7 @@ namespace Kademlia
+ 				iLenBuf += 128;
+ 				delete[] pcharBuffer;
+ 				pcharBuffer = new char[iLenBuf];
+-				iLenResult = _vsnprintf(pcharBuffer, iLenBuf, szThreadName, args);
++				iLenResult = _vsnprintf_s(pcharBuffer, iLenBuf, _TRUNCATE, szThreadName, args);
+ 			} while (iLenResult == -1);
+ 			va_end(args);
+ 			THREADNAME_INFO info;
