@@ -1,0 +1,748 @@
+diff --git a/srchybrid/Emule.cpp b/srchybrid/Emule.cpp
+index 9bda13f..0595c1f 100644
+--- a/srchybrid/Emule.cpp
++++ b/srchybrid/Emule.cpp
+@@ -59,7 +59,6 @@
+ #include "SafeFile.h"
+ #include "emuleDlg.h"
+ #include "enbitmap.h"
+-#include "FirewallOpener.h"
+ #include "StringConversion.h"
+ #include "Log.h"
+ #include "Collection.h"
+@@ -537,30 +536,6 @@ BOOL CemuleApp::InitInstance()
+ 
+ 	SetAutoStart(thePrefs.GetAutoStart());
+ 
+-	m_pFirewallOpener = new CFirewallOpener();
+-	m_pFirewallOpener->Init(true); // we need to init it now (even if we may not use it yet) because of CoInitializeSecurity - which kinda ruins the sense of the class interface but ooohh well :P
+-	// Open WinXP firewall ports if set in preferences and possible
+-	if (thePrefs.IsOpenPortsOnStartupEnabled()) {
+-		if (m_pFirewallOpener->DoesFWConnectionExist()) {
+-			// delete old rules added by eMule
+-			m_pFirewallOpener->RemoveRule(EMULE_DEFAULTRULENAME_UDP);
+-			m_pFirewallOpener->RemoveRule(EMULE_DEFAULTRULENAME_TCP);
+-			// open port for this session
+-			if (m_pFirewallOpener->OpenPort(thePrefs.GetPort(), NAT_PROTOCOL_TCP, EMULE_DEFAULTRULENAME_TCP, true))
+-				QueueLogLine(false, GetResString(IDS_FO_TEMPTCP_S), thePrefs.GetPort());
+-			else
+-				QueueLogLine(false, GetResString(IDS_FO_TEMPTCP_F), thePrefs.GetPort());
+-
+-			if (thePrefs.GetUDPPort()) {
+-				// open port for this session
+-				if (m_pFirewallOpener->OpenPort(thePrefs.GetUDPPort(), NAT_PROTOCOL_UDP, EMULE_DEFAULTRULENAME_UDP, true))
+-					QueueLogLine(false, GetResString(IDS_FO_TEMPUDP_S), thePrefs.GetUDPPort());
+-				else
+-					QueueLogLine(false, GetResString(IDS_FO_TEMPUDP_F), thePrefs.GetUDPPort());
+-			}
+-		}
+-	}
+-
+ 	// UPnP Port forwarding
+ 	m_pUPnPFinder = new CUPnPImplWrapper();
+ 
+diff --git a/srchybrid/Emule.h b/srchybrid/Emule.h
+index 0e7a14c..c631457 100644
+--- a/srchybrid/Emule.h
++++ b/srchybrid/Emule.h
+@@ -46,7 +46,6 @@ class CIPFilter;
+ class CWebServer;
+ class CAbstractFile;
+ class CUpDownClient;
+-class CFirewallOpener;
+ class CUPnPImplWrapper;
+ class CUploadDiskIOThread;
+ class CPartFileWriteThread;
+@@ -90,7 +89,6 @@ public:
+ 	CIPFilter			*ipfilter;
+ 	CWebServer			*webserver;
+ 	CScheduler			*scheduler;
+-	CFirewallOpener		*m_pFirewallOpener;
+ 	CUPnPImplWrapper	*m_pUPnPFinder;
+ 	CUploadDiskIOThread	*m_pUploadDiskIOThread;
+ 	CPartFileWriteThread *m_pPartFileWriteThread;
+diff --git a/srchybrid/EmuleDlg.cpp b/srchybrid/EmuleDlg.cpp
+index 8d7bdec..2480a0a 100644
+--- a/srchybrid/EmuleDlg.cpp
++++ b/srchybrid/EmuleDlg.cpp
+@@ -97,7 +97,6 @@
+ #include "PartFileWriteThread.h"
+ #include "ImportParts.h"
+ #include "ClientCredits.h"
+-#include "FirewallOpener.h"
+ 
+ #ifdef _DEBUG
+ #define new DEBUG_NEW
+@@ -1762,7 +1761,6 @@ void CemuleDlg::OnClose()
+ 	delete theApp.scheduler;				theApp.scheduler = NULL;
+ 	delete theApp.ipfilter;					theApp.ipfilter = NULL;			// CIPFilter::SaveToDefaultFile
+ 	delete theApp.webserver;				theApp.webserver = NULL;
+-	delete theApp.m_pFirewallOpener;		theApp.m_pFirewallOpener = NULL;
+ 	delete theApp.uploadBandwidthThrottler;	theApp.uploadBandwidthThrottler = NULL;
+ 	delete theApp.lastCommonRouteFinder;	theApp.lastCommonRouteFinder = NULL;
+ 	delete theApp.m_pUPnPFinder;			theApp.m_pUPnPFinder = NULL;
+diff --git a/srchybrid/FirewallOpener.cpp b/srchybrid/FirewallOpener.cpp
+deleted file mode 100644
+index a022f94..0000000
+--- a/srchybrid/FirewallOpener.cpp
++++ /dev/null
+@@ -1,295 +0,0 @@
+-//this file is part of eMule
+-//Copyright (C)2002-2026 Merkur ( strEmail.Format("%s@%s", "devteam", "emule-project.net") / https://www.emule-project.net )
+-//
+-//This program is free software; you can redistribute it and/or
+-//modify it under the terms of the GNU General Public License
+-//as published by the Free Software Foundation; either
+-//version 2 of the License, or (at your option) any later version.
+-//
+-//This program is distributed in the hope that it will be useful,
+-//but WITHOUT ANY WARRANTY; without even the implied warranty of
+-//MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+-//GNU General Public License for more details.
+-//
+-//You should have received a copy of the GNU General Public License
+-//along with this program; if not, write to the Free Software
+-
+-// class to configure the ICS-Firewall of Windows XP - will not work with WinXP-SP2 yet
+-
+-#include "StdAfx.h"
+-#include "firewallopener.h"
+-#include "emule.h"
+-#include "preferences.h"
+-#include "otherfunctions.h"
+-
+-#ifdef _DEBUG
+-#define new DEBUG_NEW
+-#undef THIS_FILE
+-static char THIS_FILE[] = __FILE__;
+-#endif
+-
+-
+-#define RETURN_ON_FAIL(x)	if (!SUCCEEDED(x)) return false;
+-
+-CFirewallOpener::CFirewallOpener()
+-	: m_pINetSM()
+-	, m_bInited()
+-{
+-}
+-
+-CFirewallOpener::~CFirewallOpener()
+-{
+-	UnInit();
+-}
+-
+-bool CFirewallOpener::Init(bool bPreInit)
+-{
+-	if (!m_bInited) {
+-		ASSERT(m_liAddedRules.IsEmpty());
+-		if (thePrefs.GetWindowsVersion() != _WINVER_XP_ || !SUCCEEDED(::CoInitialize(NULL)))
+-			return false;
+-		HRESULT hr = ::CoInitializeSecurity(NULL, -1, NULL, NULL, RPC_C_AUTHN_LEVEL_PKT, RPC_C_IMP_LEVEL_IMPERSONATE, NULL, EOAC_NONE, NULL);
+-		if (!SUCCEEDED(hr) || !SUCCEEDED(::CoCreateInstance(__uuidof(NetSharingManager), NULL, CLSCTX_ALL, __uuidof(INetSharingManager), (LPVOID*)&m_pINetSM))) {
+-			::CoUninitialize();
+-			return false;
+-		}
+-	}
+-	m_bInited = true;
+-	if (bPreInit) {
+-		// will return here in order to not create an instance when not really needed
+-		// preinit is only used to call CoInitializeSecurity before its too late for that (aka something else called it)
+-		// will have to look deeper into this issue in order to find a nicer way if possible
+-		return true;
+-	}
+-
+-	if (m_pINetSM == NULL) {
+-		if (!SUCCEEDED(::CoCreateInstance(__uuidof(NetSharingManager), NULL, CLSCTX_ALL, __uuidof(INetSharingManager), (LPVOID*)&m_pINetSM))) {
+-			UnInit();
+-			return false;
+-		}
+-	}
+-	return true;
+-}
+-
+-void CFirewallOpener::UnInit()
+-{
+-	if (!m_bInited)
+-		return;
+-
+-	for (INT_PTR i = m_liAddedRules.GetCount(); --i >= 0;)
+-		if (m_liAddedRules[i].m_bRemoveOnExit)
+-			RemoveRule(m_liAddedRules[i]);
+-
+-	m_liAddedRules.RemoveAll();
+-
+-	m_bInited = false;
+-	if (m_pINetSM != NULL) {
+-		m_pINetSM->Release();
+-		m_pINetSM = NULL;
+-	} else
+-		ASSERT(0);
+-	::CoUninitialize();
+-}
+-
+-bool CFirewallOpener::DoAction(const EFOCAction eAction, const CICSRuleInfo &riPortRule)
+-{
+-	if (!Init())
+-		return false;
+-	//TODO lets see if we can find a reliable method to find out the internet standard connection set by the user
+-
+-	bool bSuccess = true;
+-	bool bPartialSucceeded = false;
+-	bool bFoundAtLeastOneConn = false;
+-
+-	INetSharingEveryConnectionCollectionPtr NSECCP;
+-	IEnumVARIANTPtr varEnum;
+-	IUnknownPtr pUnk;
+-	RETURN_ON_FAIL(m_pINetSM->get_EnumEveryConnection(&NSECCP));
+-	RETURN_ON_FAIL(NSECCP->get__NewEnum(&pUnk));
+-	RETURN_ON_FAIL(pUnk->QueryInterface(__uuidof(IEnumVARIANT), (void**)&varEnum));
+-
+-	_variant_t var;
+-	while (S_OK == varEnum->Next(1, &var, NULL)) {
+-		INetConnectionPtr NCP;
+-		if (V_VT(&var) == VT_UNKNOWN
+-			&& SUCCEEDED(V_UNKNOWN(&var)->QueryInterface(__uuidof(INetConnection), (void**)&NCP)))
+-		{
+-			INetConnectionPropsPtr pNCP;
+-			if (!SUCCEEDED(m_pINetSM->get_NetConnectionProps(NCP, &pNCP)))
+-				continue;
+-			DWORD dwCharacteristics = 0;
+-			pNCP->get_Characteristics(&dwCharacteristics);
+-			if (dwCharacteristics & (NCCF_FIREWALLED)) {
+-				NETCON_MEDIATYPE MediaType = NCM_NONE;
+-				pNCP->get_MediaType(&MediaType);
+-				if ((MediaType != NCM_SHAREDACCESSHOST_LAN) && (MediaType != NCM_SHAREDACCESSHOST_RAS)) {
+-					INetSharingConfigurationPtr pNSC;
+-					if (!SUCCEEDED(m_pINetSM->get_INetSharingConfigurationForINetConnection(NCP, &pNSC)))
+-						continue;
+-					VARIANT_BOOL varbool = VARIANT_FALSE;
+-					pNSC->get_InternetFirewallEnabled(&varbool);
+-					if (varbool == VARIANT_FALSE)
+-						continue;
+-					bFoundAtLeastOneConn = true;
+-					switch (eAction) {
+-					case FOC_ADDRULE:
+-						{
+-							bool bResult;
+-							// we do not want to overwrite an existing rule
+-							if (FindRule(FOC_FINDRULEBYPORT, riPortRule, pNSC, NULL))
+-								bResult = true;
+-							else
+-								bResult = AddRule(riPortRule, pNSC, pNCP);
+-							bSuccess = bSuccess && bResult;
+-							if (bResult && !bPartialSucceeded)
+-								m_liAddedRules.Add(riPortRule); // keep track of added rules
+-							bPartialSucceeded = bPartialSucceeded || bResult;
+-							break;
+-						}
+-					case FOC_FWCONNECTIONEXISTS:
+-						return true;
+-					case FOC_DELETERULEBYNAME:
+-					case FOC_DELETERULEEXCACT:
+-						bSuccess = bSuccess && FindRule(eAction, riPortRule, pNSC, NULL);
+-						break;
+-					case FOC_FINDRULEBYNAME:
+-						if (FindRule(FOC_FINDRULEBYNAME, riPortRule, pNSC, NULL))
+-							return true;
+-						else
+-							bSuccess = false;
+-						break;
+-					case FOC_FINDRULEBYPORT:
+-						if (FindRule(FOC_FINDRULEBYPORT, riPortRule, pNSC, NULL))
+-							return true;
+-						else
+-							bSuccess = false;
+-						break;
+-					default:
+-						ASSERT(0);
+-					}
+-				}
+-			}
+-		}
+-		var.Clear();
+-	}
+-	return bSuccess && bFoundAtLeastOneConn;
+-}
+-
+-bool CFirewallOpener::AddRule(const CICSRuleInfo &riPortRule, const INetSharingConfigurationPtr &pNSC, const INetConnectionPropsPtr &pNCP)
+-{
+-	INetSharingPortMappingPtr pNSPM;
+-	HRESULT hr = pNSC->AddPortMapping(riPortRule.m_strRuleName.AllocSysString()
+-		, riPortRule.m_byProtocol
+-		, riPortRule.m_nPortNumber
+-		, riPortRule.m_nPortNumber
+-		, 0
+-		, CComBSTR(L"127.0.0.1")
+-		, ICSTT_IPADDRESS
+-		, &pNSPM);
+-	CComBSTR bstrName;
+-	pNCP->get_Name(&bstrName);
+-	const CString sName(bstrName);
+-	if (SUCCEEDED(hr) && SUCCEEDED(pNSPM->Enable())) {
+-		theApp.QueueDebugLogLine(false, _T("Succeeded to add Rule '%s' for Port '%u' on Connection '%s'"), (LPCTSTR)riPortRule.m_strRuleName, riPortRule.m_nPortNumber, (LPCTSTR)sName);
+-		return true;
+-	}
+-	theApp.QueueDebugLogLine(false, _T("Failed to add Rule '%s' for Port '%u' on Connection '%s'"), (LPCTSTR)riPortRule.m_strRuleName, riPortRule.m_nPortNumber, (LPCTSTR)sName);
+-	return false;
+-}
+-
+-bool CFirewallOpener::FindRule(const EFOCAction eAction, const CICSRuleInfo &riPortRule, const INetSharingConfigurationPtr &pNSC, INetSharingPortMappingPropsPtr *outNSPMP)
+-{
+-	INetSharingPortMappingCollectionPtr pNSPMC;
+-	RETURN_ON_FAIL(pNSC->get_EnumPortMappings(ICSSC_DEFAULT, &pNSPMC));
+-
+-	INetSharingPortMappingPtr pNSPM;
+-	IEnumVARIANTPtr varEnum;
+-	IUnknownPtr pUnk;
+-	RETURN_ON_FAIL(pNSPMC->get__NewEnum(&pUnk));
+-	RETURN_ON_FAIL(pUnk->QueryInterface(__uuidof(IEnumVARIANT), (void**)&varEnum));
+-	_variant_t var;
+-	while (S_OK == varEnum->Next(1, &var, NULL)) {
+-		INetSharingPortMappingPropsPtr pNSPMP;
+-		if (V_VT(&var) == VT_DISPATCH
+-			&& SUCCEEDED(V_DISPATCH(&var)->QueryInterface(__uuidof(INetSharingPortMapping), (void**)&pNSPM))
+-			&& SUCCEEDED(pNSPM->get_Properties(&pNSPMP)))
+-		{
+-			UCHAR ucProt = 0;
+-			long uExternal = 0;
+-			CComBSTR bstrName;
+-			pNSPMP->get_IPProtocol(&ucProt);
+-			pNSPMP->get_ExternalPort(&uExternal);
+-			pNSPMP->get_Name(&bstrName);
+-			switch (eAction) {
+-			case FOC_FINDRULEBYPORT:
+-				if (riPortRule.m_nPortNumber == uExternal && riPortRule.m_byProtocol == ucProt) {
+-					if (outNSPMP != NULL)
+-						*outNSPMP = pNSPM;
+-					return true;
+-				}
+-				break;
+-			case FOC_FINDRULEBYNAME:
+-				if (riPortRule.m_strRuleName == CString(bstrName)) {
+-					if (outNSPMP != NULL)
+-						*outNSPMP = pNSPM;
+-					return true;
+-				}
+-				break;
+-			case FOC_DELETERULEEXCACT:
+-				if (riPortRule.m_strRuleName == CString(bstrName)
+-					&& riPortRule.m_nPortNumber == uExternal && riPortRule.m_byProtocol == ucProt)
+-				{
+-					RETURN_ON_FAIL(pNSC->RemovePortMapping(pNSPM));
+-					theApp.QueueDebugLogLine(false, _T("Rule removed"));
+-				}
+-				break;
+-			case FOC_DELETERULEBYNAME:
+-				if (riPortRule.m_strRuleName == CString(bstrName)) {
+-					RETURN_ON_FAIL(pNSC->RemovePortMapping(pNSPM));
+-					theApp.QueueDebugLogLine(false, _T("Rule removed"));
+-				}
+-				break;
+-			default:
+-				ASSERT(0);
+-			}
+-		}
+-		var.Clear();
+-	}
+-
+-	return eAction == FOC_DELETERULEBYNAME || eAction == FOC_DELETERULEEXCACT;
+-}
+-
+-bool CFirewallOpener::RemoveRule(const CString &strName)
+-{
+-	return DoAction(FOC_DELETERULEBYNAME, CICSRuleInfo(0, 0, strName));
+-}
+-
+-bool CFirewallOpener::RemoveRule(const CICSRuleInfo &riPortRule)
+-{
+-	return DoAction(FOC_DELETERULEEXCACT, riPortRule);
+-}
+-
+-bool CFirewallOpener::DoesRuleExist(const CString &strName)
+-{
+-	return DoAction(FOC_FINDRULEBYNAME, CICSRuleInfo(0, 0, strName));
+-}
+-
+-bool CFirewallOpener::DoesRuleExist(const uint16 nPortNumber, const uint8 byProtocol)
+-{
+-	return DoAction(FOC_FINDRULEBYPORT, CICSRuleInfo(nPortNumber, byProtocol, _T("")));
+-}
+-
+-bool CFirewallOpener::OpenPort(const uint16 nPortNumber, const uint8 byProtocol, const CString &strRuleName, const bool bRemoveOnExit)
+-{
+-	return DoAction(FOC_ADDRULE, CICSRuleInfo(nPortNumber, byProtocol, strRuleName, bRemoveOnExit));
+-}
+-
+-bool CFirewallOpener::OpenPort(const CICSRuleInfo &riPortRule)
+-{
+-	return DoAction(FOC_ADDRULE, riPortRule);
+-}
+-
+-bool CFirewallOpener::DoesFWConnectionExist()
+-{
+-	return DoAction(FOC_FWCONNECTIONEXISTS, CICSRuleInfo());
+-}
+\ No newline at end of file
+diff --git a/srchybrid/FirewallOpener.h b/srchybrid/FirewallOpener.h
+deleted file mode 100644
+index 3f623f9..0000000
+--- a/srchybrid/FirewallOpener.h
++++ /dev/null
+@@ -1,115 +0,0 @@
+-//this file is part of eMule
+-//Copyright (C)2002-2026 Merkur ( strEmail.Format("%s@%s", "devteam", "emule-project.net") / https://www.emule-project.net )
+-//
+-//This program is free software; you can redistribute it and/or
+-//modify it under the terms of the GNU General Public License
+-//as published by the Free Software Foundation; either
+-//version 2 of the License, or (at your option) any later version.
+-//
+-//This program is distributed in the hope that it will be useful,
+-//but WITHOUT ANY WARRANTY; without even the implied warranty of
+-//MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+-//GNU General Public License for more details.
+-//
+-//You should have received a copy of the GNU General Public License
+-//along with this program; if not, write to the Free Software
+-
+-// class to configure the ICS-Firewall of Windows XP - will not work with WinXP-SP2 yet
+-
+-#pragma once
+-#include <comdef.h>
+-#include <initguid.h>
+-#include <Netcon.h>
+-
+-typedef _com_ptr_t<_com_IIID<INetSharingEveryConnectionCollection, &IID_INetSharingEveryConnectionCollection> >	INetSharingEveryConnectionCollectionPtr;
+-typedef _com_ptr_t<_com_IIID<INetConnection, &IID_INetConnection> >												INetConnectionPtr;
+-typedef _com_ptr_t<_com_IIID<INetConnectionProps, &IID_INetConnectionProps> >									INetConnectionPropsPtr;
+-typedef _com_ptr_t<_com_IIID<INetSharingPortMapping, &IID_INetSharingPortMapping> >								INetSharingPortMappingPtr;
+-typedef _com_ptr_t<_com_IIID<INetSharingConfiguration, &IID_INetSharingConfiguration> >							INetSharingConfigurationPtr;
+-typedef _com_ptr_t<_com_IIID<INetSharingPortMappingProps, &IID_INetSharingPortMappingProps> >					INetSharingPortMappingPropsPtr;
+-typedef _com_ptr_t<_com_IIID<INetSharingPortMappingCollection, &IID_INetSharingPortMappingCollection> >			INetSharingPortMappingCollectionPtr;
+-
+-enum EFOCAction
+-{
+-	FOC_ADDRULE,
+-	FOC_DELETERULEBYNAME,
+-	FOC_FINDRULEBYNAME,
+-	FOC_FINDRULEBYPORT,
+-	FOC_DELETERULEEXCACT,
+-	FOC_FWCONNECTIONEXISTS
+-};
+-
+-#define EMULE_DEFAULTRULENAME_UDP	_T("eMule_UDP_Port")
+-#define EMULE_DEFAULTRULENAME_TCP	_T("eMule_TCP_Port")
+-
+-#define NAT_PROTOCOL_TCP 6
+-#define NAT_PROTOCOL_UDP 17
+-
+-///////////////////////////////////////////////////////////////////////////////////////
+-/// CICSRuleInfo
+-class CICSRuleInfo
+-{
+-public:
+-	CICSRuleInfo()
+-		: m_nPortNumber()
+-		, m_byProtocol()
+-		, m_bRemoveOnExit()
+-	{
+-	}
+-	CICSRuleInfo(const CICSRuleInfo &ri)
+-	{
+-		*this = ri;
+-	}
+-	CICSRuleInfo(uint16 nPortNumber, uint8 byProtocol, const CString &strRuleName, bool bRemoveOnExit = false)
+-		: m_strRuleName(strRuleName)
+-		, m_nPortNumber(nPortNumber)
+-		, m_byProtocol(byProtocol)
+-		, m_bRemoveOnExit(bRemoveOnExit)
+-	{
+-	}
+-
+-	CICSRuleInfo& operator=(const CICSRuleInfo &ri)
+-	{
+-		m_nPortNumber = ri.m_nPortNumber;
+-		m_byProtocol = ri.m_byProtocol;
+-		m_strRuleName = ri.m_strRuleName;
+-		m_bRemoveOnExit = ri.m_bRemoveOnExit;
+-		return *this;
+-	}
+-
+-	CString	m_strRuleName;
+-	uint16	m_nPortNumber;
+-	uint8	m_byProtocol;
+-	bool	m_bRemoveOnExit;
+-};
+-
+-///////////////////////////////////////////////////////////////////////////////////////
+-/// CFirewallOpener
+-
+-class CFirewallOpener
+-{
+-public:
+-	CFirewallOpener();
+-	~CFirewallOpener();
+-	bool	OpenPort(const CICSRuleInfo &riPortRule);
+-	bool	OpenPort(const uint16 nPortNumber, const uint8 byProtocol, const CString &strRuleName, const bool bRemoveOnExit = false);
+-	bool	RemoveRule(const CString &strName);
+-	bool	RemoveRule(const CICSRuleInfo &riPortRule);
+-	bool	DoesRuleExist(const CString &strName);
+-	bool	DoesRuleExist(const uint16 nPortNumber, const uint8 byProtocol);
+-	bool	DoesFWConnectionExist();
+-	void	UnInit();
+-	bool	Init(bool bPreInit = false);
+-
+-protected:
+-
+-	static bool	AddRule(const CICSRuleInfo &riPortRule, const INetSharingConfigurationPtr &pNSC, const INetConnectionPropsPtr &pNCP);
+-	bool		DoAction(const EFOCAction eAction, const CICSRuleInfo &riPortRule);
+-	static bool	FindRule(const EFOCAction eAction, const CICSRuleInfo &riPortRule, const INetSharingConfigurationPtr &pNSC, INetSharingPortMappingPropsPtr *outNSPMP);
+-
+-	CArray<CICSRuleInfo> m_liAddedRules;
+-
+-private:
+-	INetSharingManager	*m_pINetSM;
+-	bool				m_bInited;
+-};
+\ No newline at end of file
+diff --git a/srchybrid/PPgConnection.cpp b/srchybrid/PPgConnection.cpp
+index 9fcf937..6790535 100644
+--- a/srchybrid/PPgConnection.cpp
++++ b/srchybrid/PPgConnection.cpp
+@@ -64,5 +64,4 @@ BEGIN_MESSAGE_MAP(CPPgConnection, CPropertyPage)
+ 	ON_BN_CLICKED(IDC_NETWORK_KADEMLIA, OnSettingsChange)
+ 	ON_WM_HELPINFO()
+-	ON_BN_CLICKED(IDC_OPENPORTS, OnBnClickedOpenPorts)
+ 	ON_BN_CLICKED(IDC_PREF_UPNPONSTART, OnSettingsChange)
+ END_MESSAGE_MAP()
+@@ -195,9 +194,4 @@ void CPPgConnection::LoadSettings()
+ 
+ 		WORD wv = thePrefs.GetWindowsVersion();
+-		// don't try on XP SP2 or higher, not needed there any more
+-		GetDlgItem(IDC_OPENPORTS)->ShowWindow(
+-			(wv == _WINVER_XP_ && !IsRunningXPSP2() && theApp.m_pFirewallOpener->DoesFWConnectionExist())
+-			? SW_SHOW : SW_HIDE);
+-
+ 		GetDlgItem(IDC_PREF_UPNPONSTART)->EnableWindow(wv != _WINVER_95_ && wv != _WINVER_98_ && wv != _WINVER_NT4_);
+ 
+@@ -370,5 +364,4 @@ void CPPgConnection::Localize()
+ 		SetDlgItemText(IDC_WIZARD, GetResString(IDS_WIZARD) + _T("..."));
+ 		SetDlgItemText(IDC_UDPDISABLE, GetResString(IDS_UDPDISABLED));
+-		SetDlgItemText(IDC_OPENPORTS, GetResString(IDS_FO_PREFBUTTON));
+ 		SetDlgItemText(IDC_STARTTEST, GetResString(IDS_STARTTEST));
+ 		SetDlgItemText(IDC_PREF_UPNPONSTART, GetResString(IDS_UPNPSTART));
+@@ -487,21 +480,4 @@ BOOL CPPgConnection::OnHelpInfo(HELPINFO*)
+ }
+ 
+-void CPPgConnection::OnBnClickedOpenPorts()
+-{
+-	OnApply();
+-	theApp.m_pFirewallOpener->RemoveRule(EMULE_DEFAULTRULENAME_UDP);
+-	theApp.m_pFirewallOpener->RemoveRule(EMULE_DEFAULTRULENAME_TCP);
+-	bool bAlreadyExisted = theApp.m_pFirewallOpener->DoesRuleExist(thePrefs.GetPort(), NAT_PROTOCOL_TCP)
+-		|| theApp.m_pFirewallOpener->DoesRuleExist(thePrefs.GetUDPPort(), NAT_PROTOCOL_UDP);
+-	bool bResult = theApp.m_pFirewallOpener->OpenPort(thePrefs.GetPort(), NAT_PROTOCOL_TCP, EMULE_DEFAULTRULENAME_TCP, false);
+-	if (thePrefs.GetUDPPort() != 0)
+-		bResult = bResult && theApp.m_pFirewallOpener->OpenPort(thePrefs.GetUDPPort(), NAT_PROTOCOL_UDP, EMULE_DEFAULTRULENAME_UDP, false);
+-	// TODO: actually, we could offer to remove the existing rules
+-	if (bResult)
+-		LocMessageBox(bAlreadyExisted ? IDS_FO_PREF_EXISTED : IDS_FO_PREF_SUCCCEEDED, MB_ICONINFORMATION | MB_OK, 0);
+-	else
+-		LocMessageBox(IDS_FO_PREF_FAILED, MB_ICONSTOP | MB_OK, 0);
+-}
+-
+ void CPPgConnection::OnStartPortTest()
+ {
+diff --git a/srchybrid/PPgConnection.h b/srchybrid/PPgConnection.h
+index 5a3b0dd..cceb2e0 100644
+--- a/srchybrid/PPgConnection.h
++++ b/srchybrid/PPgConnection.h
+@@ -41,7 +41,6 @@ protected:
+ //	afx_msg void OnBnClickedNetworkKademlia();
+ 	afx_msg void OnHelp();
+ 	afx_msg BOOL OnHelpInfo(HELPINFO*);
+-	afx_msg void OnBnClickedOpenPorts();
+ 	afx_msg void OnStartPortTest();
+ 	afx_msg void OnEnKillFocusTCP();
+ 	afx_msg void OnEnKillFocusUDP();
+diff --git a/srchybrid/PPgTweaks.cpp b/srchybrid/PPgTweaks.cpp
+index e1796df..c94944b 100644
+--- a/srchybrid/PPgTweaks.cpp
++++ b/srchybrid/PPgTweaks.cpp
+@@ -86,7 +86,6 @@ CPPgTweaks::CPPgTweaks()
+ 	, m_htiExtractMetaDataID3Lib()
+ 	, m_htiExtractMetaDataNever()
+ 	, m_htiFilterLANIPs()
+-	, m_htiFirewallStartup()
+ 	, m_htiFullAlloc()
+ 	, m_htiImportParts()
+ 	, m_htiLog2Disk()
+@@ -144,7 +143,6 @@ CPPgTweaks::CPPgTweaks()
+ 	, m_bDynUpEnabled()
+ 	, m_bExtControls()
+ 	, m_bFilterLANIPs()
+-	, m_bFirewallStartup()
+ 	, m_bFullAlloc()
+ 	, m_bImportParts()
+ 	, m_bInitializedTreeOpts()
+@@ -209,7 +207,6 @@ void CPPgTweaks::DoDataExchange(CDataExchange *pDX)
+ 		//
+ 		m_htiAutoTakeEd2kLinks = m_ctrlTreeOptions.InsertCheckBox(GetResString(IDS_AUTOTAKEED2KLINKS), TVI_ROOT, m_bAutoTakeEd2kLinks);
+ 		m_htiCreditSystem = m_ctrlTreeOptions.InsertCheckBox(GetResString(IDS_USECREDITSYSTEM), TVI_ROOT, m_bCreditSystem);
+-		m_htiFirewallStartup = m_ctrlTreeOptions.InsertCheckBox(GetResString(IDS_FO_PREF_STARTUP), TVI_ROOT, m_bFirewallStartup);
+ 		m_htiFilterLANIPs = m_ctrlTreeOptions.InsertCheckBox(GetResString(IDS_PW_FILTER), TVI_ROOT, m_bFilterLANIPs);
+ 		m_htiExtControls = m_ctrlTreeOptions.InsertCheckBox(GetResString(IDS_SHOWEXTSETTINGS), TVI_ROOT, m_bExtControls);
+ 		m_htiA4AFSaveCpu = m_ctrlTreeOptions.InsertCheckBox(GetResString(IDS_A4AF_SAVE_CPU), TVI_ROOT, m_bA4AFSaveCpu); // ZZ:DownloadManager
+@@ -324,8 +321,6 @@ void CPPgTweaks::DoDataExchange(CDataExchange *pDX)
+ 	WORD wv = thePrefs.GetWindowsVersion();
+ 	DDX_TreeCheck(pDX, IDC_EXT_OPTS, m_htiAutoTakeEd2kLinks, m_bAutoTakeEd2kLinks);
+ 	DDX_TreeCheck(pDX, IDC_EXT_OPTS, m_htiCreditSystem, m_bCreditSystem);
+-	DDX_TreeCheck(pDX, IDC_EXT_OPTS, m_htiFirewallStartup, m_bFirewallStartup);
+-	m_ctrlTreeOptions.SetCheckBoxEnable(m_htiFirewallStartup, wv == _WINVER_XP_ && !IsRunningXPSP2());
+ 	DDX_TreeCheck(pDX, IDC_EXT_OPTS, m_htiFilterLANIPs, m_bFilterLANIPs);
+ 	DDX_TreeCheck(pDX, IDC_EXT_OPTS, m_htiExtControls, m_bExtControls);
+ 	DDX_TreeCheck(pDX, IDC_EXT_OPTS, m_htiA4AFSaveCpu, m_bA4AFSaveCpu);
+@@ -458,7 +453,6 @@ BOOL CPPgTweaks::OnInitDialog()
+ 	m_bResolveShellLinks = thePrefs.GetResolveSharedShellLinks();
+ 	m_fMinFreeDiskSpaceMB = (float)(thePrefs.m_uMinFreeDiskSpace / (1024.0 * 1024.0));
+ 	m_sYourHostname = thePrefs.GetYourHostname();
+-	m_bFirewallStartup = ((thePrefs.GetWindowsVersion() == _WINVER_XP_) ? thePrefs.m_bOpenPortsOnStartUp : 0);
+ 	m_bAutoArchDisable = !thePrefs.m_bAutomaticArcPreviewStart;
+ 
+ 	m_bDynUpEnabled = thePrefs.m_bDynUpEnabled;
+@@ -589,7 +583,6 @@ BOOL CPPgTweaks::OnApply()
+ 		thePrefs.SetYourHostname(m_sYourHostname);
+ 		theApp.emuledlg->serverwnd->UpdateMyInfo();
+ 	}
+-	thePrefs.m_bOpenPortsOnStartUp = m_bFirewallStartup;
+ 
+ 	thePrefs.m_bDynUpEnabled = m_bDynUpEnabled;
+ 	thePrefs.m_minupload = (uint32)m_iDynUpMinUpload;
+@@ -688,7 +681,6 @@ void CPPgTweaks::Localize()
+ 		//LocalizeItemText(m_htiExtractMetaDataMediaDet, IDS_META_DATA_MEDIADET);
+ 		LocalizeItemText(m_htiExtractMetaDataNever, IDS_NEVER);
+ 		LocalizeItemText(m_htiFilterLANIPs, IDS_PW_FILTER);
+-		LocalizeItemText(m_htiFirewallStartup, IDS_FO_PREF_STARTUP);
+ 		LocalizeItemText(m_htiFullAlloc, IDS_FULLALLOC);
+ 		LocalizeItemText(m_htiImportParts, IDS_ENABLEIMPORTPARTS);
+ 		LocalizeItemText(m_htiLog2Disk, IDS_LOG2DISK);
+@@ -757,7 +749,6 @@ void CPPgTweaks::OnDestroy()
+ 	m_htiCheckDiskspace = NULL;
+ 	m_htiMinFreeDiskSpace = NULL;
+ 	m_htiYourHostname = NULL;
+-	m_htiFirewallStartup = NULL;
+ 	m_htiDynUp = NULL;
+ 	m_htiDynUpEnabled = NULL;
+ 	m_htiDynUpMinUpload = NULL;
+diff --git a/srchybrid/PPgTweaks.h b/srchybrid/PPgTweaks.h
+index 0e405c4..b01a261 100644
+--- a/srchybrid/PPgTweaks.h
++++ b/srchybrid/PPgTweaks.h
+@@ -53,7 +53,6 @@ protected:
+ 	//HTREEITEM m_htiExtractMetaDataMediaDet;
+ 	HTREEITEM m_htiExtractMetaDataNever;
+ 	HTREEITEM m_htiFilterLANIPs;
+-	HTREEITEM m_htiFirewallStartup;
+ 	HTREEITEM m_htiFullAlloc;
+ 	HTREEITEM m_htiImportParts;
+ 	HTREEITEM m_htiLog2Disk;
+@@ -113,7 +112,6 @@ protected:
+ 	bool m_bDynUpEnabled;
+ 	bool m_bExtControls;
+ 	bool m_bFilterLANIPs;
+-	bool m_bFirewallStartup;
+ 	bool m_bFullAlloc;
+ 	bool m_bImportParts;
+ 	bool m_bInitializedTreeOpts;
+diff --git a/srchybrid/Preferences.cpp b/srchybrid/Preferences.cpp
+index a965a41..8555c01 100644
+--- a/srchybrid/Preferences.cpp
++++ b/srchybrid/Preferences.cpp
+@@ -446,7 +446,6 @@ bool	CPreferences::m_bRunAsUser;
+ bool	CPreferences::m_bPreferRestrictedOverUser;
+ bool	CPreferences::m_bUseOldTimeRemaining;
+ 
+-bool	CPreferences::m_bOpenPortsOnStartUp;
+ int		CPreferences::m_byLogLevel;
+ bool	CPreferences::m_bTrustEveryHash;
+ bool	CPreferences::m_bRememberCancelledFiles;
+@@ -1749,7 +1748,6 @@ void CPreferences::SavePreferences()
+ 	ini.WriteBool(_T("HighresTimer"), m_bHighresTimer);
+ 	ini.WriteInt(_T("WebMirrorAlertLevel"), m_nWebMirrorAlertLevel);
+ 	ini.WriteBool(_T("RunAsUnprivilegedUser"), m_bRunAsUser);
+-	ini.WriteBool(_T("OpenPortsOnStartUp"), m_bOpenPortsOnStartUp);
+ 	ini.WriteInt(_T("DebugLogLevel"), m_byLogLevel);
+ 	ini.WriteInt(_T("WinXPSP2OrHigher"), static_cast<int>(IsRunningXPSP2OrHigher()));
+ 	ini.WriteBool(_T("RememberCancelledFiles"), m_bRememberCancelledFiles);
+@@ -2308,7 +2306,6 @@ void CPreferences::LoadPreferences()
+ 	m_bHighresTimer = ini.GetBool(_T("HighresTimer"), false);
+ 	m_bRunAsUser = ini.GetBool(_T("RunAsUnprivilegedUser"), false);
+ 	m_bPreferRestrictedOverUser = ini.GetBool(_T("PreferRestrictedOverUser"), false);
+-	m_bOpenPortsOnStartUp = ini.GetBool(_T("OpenPortsOnStartUp"), false);
+ 	m_byLogLevel = ini.GetInt(_T("DebugLogLevel"), DLP_VERYLOW);
+ 	m_bTrustEveryHash = ini.GetBool(_T("AICHTrustEveryHash"), false);
+ 	m_bRememberCancelledFiles = ini.GetBool(_T("RememberCancelledFiles"), true);
+diff --git a/srchybrid/Preferences.h b/srchybrid/Preferences.h
+index a59816e..1d63a12 100644
+--- a/srchybrid/Preferences.h
++++ b/srchybrid/Preferences.h
+@@ -612,7 +612,6 @@ public:
+ 	static bool		m_bUseOldTimeRemaining;
+ 
+ 	// Firewall settings
+-	static bool		m_bOpenPortsOnStartUp;
+ 
+ 	//AICH Options
+ 	static bool		m_bTrustEveryHash;
+@@ -1364,7 +1363,6 @@ public:
+ #endif
+ 
+ 	// Firewall settings
+-	static bool		IsOpenPortsOnStartupEnabled()		{ return m_bOpenPortsOnStartUp; }
+ 	//AICH Hash
+ 	static bool		IsTrustingEveryHash()				{ return m_bTrustEveryHash; } // this is a debug option
+ 	// Files options
+diff --git a/srchybrid/Resource.h b/srchybrid/Resource.h
+index 7dd89dd..e75edf5 100644
+--- a/srchybrid/Resource.h
++++ b/srchybrid/Resource.h
+@@ -2193,7 +2193,6 @@
+ #define IDC_CATS                        2841
+ #define IDC_STATICFI                    2842
+ #define IDC_RESET                       2843
+-#define IDC_OPENPORTS                   2844
+ #define IDC_SMILEY                      2844
+ #define IDC_TCP                         2845
+ #define IDC_UDP                         2846
+diff --git a/srchybrid/emule.rc b/srchybrid/emule.rc
+index 8dc11be..0722d29 100644
+--- a/srchybrid/emule.rc
++++ b/srchybrid/emule.rc
+@@ -375,7 +375,6 @@ BEGIN
+     LTEXT           "Static",IDC_MAXCONLABEL,117,143,86,8
+     LTEXT           "TCP",IDC_STATIC,11,86,17,8
+     GROUPBOX        "Network",IDC_CONNECTION_NETWORK,153,174,74,34
+-    PUSHBUTTON      "Set up ports on WinXP SP1 firewall",IDC_OPENPORTS,83,84,137,12,WS_DISABLED
+     CONTROL         "Use UPnP to set up Port Forwarding",IDC_PREF_UPNPONSTART,
+                     "Button",BS_AUTOCHECKBOX | WS_TABSTOP,11,116,208,10
+ END
+diff --git a/srchybrid/emule.vcxproj b/srchybrid/emule.vcxproj
+index 979942e..9d0a409 100644
+--- a/srchybrid/emule.vcxproj
++++ b/srchybrid/emule.vcxproj
+@@ -224,7 +224,6 @@
+     <ClCompile Include="FileDetailDlgStatistics.cpp" />
+     <ClCompile Include="FileIdentifier.cpp" />
+     <ClCompile Include="FileInfoDialog.cpp" />
+-    <ClCompile Include="FirewallOpener.cpp" />
+     <ClCompile Include="FrameGrabThread.cpp" />
+     <ClCompile Include="Friend.cpp" />
+     <ClCompile Include="FriendList.cpp" />
+@@ -498,7 +497,6 @@
+     <ClInclude Include="FileDetailDlgStatistics.h" />
+     <ClInclude Include="FileIdentifier.h" />
+     <ClInclude Include="FileInfoDialog.h" />
+-    <ClInclude Include="FirewallOpener.h" />
+     <ClInclude Include="FrameGrabThread.h" />
+     <ClInclude Include="Friend.h" />
+     <ClInclude Include="FriendList.h" />
