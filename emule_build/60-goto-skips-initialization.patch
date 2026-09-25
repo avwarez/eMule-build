@@ -41,10 +41,10 @@ index b4650cf..6714843 100644
  		CByteArray aEncrypted;
  		if (!Encrypt(sBodyA, aEncrypted, m_mail.sEncryptCertName))
 diff --git a/srchybrid/WebSocket.cpp b/srchybrid/WebSocket.cpp
-index d7d35e7..9a47132 100644
+index 16bec1c..95d9531 100644
 --- a/srchybrid/WebSocket.cpp
 +++ b/srchybrid/WebSocket.cpp
-@@ -297,6 +297,8 @@ UINT AFX_CDECL WebSocketAcceptedFunc(LPVOID pD)
+@@ -299,6 +299,8 @@ UINT AFX_CDECL WebSocketAcceptedFunc(LPVOID pD)
  			stWebSocket.m_dwHttpHeaderLen = 0;
  			stWebSocket.m_dwHttpContentLen = 0;
  			stWebSocket.m_ssl = &ssl;
@@ -53,7 +53,7 @@ index d7d35e7..9a47132 100644
  
  			if (thePrefs.GetWebUseHttps()) {
  				mbedtls_ssl_init(&ssl);
-@@ -310,7 +312,6 @@ UINT AFX_CDECL WebSocketAcceptedFunc(LPVOID pD)
+@@ -312,7 +314,6 @@ UINT AFX_CDECL WebSocketAcceptedFunc(LPVOID pD)
  						goto thread_exit;
  					}
  			}

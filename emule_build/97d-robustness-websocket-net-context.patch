@@ -1,8 +1,8 @@
 diff --git a/srchybrid/WebSocket.cpp b/srchybrid/WebSocket.cpp
-index d0824de..bf358d9 100644
+index f5360ee..24c2350 100644
 --- a/srchybrid/WebSocket.cpp
 +++ b/srchybrid/WebSocket.cpp
-@@ -279,6 +279,14 @@ UINT AFX_CDECL WebSocketAcceptedFunc(LPVOID pD)
+@@ -281,6 +281,14 @@ UINT AFX_CDECL WebSocketAcceptedFunc(LPVOID pD)
  
  	ASSERT(INVALID_SOCKET != hSocket);
  
@@ -17,7 +17,7 @@ index d0824de..bf358d9 100644
  	HANDLE hEvent = CreateEvent(NULL, FALSE, TRUE, NULL);
  	if (hEvent) {
  		if (!WSAEventSelect(hSocket, hEvent, FD_READ | FD_CLOSE | FD_WRITE)) {
-@@ -305,7 +313,7 @@ UINT AFX_CDECL WebSocketAcceptedFunc(LPVOID pD)
+@@ -307,7 +315,7 @@ UINT AFX_CDECL WebSocketAcceptedFunc(LPVOID pD)
  				int ret = mbedtls_ssl_setup(&ssl, &conf);
  				if (ret)
  					goto thread_exit;
@@ -26,7 +26,7 @@ index d0824de..bf358d9 100644
  				while ((ret = mbedtls_ssl_handshake(&ssl)) != 0)
  					if (ret != MBEDTLS_ERR_SSL_WANT_READ && ret != MBEDTLS_ERR_SSL_WANT_WRITE) {
  						DebugLogWarning(_T("Web Interface handshake failed: %s"), (LPCTSTR)SSLerror(ret));
-@@ -414,7 +422,7 @@ thread_exit:
+@@ -416,7 +424,7 @@ thread_exit:
  		VERIFY(::CloseHandle(hEvent));
  	}
  	if (thePrefs.GetWebUseHttps())

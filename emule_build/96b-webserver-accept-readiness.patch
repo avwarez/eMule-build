@@ -1,8 +1,8 @@
 diff --git a/srchybrid/WebSocket.cpp b/srchybrid/WebSocket.cpp
-index 9a47132..d0824de 100644
+index 95d9531..f5360ee 100644
 --- a/srchybrid/WebSocket.cpp
 +++ b/srchybrid/WebSocket.cpp
-@@ -435,53 +435,105 @@ UINT AFX_CDECL WebSocketListeningFunc(LPVOID pThis)
+@@ -437,53 +437,110 @@ UINT AFX_CDECL WebSocketListeningFunc(LPVOID pThis)
  		stAddr.sin_addr.s_addr = thePrefs.GetBindAddrA() ? inet_addr(thePrefs.GetBindAddrA()) : INADDR_ANY;
  
  		if (!bind(hSocket, (LPSOCKADDR)&stAddr, sizeof stAddr) && !listen(hSocket, SOMAXCONN)) {
@@ -47,7 +47,9 @@ index 9a47132..d0824de 100644
 +			int iLastAcceptError = 0;
 +			DWORD dwLastAcceptErrorTick = 0;
 +			u_long ulNonBlock = 1;
-+			if (!ioctlsocket(hSocket, FIONBIO, &ulNonBlock))
++			if (ioctlsocket(hSocket, FIONBIO, &ulNonBlock))
++				LogError(_T("Web Interface: Cannot listen for connections - %s"), (LPCTSTR)GetErrorMessage(::WSAGetLastError(), 1));
++			else
 +				for (;;) {
 +					if (::WaitForSingleObject(s_hTerminate, 0) != WAIT_TIMEOUT)
 +						break;
@@ -66,8 +68,11 @@ index 9a47132..d0824de 100644
 +					// incoming connection is seen.
 +					timeval stTimeout = {0, 250 * 1000};
 +					const int iReady = select(0, &stReadable, NULL, NULL, &stTimeout);
-+					if (iReady == SOCKET_ERROR)
++					if (iReady == SOCKET_ERROR) {
++						// nothing starts this thread again: say why the web interface stopped
++						LogError(_T("Web Interface: Stopped listening for connections - %s"), (LPCTSTR)GetErrorMessage(::WSAGetLastError(), 1));
 +						break;
++					}
 +					if (iReady == 0)
 +						continue;
 +
