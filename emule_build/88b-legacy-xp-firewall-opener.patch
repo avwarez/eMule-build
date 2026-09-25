@@ -506,16 +506,22 @@ index 3f623f9..0000000
 -};
 \ No newline at end of file
 diff --git a/srchybrid/PPgConnection.cpp b/srchybrid/PPgConnection.cpp
-index 9fcf937..6790535 100644
+index 9fcf937..83d08c7 100644
 --- a/srchybrid/PPgConnection.cpp
 +++ b/srchybrid/PPgConnection.cpp
-@@ -64,5 +64,4 @@ BEGIN_MESSAGE_MAP(CPPgConnection, CPropertyPage)
+@@ -27,5 +27,4 @@
+ #include "HelpIDs.h"
+ #include "Statistics.h"
+-#include "Firewallopener.h"
+ #include "ListenSocket.h"
+ #include "ClientUDPSocket.h"
+@@ -64,5 +63,4 @@ BEGIN_MESSAGE_MAP(CPPgConnection, CPropertyPage)
  	ON_BN_CLICKED(IDC_NETWORK_KADEMLIA, OnSettingsChange)
  	ON_WM_HELPINFO()
 -	ON_BN_CLICKED(IDC_OPENPORTS, OnBnClickedOpenPorts)
  	ON_BN_CLICKED(IDC_PREF_UPNPONSTART, OnSettingsChange)
  END_MESSAGE_MAP()
-@@ -195,9 +194,4 @@ void CPPgConnection::LoadSettings()
+@@ -195,9 +193,4 @@ void CPPgConnection::LoadSettings()
  
  		WORD wv = thePrefs.GetWindowsVersion();
 -		// don't try on XP SP2 or higher, not needed there any more
@@ -525,13 +531,13 @@ index 9fcf937..6790535 100644
 -
  		GetDlgItem(IDC_PREF_UPNPONSTART)->EnableWindow(wv != _WINVER_95_ && wv != _WINVER_98_ && wv != _WINVER_NT4_);
  
-@@ -370,5 +364,4 @@ void CPPgConnection::Localize()
+@@ -370,5 +363,4 @@ void CPPgConnection::Localize()
  		SetDlgItemText(IDC_WIZARD, GetResString(IDS_WIZARD) + _T("..."));
  		SetDlgItemText(IDC_UDPDISABLE, GetResString(IDS_UDPDISABLED));
 -		SetDlgItemText(IDC_OPENPORTS, GetResString(IDS_FO_PREFBUTTON));
  		SetDlgItemText(IDC_STARTTEST, GetResString(IDS_STARTTEST));
  		SetDlgItemText(IDC_PREF_UPNPONSTART, GetResString(IDS_UPNPSTART));
-@@ -487,21 +480,4 @@ BOOL CPPgConnection::OnHelpInfo(HELPINFO*)
+@@ -487,21 +479,4 @@ BOOL CPPgConnection::OnHelpInfo(HELPINFO*)
  }
  
 -void CPPgConnection::OnBnClickedOpenPorts()
