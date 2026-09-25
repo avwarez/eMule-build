@@ -689,21 +689,24 @@ index a965a41..8555c01 100644
  	m_bTrustEveryHash = ini.GetBool(_T("AICHTrustEveryHash"), false);
  	m_bRememberCancelledFiles = ini.GetBool(_T("RememberCancelledFiles"), true);
 diff --git a/srchybrid/Preferences.h b/srchybrid/Preferences.h
-index a59816e..1d63a12 100644
+index a59816e..fd8bee3 100644
 --- a/srchybrid/Preferences.h
 +++ b/srchybrid/Preferences.h
-@@ -612,7 +612,6 @@ public:
+@@ -611,9 +611,6 @@ public:
+ 
  	static bool		m_bUseOldTimeRemaining;
  
- 	// Firewall settings
+-	// Firewall settings
 -	static bool		m_bOpenPortsOnStartUp;
- 
+-
  	//AICH Options
  	static bool		m_bTrustEveryHash;
-@@ -1364,7 +1363,6 @@ public:
+ 
+@@ -1363,8 +1360,6 @@ public:
+ 	static int		GetDebugSearchResultDetailLevel()	{ return 0; }
  #endif
  
- 	// Firewall settings
+-	// Firewall settings
 -	static bool		IsOpenPortsOnStartupEnabled()		{ return m_bOpenPortsOnStartUp; }
  	//AICH Hash
  	static bool		IsTrustingEveryHash()				{ return m_bTrustEveryHash; } // this is a debug option
