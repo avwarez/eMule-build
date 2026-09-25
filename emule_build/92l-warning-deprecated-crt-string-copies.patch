@@ -1,0 +1,313 @@
+diff --git a/srchybrid/CaptchaGenerator.cpp b/srchybrid/CaptchaGenerator.cpp
+index 66e9021..8a7b479 100644
+--- a/srchybrid/CaptchaGenerator.cpp
++++ b/srchybrid/CaptchaGenerator.cpp
+@@ -65,7 +65,7 @@ void CCaptchaGenerator::ReGenerateCaptcha(uint32 nLetterCount)
+ 	LOGFONT lf = { 0 };
+ 	lf.lfHeight = nFontSize;
+ 	lf.lfWeight = FW_HEAVY;
+-	_tcsncpy(lf.lfFaceName, _T("Arial"), LF_FACESIZE - 1);	// For UNICODE support
++	_tcsncpy_s(lf.lfFaceName, _countof(lf.lfFaceName), _T("Arial"), _TRUNCATE);	// For UNICODE support
+ 	HFONT hFont = CreateFontIndirect(&lf);
+ 
+ 	HDC hdc = ::CreateCompatibleDC(NULL);
+diff --git a/srchybrid/CustomAutoComplete.cpp b/srchybrid/CustomAutoComplete.cpp
+index e021f24..b387b47 100644
+--- a/srchybrid/CustomAutoComplete.cpp
++++ b/srchybrid/CustomAutoComplete.cpp
+@@ -228,7 +228,7 @@ STDMETHODIMP CCustomAutoComplete::Next(ULONG celt, LPOLESTR *rgelt, ULONG *pcelt
+ 			break;
+ 
+ 		rgelt[i] = (LPWSTR)::CoTaskMemAlloc(sizeof(WCHAR) * ((SIZE_T)m_asList[m_nCurrentElement].GetLength() + 1));
+-		wcscpy(rgelt[i], (CStringW)m_asList[m_nCurrentElement]);
++		wcscpy_s(rgelt[i], (SIZE_T)m_asList[m_nCurrentElement].GetLength() + 1, (CStringW)m_asList[m_nCurrentElement]);
+ 
+ 		if (pceltFetched)
+ 			++(*pceltFetched);
+diff --git a/srchybrid/DirectoryTreeCtrl.cpp b/srchybrid/DirectoryTreeCtrl.cpp
+index d97f431..edf61e2 100644
+--- a/srchybrid/DirectoryTreeCtrl.cpp
++++ b/srchybrid/DirectoryTreeCtrl.cpp
+@@ -209,7 +209,7 @@ void CDirectoryTreeCtrl::Init()
+ 		for (LPCTSTR pos = drivebuffer; *pos != _T('\0');) {
+ 			// Copy drive name
+ 			TCHAR drive[4];
+-			_tcsncpy(drive, pos, _countof(drive));
++			_tcsncpy_s(drive, _countof(drive), pos, 2);
+ 			drive[2] = _T('\0');
+ 			AddChildItem(NULL, drive); // e.g. "C:"
+ 
+diff --git a/srchybrid/DownloadListCtrl.cpp b/srchybrid/DownloadListCtrl.cpp
+index 3903fd8..1d3a604 100644
+--- a/srchybrid/DownloadListCtrl.cpp
++++ b/srchybrid/DownloadListCtrl.cpp
+@@ -2345,7 +2345,7 @@ void CDownloadListCtrl::OnLvnGetInfoTip(LPNMHDR pNMHDR, LRESULT *pResult)
+ 			}
+ 
+ 			info += TOOLTIP_AUTOFORMAT_SUFFIX_CH;
+-			_tcsncpy(pGetInfoTip->pszText, info, pGetInfoTip->cchTextMax);
++			_tcsncpy_s(pGetInfoTip->pszText, pGetInfoTip->cchTextMax, info, _TRUNCATE);
+ 			pGetInfoTip->pszText[pGetInfoTip->cchTextMax - 1] = _T('\0');
+ 		}
+ 	}
+diff --git a/srchybrid/FileInfoDialog.cpp b/srchybrid/FileInfoDialog.cpp
+index 9761875..8545255 100644
+--- a/srchybrid/FileInfoDialog.cpp
++++ b/srchybrid/FileInfoDialog.cpp
+@@ -769,7 +769,7 @@ wchar_t* ID3_GetStringW(const ID3_Frame *frame, ID3_FieldID fldName)
+ 	CStringW wstr(text);
+ 	delete[] text;
+ 	wchar_t *pwsz = new wchar_t[wstr.GetLength() + 1];
+-	wcscpy(pwsz, wstr);
++	wcscpy_s(pwsz, (size_t)wstr.GetLength() + 1, wstr);
+ 	return pwsz;
+ }
+ 
+diff --git a/srchybrid/HTRichEditCtrl.cpp b/srchybrid/HTRichEditCtrl.cpp
+index 1ff83c4..ad2eb7b 100644
+--- a/srchybrid/HTRichEditCtrl.cpp
++++ b/srchybrid/HTRichEditCtrl.cpp
+@@ -749,7 +749,7 @@ void CHTRichEditCtrl::SetFont(CFont *pFont, BOOL bRedraw)
+ 
+ 	cf.dwMask |= CFM_FACE;
+ 	cf.bPitchAndFamily = lf.lfPitchAndFamily;
+-	_tcsncpy(cf.szFaceName, lf.lfFaceName, _countof(cf.szFaceName));
++	_tcsncpy_s(cf.szFaceName, _countof(cf.szFaceName), lf.lfFaceName, _TRUNCATE);
+ 	cf.szFaceName[_countof(cf.szFaceName) - 1] = _T('\0');
+ 
+ 	// although this should work correctly (according to SDK) it may give false results (e.g. the "click here..." text
+diff --git a/srchybrid/IPFilterDlg.cpp b/srchybrid/IPFilterDlg.cpp
+index ec4f03f..eb1489d 100644
+--- a/srchybrid/IPFilterDlg.cpp
++++ b/srchybrid/IPFilterDlg.cpp
+@@ -244,13 +244,13 @@ void CIPFilterDlg::OnLvnGetDispInfoIPFilter(LPNMHDR pNMHDR, LRESULT *pResult)
+ 		switch (rItem.iSubItem) {
+ 		case IPFILTER_COL_START:
+ 			if (rItem.cchTextMax > 0) {
+-				_tcsncpy(rItem.pszText, (LPCTSTR)ipstr(htonl(m_ppIPFilterItems[rItem.iItem]->start)), rItem.cchTextMax);
++				_tcsncpy_s(rItem.pszText, rItem.cchTextMax, (LPCTSTR)ipstr(htonl(m_ppIPFilterItems[rItem.iItem]->start)), _TRUNCATE);
+ 				rItem.pszText[rItem.cchTextMax - 1] = _T('\0');
+ 			}
+ 			break;
+ 		case IPFILTER_COL_END:
+ 			if (rItem.cchTextMax > 0) {
+-				_tcsncpy(rItem.pszText, (LPCTSTR)ipstr(htonl(m_ppIPFilterItems[rItem.iItem]->end)), rItem.cchTextMax);
++				_tcsncpy_s(rItem.pszText, rItem.cchTextMax, (LPCTSTR)ipstr(htonl(m_ppIPFilterItems[rItem.iItem]->end)), _TRUNCATE);
+ 				rItem.pszText[rItem.cchTextMax - 1] = _T('\0');
+ 			}
+ 			break;
+@@ -268,7 +268,7 @@ void CIPFilterDlg::OnLvnGetDispInfoIPFilter(LPNMHDR pNMHDR, LRESULT *pResult)
+ 			break;
+ 		case IPFILTER_COL_DESC:
+ 			if (rItem.cchTextMax > 0) {
+-				_tcsncpy(rItem.pszText, (CString)m_ppIPFilterItems[rItem.iItem]->desc, rItem.cchTextMax);
++				_tcsncpy_s(rItem.pszText, rItem.cchTextMax, (CString)m_ppIPFilterItems[rItem.iItem]->desc, _TRUNCATE);
+ 				rItem.pszText[rItem.cchTextMax - 1] = _T('\0');
+ 			}
+ 		}
+diff --git a/srchybrid/Mdump.cpp b/srchybrid/Mdump.cpp
+index ebc11e9..c19f478 100644
+--- a/srchybrid/Mdump.cpp
++++ b/srchybrid/Mdump.cpp
+@@ -41,12 +41,12 @@ void CMiniDumper::Enable(LPCTSTR pszAppName, bool bShowErrors, LPCTSTR pszDumpDi
+ {
+ 	// This assert fires if you have two instances of CMiniDumper which is not allowed
+ 	ASSERT(*m_szAppName == _T('\0'));
+-	_tcsncpy(m_szAppName, pszAppName, _countof(m_szAppName));
++	_tcsncpy_s(m_szAppName, _countof(m_szAppName), pszAppName, _TRUNCATE);
+ 	m_szAppName[_countof(m_szAppName) - 1] = _T('\0');
+ 
+ 	// eMule may not have the permission to create a DMP file in the directory where the "emule.exe" is located.
+ 	// Need to pre-determine a valid directory.
+-	_tcsncpy(m_szDumpDir, pszDumpDir, _countof(m_szDumpDir));
++	_tcsncpy_s(m_szDumpDir, _countof(m_szDumpDir) - 1, pszDumpDir, _TRUNCATE);
+ 	m_szDumpDir[_countof(m_szDumpDir) - 2] = _T('\0');
+ 	::PathAddBackslash(m_szDumpDir);
+ 
+diff --git a/srchybrid/MuleToolBarCtrl.cpp b/srchybrid/MuleToolBarCtrl.cpp
+index 57d885e..932584d 100644
+--- a/srchybrid/MuleToolBarCtrl.cpp
++++ b/srchybrid/MuleToolBarCtrl.cpp
+@@ -481,7 +481,7 @@ void CMuleToolbarCtrl::OnTbnGetButtonInfo(LPNMHDR pNMHDR, LRESULT *pResult)
+ 	if (*pResult) {
+ 		CString strText(TBStrings[pNMTB->iItem]);
+ 		strText.Remove(_T('&'));
+-		_tcsncpy(pNMTB->pszText, strText, pNMTB->cchText - 1);
++		_tcsncpy_s(pNMTB->pszText, pNMTB->cchText, strText, _TRUNCATE);
+ 		pNMTB->pszText[pNMTB->cchText - 1] = _T('\0');
+ 		pNMTB->tbButton = TBButtons[pNMTB->iItem];
+ 		if (m_eLabelType == LabelsRight)
+diff --git a/srchybrid/OtherFunctions.cpp b/srchybrid/OtherFunctions.cpp
+index b19e6c9..ccca9f7 100644
+--- a/srchybrid/OtherFunctions.cpp
++++ b/srchybrid/OtherFunctions.cpp
+@@ -345,7 +345,7 @@ bool ShellDeleteFile(LPCTSTR pszFilePath)
+ 		return true;
+ 	if (thePrefs.GetRemoveToBin()) {
+ 		TCHAR todel[MAX_PATH + 1] = {};
+-		_tcsncpy(todel, pszFilePath, _countof(todel) - 2);
++		_tcsncpy_s(todel, _countof(todel) - 1, pszFilePath, _TRUNCATE);
+ 
+ 		SHFILEOPSTRUCT fp = {};
+ 		fp.wFunc = FO_DELETE;
+@@ -400,7 +400,7 @@ CString URLDecode(const CString &inStr, bool bKeepNewLine)
+ 	hexstr[2] = _T('\0');
+ 	for (int x = 0; x < inStr.GetLength(); ++x) {
+ 		if (inStr[x] == _T('%') && x + 2 < inStr.GetLength() && _istxdigit(inStr[x + 1]) && _istxdigit(inStr[x + 2])) {
+-			_tcsncpy(hexstr, inStr.Mid(x + 1, 2), 2);
++			_tcsncpy_s(hexstr, _countof(hexstr), inStr.Mid(x + 1, 2), 2);
+ 			x += 2;
+ 
+ 			// Convert the hex to ASCII
+@@ -3399,7 +3399,7 @@ bool CopyTextToClipboard(const CString &strText)
+ 	if (hGlobalT != NULL) {
+ 		LPTSTR pGlobalT = static_cast<LPTSTR>(::GlobalLock(hGlobalT));
+ 		if (pGlobalT != NULL) {
+-			_tcscpy(pGlobalT, strText);
++			_tcscpy_s(pGlobalT, (size_t)strText.GetLength() + 1, strText);
+ 			::GlobalUnlock(hGlobalT);
+ 		} else {
+ 			::GlobalFree(hGlobalT);
+@@ -3412,7 +3412,7 @@ bool CopyTextToClipboard(const CString &strText)
+ 	if (hGlobalA != NULL) {
+ 		LPSTR pGlobalA = static_cast<LPSTR>(::GlobalLock(hGlobalA));
+ 		if (pGlobalA != NULL) {
+-			strcpy(pGlobalA, strTextA);
++			strcpy_s(pGlobalA, (size_t)strTextA.GetLength() + 1, strTextA);
+ 			::GlobalUnlock(hGlobalA);
+ 		} else {
+ 			::GlobalFree(hGlobalA);
+@@ -3478,7 +3478,7 @@ bool CreatePointFont(CFont &rFont, int nPointSize, LPCTSTR lpszFaceName)
+ 	LOGFONT logFont = {};
+ 	logFont.lfCharSet = DEFAULT_CHARSET;
+ 	logFont.lfHeight = nPointSize;
+-	_tcsncpy(logFont.lfFaceName, lpszFaceName, _countof(logFont.lfFaceName));
++	_tcsncpy_s(logFont.lfFaceName, _countof(logFont.lfFaceName), lpszFaceName, _TRUNCATE);
+ 	return CreatePointFontIndirect(rFont, &logFont);
+ }
+ 
+@@ -3976,7 +3976,7 @@ bool _tmakepathlimit(LPTSTR path, LPCTSTR drive, LPCTSTR dir, LPCTSTR fname, LPC
+ 		ASSERT(0);
+ 		return false;
+ 	}
+-	_tcscpy(path, tchBuffer);
++	_tcscpy_s(path, MAX_PATH, tchBuffer);
+ 	return true;
+ }
+ 
+@@ -3995,7 +3995,7 @@ void makepathabs(CString &sPath)
+ 	if (::PathIsRelative(sPath)) {
+ 		TCHAR szFullResPath[MAX_PATH];
+ 		TCHAR szSkinResFolder[MAX_PATH];
+-		_tcsncpy(szSkinResFolder, thePrefs.GetSkinProfile(), _countof(szSkinResFolder));
++		_tcsncpy_s(szSkinResFolder, _countof(szSkinResFolder), thePrefs.GetSkinProfile(), _TRUNCATE);
+ 		szSkinResFolder[_countof(szSkinResFolder) - 1] = _T('\0');
+ 		::PathRemoveFileSpec(szSkinResFolder);
+ 		_tmakepathlimit(szFullResPath, NULL, szSkinResFolder, sPath, NULL);
+diff --git a/srchybrid/PartFile.cpp b/srchybrid/PartFile.cpp
+index 1a5354a..e22c655 100644
+--- a/srchybrid/PartFile.cpp
++++ b/srchybrid/PartFile.cpp
+@@ -2789,12 +2789,13 @@ BOOL CPartFile::PerformFileComplete()
+ 	// If that function is invoked from within the file completion thread, it's OK if we wait (and block) the thread.
+ 	CSingleLock sLock(&m_FileCompleteMutex, TRUE);
+ 
+-	TCHAR *newfilename = _tcsdup(GetFileName());
++	// Duplicate the already stripped name: stripping appends '_' to a bare reserved device name
++	// (CON, NUL...), so copying it back over a copy of the original overran that buffer by one.
++	TCHAR *newfilename = _tcsdup(StripInvalidFilenameChars(GetFileName()));
+ 	if (!newfilename)
+ 		return FALSE;
+ 
+ 	const CString &strPartfilename(RemoveFileExtension(m_fullname));
+-	_tcscpy(newfilename, (LPCTSTR)StripInvalidFilenameChars(newfilename));
+ 
+ 	CString indir;
+ 	if (::PathFileExists(thePrefs.GetCategory(GetCategory())->strIncomingPath))
+diff --git a/srchybrid/SearchListCtrl.cpp b/srchybrid/SearchListCtrl.cpp
+index 55128a3..a49186b 100644
+--- a/srchybrid/SearchListCtrl.cpp
++++ b/srchybrid/SearchListCtrl.cpp
+@@ -1107,7 +1107,7 @@ void CSearchListCtrl::OnLvnGetInfoTip(LPNMHDR pNMHDR, LRESULT *pResult)
+ #endif
+ 				strInfo.Insert(0, strHead);
+ 				strInfo += TOOLTIP_AUTOFORMAT_SUFFIX_CH;
+-				_tcsncpy(pGetInfoTip->pszText, strInfo, pGetInfoTip->cchTextMax);
++				_tcsncpy_s(pGetInfoTip->pszText, pGetInfoTip->cchTextMax, strInfo, _TRUNCATE);
+ 				pGetInfoTip->pszText[pGetInfoTip->cchTextMax - 1] = _T('\0');
+ 			}
+ 		} else {
+@@ -1129,7 +1129,7 @@ void CSearchListCtrl::OnLvnGetInfoTip(LPNMHDR pNMHDR, LRESULT *pResult)
+ 					, (LPCTSTR)FormatFileSize(ulTotalSize)
+ 					, TOOLTIP_AUTOFORMAT_SUFFIX_CH
+ 				);
+-				_tcsncpy(pGetInfoTip->pszText, strInfo, pGetInfoTip->cchTextMax);
++				_tcsncpy_s(pGetInfoTip->pszText, pGetInfoTip->cchTextMax, strInfo, _TRUNCATE);
+ 				pGetInfoTip->pszText[pGetInfoTip->cchTextMax - 1] = _T('\0');
+ 			}
+ 		}
+diff --git a/srchybrid/ServerListCtrl.cpp b/srchybrid/ServerListCtrl.cpp
+index 6f618cd..1bc023b 100644
+--- a/srchybrid/ServerListCtrl.cpp
++++ b/srchybrid/ServerListCtrl.cpp
+@@ -761,7 +761,7 @@ void CServerListCtrl::OnLvnGetInfoTip(LPNMHDR pNMHDR, LRESULT *pResult)
+ 				, (LPCTSTR)GetResString(IDS_IDLOW), (LPCTSTR)CastItoIShort(ulTotalLowIdUsers)
+ 				, (LPCTSTR)GetResString(IDS_PW_FILES), (LPCTSTR)CastItoIShort(ulTotalFiles)
+ 			);
+-			_tcsncpy(pGetInfoTip->pszText, strInfo, pGetInfoTip->cchTextMax);
++			_tcsncpy_s(pGetInfoTip->pszText, pGetInfoTip->cchTextMax, strInfo, _TRUNCATE);
+ 			pGetInfoTip->pszText[pGetInfoTip->cchTextMax - 1] = _T('\0');
+ 		}
+ 	}
+diff --git a/srchybrid/SharedFilesCtrl.cpp b/srchybrid/SharedFilesCtrl.cpp
+index 594fc89..c59f579 100644
+--- a/srchybrid/SharedFilesCtrl.cpp
++++ b/srchybrid/SharedFilesCtrl.cpp
+@@ -1438,7 +1438,7 @@ void CSharedFilesCtrl::OnLvnGetInfoTip(LPNMHDR pNMHDR, LRESULT *pResult)
+ 		if (pFile && pGetInfoTip->pszText && pGetInfoTip->cchTextMax > 0) {
+ 			CString strInfo(pFile->GetInfoSummary());
+ 			strInfo += TOOLTIP_AUTOFORMAT_SUFFIX_CH;
+-			_tcsncpy(pGetInfoTip->pszText, strInfo, pGetInfoTip->cchTextMax);
++			_tcsncpy_s(pGetInfoTip->pszText, pGetInfoTip->cchTextMax, strInfo, _TRUNCATE);
+ 			pGetInfoTip->pszText[pGetInfoTip->cchTextMax - 1] = _T('\0');
+ 		}
+ 	}
+diff --git a/srchybrid/TaskbarNotifier.cpp b/srchybrid/TaskbarNotifier.cpp
+index 33ae4d2..968fe19 100644
+--- a/srchybrid/TaskbarNotifier.cpp
++++ b/srchybrid/TaskbarNotifier.cpp
+@@ -141,7 +141,7 @@ bool CTaskbarNotifier::LoadConfiguration(LPCTSTR pszFilePath)
+ 	TCHAR szConfigDir[MAX_PATH];
+ 	m_strConfigFilePath = pszFilePath;
+ 	CIni ini(pszFilePath, _T("Config"));
+-	_tcsncpy(szConfigDir, pszFilePath, _countof(szConfigDir));
++	_tcsncpy_s(szConfigDir, _countof(szConfigDir), pszFilePath, _TRUNCATE);
+ 	szConfigDir[_countof(szConfigDir) - 1] = _T('\0');
+ 	LPTSTR pszFileName = _tcsrchr(szConfigDir, _T('\\'));
+ 	if (pszFileName == NULL)
+diff --git a/srchybrid/TrayDialog.cpp b/srchybrid/TrayDialog.cpp
+index 48bf556..d6b4d75 100644
+--- a/srchybrid/TrayDialog.cpp
++++ b/srchybrid/TrayDialog.cpp
+@@ -111,7 +111,7 @@ void CTrayDialog::TraySetIcon(LPCTSTR lpszResourceName)
+ void CTrayDialog::TraySetToolTip(LPCTSTR lpszToolTip)
+ {
+ 	ASSERT(*lpszToolTip != '\0' && _tcslen(lpszToolTip) < NOTIFYICONDATA_TIP_SIZE);
+-	_tcsncpy(m_nidIconData.szTip, lpszToolTip, NOTIFYICONDATA_TIP_SIZE);
++	_tcsncpy_s(m_nidIconData.szTip, NOTIFYICONDATA_TIP_SIZE, lpszToolTip, _TRUNCATE);
+ 	m_nidIconData.szTip[NOTIFYICONDATA_TIP_SIZE - 1] = _T('\0');
+ 	m_nidIconData.uFlags |= NIF_TIP;
+ 
+diff --git a/srchybrid/UploadListCtrl.cpp b/srchybrid/UploadListCtrl.cpp
+index 1dfbbe6..c96e799 100644
+--- a/srchybrid/UploadListCtrl.cpp
++++ b/srchybrid/UploadListCtrl.cpp
+@@ -268,7 +268,7 @@ void CUploadListCtrl::OnLvnGetInfoTip(LPNMHDR pNMHDR, LRESULT *pResult)
+ 				strInfo += GetResString(IDS_REQ_UNKNOWNFILE);
+ 
+ 			strInfo += TOOLTIP_AUTOFORMAT_SUFFIX_CH;
+-			_tcsncpy(pGetInfoTip->pszText, strInfo, pGetInfoTip->cchTextMax);
++			_tcsncpy_s(pGetInfoTip->pszText, pGetInfoTip->cchTextMax, strInfo, _TRUNCATE);
+ 			pGetInfoTip->pszText[pGetInfoTip->cchTextMax - 1] = _T('\0');
+ 		}
+ 	}
