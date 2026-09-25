@@ -3,7 +3,7 @@ index 9a47132..d0824de 100644
 --- a/srchybrid/WebSocket.cpp
 +++ b/srchybrid/WebSocket.cpp
 @@ -435,53 +435,105 @@ UINT AFX_CDECL WebSocketListeningFunc(LPVOID pThis)
- 		stAddr.sin_addr.s_addr = thePrefs.GetBindAddrA() ? IPv4FromStringA(thePrefs.GetBindAddrA()) : INADDR_ANY;
+ 		stAddr.sin_addr.s_addr = thePrefs.GetBindAddrA() ? inet_addr(thePrefs.GetBindAddrA()) : INADDR_ANY;
  
  		if (!bind(hSocket, (LPSOCKADDR)&stAddr, sizeof stAddr) && !listen(hSocket, SOMAXCONN)) {
 -			HANDLE hEvent = CreateEvent(NULL, FALSE, TRUE, NULL);
