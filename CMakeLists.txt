@@ -61,8 +61,12 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 # The numeric prefixes in emule_build/ also group the patches by why they
 # exist, which is the first thing you want to know when one of them stops
 # applying after a submodule bump:
-#   00-89  the code does not compile as-is (a dependency's API changed, or
+#   00-87  the code does not compile as-is (a dependency's API changed, or
 #          the C++ standard we build at removed the construct).
+#   88     legacy features taken out: code that only ever ran on Windows
+#          versions we no longer target, or that nothing calls any more.
+#          Each patch removes one feature, down to its resources and ini keys
+#          (the translated strings stay, the language DLLs still carry them).
 #   90-94  the code compiles but /Wall flags it; these bring the warning
 #          count back to zero.
 #   95-96  the code compiles and is warning-clean but is not correct on
@@ -83,11 +87,58 @@ find_package(Git REQUIRED)
 function(emule_apply_patches _submodule _patch_dir)
     file(GLOB _patches "${CMAKE_SOURCE_DIR}/${_patch_dir}/*.patch")
     list(SORT _patches)
+    set(_src "${CMAKE_SOURCE_DIR}/${_submodule}")
+
+    # Re-configuring a tree that already carries the whole series: undo the
+    # patches newest-first on a throwaway index, never on the files. If every
+    # one of them reverses, the series is in place and there is nothing to do.
+    # The per-patch check below cannot tell on its own once two patches edit
+    # neighbouring lines - reversing the older one alone then fails on the
+    # context the newer one removed, and it would be applied a second time.
+    # On a fresh checkout the newest patch already fails to reverse, so this
+    # costs one git call and changes nothing.
+    list(LENGTH _patches _n_patches)
+    if(_n_patches GREATER 0)
+        set(_index "${CMAKE_BINARY_DIR}/emule_apply_patches_${_submodule}.index")
+        file(REMOVE "${_index}")
+        execute_process(
+            COMMAND ${CMAKE_COMMAND} -E env "GIT_INDEX_FILE=${_index}"
+                    ${GIT_EXECUTABLE} -c core.autocrlf=false add -A
+            WORKING_DIRECTORY "${_src}"
+            RESULT_VARIABLE _snapshot_result
+            OUTPUT_QUIET ERROR_QUIET
+        )
+        set(_series_applied FALSE)
+        if(_snapshot_result EQUAL 0)
+            set(_series_applied TRUE)
+            set(_newest_first ${_patches})
+            list(REVERSE _newest_first)
+            foreach(_patch IN LISTS _newest_first)
+                execute_process(
+                    COMMAND ${CMAKE_COMMAND} -E env "GIT_INDEX_FILE=${_index}"
+                            ${GIT_EXECUTABLE} apply --cached --ignore-whitespace --reverse "${_patch}"
+                    WORKING_DIRECTORY "${_src}"
+                    RESULT_VARIABLE _reverse_result
+                    OUTPUT_QUIET ERROR_QUIET
+                )
+                if(NOT _reverse_result EQUAL 0)
+                    set(_series_applied FALSE)
+                    break()
+                endif()
+            endforeach()
+        endif()
+        file(REMOVE "${_index}")
+        if(_series_applied)
+            message(STATUS "${_submodule}: all ${_n_patches} patches in ${_patch_dir} already applied")
+            return()
+        endif()
+    endif()
+
     foreach(_patch IN LISTS _patches)
         get_filename_component(_patch_name "${_patch}" NAME)
         execute_process(
             COMMAND ${GIT_EXECUTABLE} apply --ignore-whitespace --check --reverse "${_patch}"
-            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/${_submodule}"
+            WORKING_DIRECTORY "${_src}"
             RESULT_VARIABLE _already_applied
             OUTPUT_QUIET ERROR_QUIET
         )
@@ -97,7 +148,7 @@ function(emule_apply_patches _submodule _patch_dir)
             message(STATUS "${_submodule}: applying ${_patch_dir}/${_patch_name}")
             execute_process(
                 COMMAND ${GIT_EXECUTABLE} apply --ignore-whitespace "${_patch}"
-                WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/${_submodule}"
+                WORKING_DIRECTORY "${_src}"
                 RESULT_VARIABLE _apply_result
             )
             if(NOT _apply_result EQUAL 0)
