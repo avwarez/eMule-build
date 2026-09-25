@@ -120,7 +120,7 @@ index fa48d0b..3748a59 100644
  	return ip >= filter->start && ip <= filter->end;
  }
 diff --git a/srchybrid/OtherFunctions.cpp b/srchybrid/OtherFunctions.cpp
-index 62e8cc1..23728a1 100644
+index 62e8cc1..e41e082 100644
 --- a/srchybrid/OtherFunctions.cpp
 +++ b/srchybrid/OtherFunctions.cpp
 @@ -2698,12 +2698,15 @@ CString ipstr(uint32 nIP, uint16 nPort)
@@ -141,7 +141,7 @@ index 62e8cc1..23728a1 100644
  }
  
  void ipstrA(CHAR *pszAddress, int iMaxAddress, uint32 nIP)
-@@ -2712,6 +2715,25 @@ void ipstrA(CHAR *pszAddress, int iMaxAddress, uint32 nIP)
+@@ -2712,6 +2715,28 @@ void ipstrA(CHAR *pszAddress, int iMaxAddress, uint32 nIP)
  	snprintf(pszAddress, iMaxAddress, "%u.%u.%u.%u", pucIP[0], pucIP[1], pucIP[2], pucIP[3]);
  }
  
@@ -151,9 +151,12 @@ index 62e8cc1..23728a1 100644
 +	// INADDR_NONE. WSAStringToAddress() parses the same forms (dotted decimal, and the shorter,
 +	// octal and hexadecimal ones), but it wants the whole string to be the address, while
 +	// inet_addr() stopped at the first blank; and it also takes a ":port" suffix, which
-+	// inet_addr() refused.
++	// inet_addr() refused. And it read a lone blank as 0.0.0.0, as ws2_32's conformance tests in
++	// Wine pin down for Windows.
 +	if (pszAddress == NULL)
 +		return INADDR_NONE;
++	if (pszAddress[0] == ' ' && pszAddress[1] == '\0')
++		return 0;
 +	CStringW strAddress(pszAddress, (int)strcspn(pszAddress, " \t\n\v\f\r"));
 +	if (strAddress.IsEmpty() || strAddress.Find(L':') >= 0)
 +		return INADDR_NONE;
