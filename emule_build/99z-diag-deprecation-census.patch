@@ -1,0 +1,22 @@
+diff --git a/srchybrid/Stdafx.h b/srchybrid/Stdafx.h
+index bce1dfe..5d27ec1 100644
+--- a/srchybrid/Stdafx.h
++++ b/srchybrid/Stdafx.h
+@@ -111,7 +111,7 @@
+ // _CRT_SECURE_NO_DEPRECATE - Disable all warnings for not using "_s" functions.
+ //
+ #ifndef _CRT_SECURE_NO_DEPRECATE
+-#define _CRT_SECURE_NO_DEPRECATE
++//#define _CRT_SECURE_NO_DEPRECATE // 99z census: C4996 left visible
+ #endif
+ 
+ // _CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES - Overloads all standard string functions (e.g. strcpy) with "_s" functions
+@@ -142,7 +142,7 @@
+ 
+ //Windows XP compatibility requires 'inet_addr' and 'WSAAsyncGetHostByName' (warning C4996)
+ #ifndef _WINSOCK_DEPRECATED_NO_WARNINGS
+-#define _WINSOCK_DEPRECATED_NO_WARNINGS
++//#define _WINSOCK_DEPRECATED_NO_WARNINGS // 99z census: C4996 left visible
+ #endif
+ 
+ #endif//_MSC_VER>=1400
