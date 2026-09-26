@@ -1,0 +1,97 @@
+diff --git a/srchybrid/UPnPImplMiniLib.cpp b/srchybrid/UPnPImplMiniLib.cpp
+index 3594a08..80d40a5 100644
+--- a/srchybrid/UPnPImplMiniLib.cpp
++++ b/srchybrid/UPnPImplMiniLib.cpp
+@@ -53,6 +53,8 @@ CUPnPImplMiniLib::CUPnPImplMiniLib()
+ 
+ CUPnPImplMiniLib::~CUPnPImplMiniLib()
+ {
++	// the discovery thread works on this object: it must be gone before the object is
++	StopAsyncFind();
+ 	Cleanup();
+ }
+ 
+@@ -69,19 +71,18 @@ void CUPnPImplMiniLib::StopAsyncFind()
+ {
+ 	if (m_hThreadHandle != NULL) {
+ 		m_bAbortDiscovery = true;	// if there is a thread, tell it to abort as soon as possible - it won't send a Result message when aborted
+-		CSingleLock lockTest(&m_mutBusy);
+-		if (lockTest.Lock(SEC2MS(7)))	// give the thread 7 seconds to exit gracefully - it should never really take that long
+-			DebugLog(_T("Aborted any possible UPnP StartDiscoveryThread"));
+-		else {
+-			// that is quite bad, something seems to be locked up. There is no a good solution here, we need the thread to quit
+-			// or it might try to access the object later, but terminating is quite bad too. Well.
+-			DebugLogError(_T("Waiting for UPnP StartDiscoveryThread to quit failed, trying to terminate the thread..."));
+-
+-			if (m_hThreadHandle != NULL)
+-				DebugLogError(::TerminateThread(m_hThreadHandle, 0) ? _T("...OK") : _T("...Failed"));
+-			else
+-				ASSERT(0);
++		// The thread itself is waited for, not only the lock it takes, so that one which has
++		// not reached its Lock() yet cannot start working after this returns. It is never
++		// terminated: a thread killed from outside can leave a lock taken for good - the CRT
++		// heap's among them - and the object it works on is freed right after this.
++		// miniupnpc bounds every network wait it makes (select() with a timeout on each
++		// read, the system's connect timeout), so this wait ends too.
++		if (::WaitForSingleObject(m_hThreadHandle, SEC2MS(7)) == WAIT_TIMEOUT) {
++			DebugLogWarning(_T("UPnP StartDiscoveryThread is still busy, waiting for it to finish..."));
++			VERIFY(::WaitForSingleObject(m_hThreadHandle, INFINITE) == WAIT_OBJECT_0);
+ 		}
++		DebugLog(_T("Aborted any possible UPnP StartDiscoveryThread"));
++		VERIFY(::CloseHandle(m_hThreadHandle));
+ 		m_hThreadHandle = NULL;
+ 	}
+ 	m_bAbortDiscovery = false;
+@@ -383,8 +384,27 @@ void CUPnPImplMiniLib::Cleanup()
+ 
+ void CUPnPImplMiniLib::StartThread()
+ {
++	// the handle of the previous run, if that thread has finished; one still running keeps
++	// the busy lock, so the new thread would give up at once and nothing is started
++	if (m_hThreadHandle != NULL) {
++		if (::WaitForSingleObject(m_hThreadHandle, 0) == WAIT_TIMEOUT) {
++			DebugLogWarning(_T("CUPnPImplMiniLib::StartThread, another Mapping try is still running"));
++			return;
++		}
++		VERIFY(::CloseHandle(m_hThreadHandle));
++		m_hThreadHandle = NULL;
++	}
+ 	CStartDiscoveryThread *pStartDiscoveryThread = (CStartDiscoveryThread*)AfxBeginThread(RUNTIME_CLASS(CStartDiscoveryThread), THREAD_PRIORITY_NORMAL, 0, CREATE_SUSPENDED);
+-	m_hThreadHandle = pStartDiscoveryThread->m_hThread;
++	if (pStartDiscoveryThread == NULL) {
++		DebugLogError(_T("CUPnPImplMiniLib::StartThread, failed to create the discovery thread"));
++		return;
++	}
++	// AfxBeginThread's thread deletes itself and closes its own handle when it ends: the
++	// handle kept for StopAsyncFind() is a duplicate that this object owns and closes
++	if (!::DuplicateHandle(::GetCurrentProcess(), pStartDiscoveryThread->m_hThread, ::GetCurrentProcess(), &m_hThreadHandle, SYNCHRONIZE, FALSE, 0)) {
++		DebugLogError(_T("CUPnPImplMiniLib::StartThread, cannot keep a handle to the discovery thread: %s"), (LPCTSTR)GetErrorMessage(::GetLastError()));
++		m_hThreadHandle = NULL;
++	}
+ 	pStartDiscoveryThread->SetValues(this);
+ 	pStartDiscoveryThread->ResumeThread();
+ }
+\ No newline at end of file
+diff --git a/srchybrid/WebSocket.cpp b/srchybrid/WebSocket.cpp
+index 24c2350..881f1b1 100644
+--- a/srchybrid/WebSocket.cpp
++++ b/srchybrid/WebSocket.cpp
+@@ -682,10 +682,14 @@ void StopSockets()
+ 
+ 			DWORD dwWaitRes = ::WaitForSingleObject(s_pSocketThread->m_hThread, 1300);
+ 			if (dwWaitRes == WAIT_TIMEOUT) {
+-				TRACE("*** Failed to wait for websocket thread termination - Timeout\n");
+-				VERIFY(::TerminateThread(s_pSocketThread->m_hThread, _UI32_MAX));
+-				VERIFY(::CloseHandle(s_pSocketThread->m_hThread));
+-			} else if (dwWaitRes == WAIT_FAILED) {
++				// The listening thread looks at s_hTerminate at least four times a second, so
++				// it ends; it is never terminated, as a thread killed from outside can leave a
++				// lock taken for good - the CRT heap's among them. (Terminating it also closed
++				// m_hThread here, which the CWinThread destructor below then closed again.)
++				DebugLogWarning(_T("Web Interface: the listening thread is still busy, waiting for it to finish..."));
++				dwWaitRes = ::WaitForSingleObject(s_pSocketThread->m_hThread, INFINITE);
++			}
++			if (dwWaitRes == WAIT_FAILED) {
+ 				TRACE("*** Failed to wait for websocket thread termination - Error %d\n", CAsyncSocket::GetLastError());
+ 				ASSERT(0); // probably invalid thread handle
+ 			}
