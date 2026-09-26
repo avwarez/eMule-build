@@ -79,10 +79,10 @@ index 749f251..cd8e44c 100644
  					// We are connected to the proxy but it failed to connect to the peer.
  					if (thePrefs.GetVerbose() && iter->str && iter->str[0] != '\0')
 diff --git a/srchybrid/EmuleDlg.cpp b/srchybrid/EmuleDlg.cpp
-index 3d7905f..8ede112 100644
+index cd73398..e34c1ec 100644
 --- a/srchybrid/EmuleDlg.cpp
 +++ b/srchybrid/EmuleDlg.cpp
-@@ -678,6 +678,7 @@ void CALLBACK CemuleDlg::StartupTimer(HWND /*hwnd*/, UINT /*uiMsg*/, UINT_PTR /*
+@@ -680,6 +680,7 @@ void CALLBACK CemuleDlg::StartupTimer(HWND /*hwnd*/, UINT /*uiMsg*/, UINT_PTR /*
  			++theApp.emuledlg->status;
  			theApp.sharedfiles->SetOutputCtrl(&theApp.emuledlg->sharedfileswnd->sharedfilesctrl);
  			++theApp.emuledlg->status;
@@ -90,7 +90,7 @@ index 3d7905f..8ede112 100644
  		case 1:
  			break;
  		case 2:
-@@ -689,6 +690,7 @@ void CALLBACK CemuleDlg::StartupTimer(HWND /*hwnd*/, UINT /*uiMsg*/, UINT_PTR /*
+@@ -691,6 +692,7 @@ void CALLBACK CemuleDlg::StartupTimer(HWND /*hwnd*/, UINT /*uiMsg*/, UINT_PTR /*
  				LogError(LOG_STATUSBAR, _T("Failed to initialize server list - Unknown exception"));
  			}
  			++theApp.emuledlg->status;
@@ -98,7 +98,7 @@ index 3d7905f..8ede112 100644
  		case 3:
  			break;
  		case 4:
-@@ -1299,6 +1301,7 @@ void CemuleDlg::ProcessED2KLink(LPCWSTR pszData)
+@@ -1301,6 +1303,7 @@ void CemuleDlg::ProcessED2KLink(LPCWSTR pszData)
  				SetActiveDialog(searchwnd);
  				searchwnd->ProcessEd2kSearchLinkRequest(pListLink->GetSearchTerm());
  			}
@@ -200,10 +200,10 @@ index bd13bcc..f839317 100644
  				continue;
  			case PB_ERROR:
 diff --git a/srchybrid/Preferences.cpp b/srchybrid/Preferences.cpp
-index d9f976e..6f2fd4b 100644
+index 16aa4f9..e796f99 100644
 --- a/srchybrid/Preferences.cpp
 +++ b/srchybrid/Preferences.cpp
-@@ -2900,6 +2900,7 @@ CString CPreferences::GetDefaultDirectory(EDefaultDirectory eDirectory, bool bCr
+@@ -2902,6 +2902,7 @@ CString CPreferences::GetDefaultDirectory(EDefaultDirectory eDirectory, bool bCr
  							strSelectedDataBaseDirectory = strPublicDownloads + _T("eMule\\");
  							strSelectedConfigBaseDirectory = strProgramData + _T("eMule\\");
  							strSelectedExpansionBaseDirectory = strProgramData + _T("eMule\\");

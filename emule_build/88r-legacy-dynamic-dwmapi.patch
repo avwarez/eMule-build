@@ -1,0 +1,83 @@
+diff --git a/srchybrid/EmuleDlg.cpp b/srchybrid/EmuleDlg.cpp
+index 3d7905f..cd73398 100644
+--- a/srchybrid/EmuleDlg.cpp
++++ b/srchybrid/EmuleDlg.cpp
+@@ -31,6 +31,8 @@
+ #include <share.h>
+ #include <dbt.h>
+ #include <uxtheme.h>
++#include <dwmapi.h>
++#pragma comment(lib, "dwmapi.lib")
+ #include "emule.h"
+ #include "emuleDlg.h"
+ #include "otherfunctions.h"
+@@ -3758,26 +3760,18 @@ void CemuleDlg::SetTaskbarIconColor()
+ 	bool bTransparent = false;
+ 	COLORREF cr = RGB(0, 0, 0);
+ 	if (thePrefs.IsRunningAeroGlassTheme()) {
+-		HMODULE hDWMAPI = ::LoadLibrary(_T("dwmapi.dll"));
+-		if (hDWMAPI) {
+-			HRESULT(WINAPI *pfnDwmGetColorizationColor)(DWORD*, BOOL*);
+-			(FARPROC&)pfnDwmGetColorizationColor = ::GetProcAddress(hDWMAPI, "DwmGetColorizationColor");
+-			if (pfnDwmGetColorizationColor != NULL) {
+-				DWORD dwGlassColor;
+-				BOOL bOpaque;
+-				if (pfnDwmGetColorizationColor(&dwGlassColor, &bOpaque) == S_OK) {
+-					uint8 byAlpha = (uint8)(dwGlassColor >> 24);
+-					cr = 0xFFFFFF & dwGlassColor;
+-					if (byAlpha < 200 && !bOpaque) {
+-						// on transparent themes we can never figure out what exact color is shown
+-						// (if we could in real time?), but given that a color is blended against
+-						// the background, it is a good guess that a bright speedbar will be
+-						// the best solution in most cases
+-						bTransparent = true;
+-					}
+-				}
++		DWORD dwGlassColor;
++		BOOL bOpaque;
++		if (::DwmGetColorizationColor(&dwGlassColor, &bOpaque) == S_OK) {
++			uint8 byAlpha = (uint8)(dwGlassColor >> 24);
++			cr = 0xFFFFFF & dwGlassColor;
++			if (byAlpha < 200 && !bOpaque) {
++				// on transparent themes we can never figure out what exact color is shown
++				// (if we could in real time?), but given that a color is blended against
++				// the background, it is a good guess that a bright speedbar will be
++				// the best solution in most cases
++				bTransparent = true;
+ 			}
+-			::FreeLibrary(hDWMAPI);
+ 		}
+ 	} else if (::IsThemeActive() && ::IsAppThemed()) {
+ 		CWnd tmpWnd;
+diff --git a/srchybrid/Preferences.cpp b/srchybrid/Preferences.cpp
+index d9f976e..16aa4f9 100644
+--- a/srchybrid/Preferences.cpp
++++ b/srchybrid/Preferences.cpp
+@@ -17,6 +17,8 @@
+ #include "stdafx.h"
+ #include <share.h>
+ #include <iphlpapi.h>
++#include <dwmapi.h>
++#pragma comment(lib, "dwmapi.lib")
+ #include "emule.h"
+ #include "Preferences.h"
+ #include "Opcodes.h"
+@@ -3026,16 +3028,7 @@ bool CPreferences::IsRunningAeroGlassTheme()
+ 	if (!bAeroAlreadyDetected) {
+ 		bAeroAlreadyDetected = true;
+ 		m_bIsRunningAeroGlass = FALSE;
+-		if (GetWindowsVersion() >= _WINVER_VISTA_) {
+-			HMODULE hDWMAPI = ::LoadLibrary(_T("dwmapi.dll"));
+-			if (hDWMAPI) {
+-				HRESULT(WINAPI *pfnDwmIsCompositionEnabled)(BOOL*);
+-				(FARPROC&)pfnDwmIsCompositionEnabled = ::GetProcAddress(hDWMAPI, "DwmIsCompositionEnabled");
+-				if (pfnDwmIsCompositionEnabled != NULL)
+-					pfnDwmIsCompositionEnabled(&m_bIsRunningAeroGlass);
+-				::FreeLibrary(hDWMAPI);
+-			}
+-		}
++		::DwmIsCompositionEnabled(&m_bIsRunningAeroGlass);
+ 	}
+ 	return m_bIsRunningAeroGlass != FALSE;
+ }
+\ No newline at end of file

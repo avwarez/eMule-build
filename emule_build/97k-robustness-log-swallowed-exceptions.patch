@@ -350,10 +350,10 @@ index 9f7c445..be32c82 100644
  			ex->Delete();
  			break;
 diff --git a/srchybrid/EmuleDlg.cpp b/srchybrid/EmuleDlg.cpp
-index cd0f14c..93b7e73 100644
+index 398441d..88e4b98 100644
 --- a/srchybrid/EmuleDlg.cpp
 +++ b/srchybrid/EmuleDlg.cpp
-@@ -1822,6 +1822,7 @@ void CemuleDlg::OnTrayLButtonUp()
+@@ -1824,6 +1824,7 @@ void CemuleDlg::OnTrayLButtonUp()
  			m_pMiniMule->SetForegroundWindow();
  			m_pMiniMule->BringWindowToTop();
  		} catch (...) {
@@ -361,7 +361,7 @@ index cd0f14c..93b7e73 100644
  			ASSERT(0);
  			m_pMiniMule = NULL;
  		}
-@@ -1855,6 +1856,7 @@ void CemuleDlg::OnTrayRButtonUp(CPoint pt)
+@@ -1857,6 +1858,7 @@ void CemuleDlg::OnTrayRButtonUp(CPoint pt)
  			, thePrefs.GetMaxGraphUploadRate(true), thePrefs.GetMaxGraphDownloadRate()
  			, thePrefs.GetMaxUpload(), thePrefs.GetMaxDownload());
  	} catch (...) {
@@ -369,7 +369,7 @@ index cd0f14c..93b7e73 100644
  		return;
  	}
  
-@@ -2787,6 +2789,7 @@ void CemuleDlg::ShowSplash()
+@@ -2789,6 +2791,7 @@ void CemuleDlg::ShowSplash()
  		try {
  			m_pSplashWnd = new CSplashScreen;
  		} catch (...) {
@@ -377,7 +377,7 @@ index cd0f14c..93b7e73 100644
  			return;
  		}
  		ASSERT(m_hWnd);
-@@ -3464,8 +3467,10 @@ void CemuleDlg::StartUPnP(bool bReset, uint16 nForceTCPPort, uint16 nForceUDPPor
+@@ -3466,8 +3469,10 @@ void CemuleDlg::StartUPnP(bool bReset, uint16 nForceTCPPort, uint16 nForceUDPPor
  			} else
  				/*theApp.emuledlg->*/PostMessage(UM_UPNP_RESULT, (WPARAM)CUPnPImpl::UPNP_FAILED, 0);
  		} catch (const CUPnPImpl::UPnPError&) {
@@ -388,7 +388,7 @@ index cd0f14c..93b7e73 100644
  			ex->Delete();
  		}
  	} else
-@@ -3489,8 +3494,10 @@ void CemuleDlg::RefreshUPnP(bool bRequestAnswer)
+@@ -3491,8 +3496,10 @@ void CemuleDlg::RefreshUPnP(bool bRequestAnswer)
  			} else
  				DebugLogWarning(_T("RefreshUPnP, implementation not ready"));
  		} catch (const CUPnPImpl::UPnPError&) {
@@ -873,10 +873,10 @@ index 0f78ee9..bc4d8a5 100644
  		return;
  	}
 diff --git a/srchybrid/Preferences.cpp b/srchybrid/Preferences.cpp
-index 2370838..1c703b0 100644
+index 938457e..c8b2b85 100644
 --- a/srchybrid/Preferences.cpp
 +++ b/srchybrid/Preferences.cpp
-@@ -570,6 +570,7 @@ void CPreferences::Init()
+@@ -572,6 +572,7 @@ void CPreferences::Init()
  				}
  			}
  		} catch (CFileException *ex) {
@@ -884,7 +884,7 @@ index 2370838..1c703b0 100644
  			ASSERT(0);
  			ex->Delete();
  		}
-@@ -591,6 +592,7 @@ void CPreferences::Init()
+@@ -593,6 +594,7 @@ void CPreferences::Init()
  					addresses_list.AddTail(toadd);
  			}
  		} catch (CFileException *ex) {
