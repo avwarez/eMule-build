@@ -1,0 +1,22 @@
+diff --git a/srchybrid/PartFile.cpp b/srchybrid/PartFile.cpp
+index f839317..0f78ee9 100644
+--- a/srchybrid/PartFile.cpp
++++ b/srchybrid/PartFile.cpp
+@@ -2789,12 +2789,15 @@ BOOL CPartFile::PerformFileComplete()
+ 	// If that function is invoked from within the file completion thread, it's OK if we wait (and block) the thread.
+ 	CSingleLock sLock(&m_FileCompleteMutex, TRUE);
+ 
+-	TCHAR *newfilename = _tcsdup(GetFileName());
++	// The buffer is sized for the name after StripInvalidFilenameChars(), which can be
++	// longer than the name it was given: a reserved device name such as "CON" or "NUL"
++	// gets an underscore appended, and copying that back over a copy of the original
++	// name wrote past the end of it. The file name comes from the network.
++	TCHAR *newfilename = _tcsdup(StripInvalidFilenameChars(GetFileName()));
+ 	if (!newfilename)
+ 		return FALSE;
+ 
+ 	const CString &strPartfilename(RemoveFileExtension(m_fullname));
+-	_tcscpy(newfilename, (LPCTSTR)StripInvalidFilenameChars(newfilename));
+ 
+ 	CString indir;
+ 	if (::PathFileExists(thePrefs.GetCategory(GetCategory())->strIncomingPath))
