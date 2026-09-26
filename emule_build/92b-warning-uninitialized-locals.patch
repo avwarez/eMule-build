@@ -75,7 +75,7 @@ index 37f33a7..e5f5eaa 100644
  CString GetVideoFormatName(DWORD biCompression)
  {
 diff --git a/srchybrid/MuleSystrayDlg.cpp b/srchybrid/MuleSystrayDlg.cpp
-index d21b42b..9bb976d 100644
+index f561351..b631881 100644
 --- a/srchybrid/MuleSystrayDlg.cpp
 +++ b/srchybrid/MuleSystrayDlg.cpp
 @@ -107,8 +107,6 @@ void CMuleSystrayDlg::OnMouseMove(UINT nFlags, CPoint point)
@@ -96,7 +96,7 @@ index d21b42b..9bb976d 100644
  
  	CWnd *p = GetDlgItem(IDC_SPEED);
  	bool bValidFont = (p != NULL);
-@@ -304,7 +302,6 @@ BOOL CMuleSystrayDlg::OnInitDialog()
+@@ -302,7 +300,6 @@ BOOL CMuleSystrayDlg::OnInitDialog()
  	return TRUE;  // return TRUE unless you set the focus to the control
  				  // EXCEPTION: OCX Property Pages should return FALSE
  }

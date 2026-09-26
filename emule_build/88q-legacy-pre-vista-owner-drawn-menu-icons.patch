@@ -1,0 +1,304 @@
+diff --git a/srchybrid/OtherFunctions.cpp b/srchybrid/OtherFunctions.cpp
+index 66129a4..e6ce323 100644
+--- a/srchybrid/OtherFunctions.cpp
++++ b/srchybrid/OtherFunctions.cpp
+@@ -4009,83 +4009,6 @@ int bestclr(const RGBQUAD* const palette, const BGR c)
+ 	return best;
+ }
+ 
+-static HBITMAP GreyBitmap(const HBITMAP inbmp)
+-{
+-	BITMAP bm;
+-	if (!inbmp || ::GetObject(inbmp, sizeof bm, &bm) != sizeof bm)
+-		return 0;
+-	ASSERT(bm.bmBitsPixel != 16); //not implemented
+-
+-#define BGR2GREY(b,g,r) (((b)*117+(g)*601+(r)*306)>>10)
+-
+-	HDC hdc = ::CreateCompatibleDC(NULL);
+-	HBITMAP hbmPrev = (HBITMAP)::SelectObject(hdc, inbmp);
+-	struct {
+-		BITMAPINFOHEADER bmiHeader;
+-		RGBQUAD bmiColors[256];
+-	} bmiGrey = { {0} };
+-	bmiGrey.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+-	bmiGrey.bmiHeader.biWidth = bm.bmWidth;
+-	bmiGrey.bmiHeader.biHeight = bm.bmHeight;
+-	bmiGrey.bmiHeader.biPlanes = bm.bmPlanes;
+-	bmiGrey.bmiHeader.biBitCount = bm.bmBitsPixel;
+-	bmiGrey.bmiHeader.biCompression = BI_RGB;
+-	if (bm.bmBitsPixel <= 8) { //1, 2, 4, 8 bpp
+-		DWORD i = ::GetDIBColorTable(hdc, 0, _countof(bmiGrey.bmiColors), bmiGrey.bmiColors);
+-		bmiGrey.bmiHeader.biClrUsed = i;
+-		while (i-- > 0) {
+-			BYTE b = BGR2GREY(bmiGrey.bmiColors[i].rgbBlue, bmiGrey.bmiColors[i].rgbGreen, bmiGrey.bmiColors[i].rgbRed);
+-			bmiGrey.bmiColors[i] = RGBQUAD{b, b, b, bmiGrey.bmiColors[i].rgbReserved};
+-		}
+-	}
+-
+-	BYTE *pBits;
+-	HBITMAP outbmp = ::CreateDIBSection(NULL, (BITMAPINFO*)&bmiGrey, DIB_RGB_COLORS, (void**)&pBits, NULL, 0);
+-	if (outbmp) {
+-		HDC hdcMem = ::CreateCompatibleDC(NULL);
+-		HBITMAP hBitmapOld = (HBITMAP)::SelectObject(hdcMem, outbmp);
+-		::BitBlt(hdcMem, 0, 0, bm.bmWidth, bm.bmHeight, hdc, 0, 0, SRCCOPY);
+-		::SelectObject(hdcMem, hBitmapOld);
+-		::DeleteDC(hdcMem);
+-		if (bm.bmBitsPixel >= 24) {
+-			int step = bm.bmBitsPixel / 8;
+-			for (int i = bm.bmHeight; --i >= 0;) {
+-				BYTE *d = pBits;
+-				for (int j = bm.bmWidth; --j >= 0;) {
+-					BYTE g = (BYTE)BGR2GREY(d[0], d[1], d[2]);
+-					d[0] = d[1] = d[2] = g;
+-					d += step;
+-				}
+-				pBits += bm.bmWidthBytes;
+-			}
+-		}
+-	}
+-
+-	::SelectObject(hdc, hbmPrev);
+-	::DeleteDC(hdc);
+-	return outbmp;
+-}
+-
+-// Create grey-scaled icon for WinXP and lower
+-static HICON GreyIcon(const HICON hIcon)
+-{
+-	HICON hGreyIcon = 0;
+-	if (hIcon) {
+-		ICONINFO iinfo;
+-		if (::GetIconInfo(hIcon, &iinfo)) {
+-			HBITMAP hGreyBmp = GreyBitmap(iinfo.hbmColor);
+-			::DeleteObject(iinfo.hbmColor);
+-			if (hGreyBmp) {
+-				iinfo.hbmColor = hGreyBmp;
+-				hGreyIcon = ::CreateIconIndirect(&iinfo);
+-				::DeleteObject(hGreyBmp);
+-			}
+-			::DeleteObject(iinfo.hbmMask);
+-		}
+-	}
+-	return hGreyIcon;
+-}
+-
+ byte* bmp2mem(HBITMAP hbmp, size_t &size, REFGUID imgfmt)
+ {
+ 	if (hbmp) {
+@@ -4121,20 +4044,4 @@ HBITMAP mem2bmp(const byte *inbuf, const size_t size)
+ 			return img.Detach();
+ 	}
+ 	return 0;
+-}
+-
+-HICON ReplaceIconGreyedInImageList(CImageList &rList, int nPos)
+-{
+-	if (nPos >= 0 && nPos < rList.GetImageCount()) {
+-		HICON hIcon = rList.ExtractIcon(nPos);
+-		if (hIcon) {
+-			HICON hGreyIcon = GreyIcon(hIcon);
+-			if (hGreyIcon) {
+-				VERIFY(rList.Replace(nPos, hGreyIcon) == nPos);
+-				VERIFY(::DestroyIcon(hGreyIcon));
+-			}
+-		}
+-		return hIcon;
+-	}
+-	return 0;
+ }
+\ No newline at end of file
+diff --git a/srchybrid/OtherFunctions.h b/srchybrid/OtherFunctions.h
+index a16322b..f9b31a3 100644
+--- a/srchybrid/OtherFunctions.h
++++ b/srchybrid/OtherFunctions.h
+@@ -350,7 +350,6 @@ struct BGR //order of colours in bitmap and palette
+ int			bestclr(const RGBQUAD *const palette, const BGR c);
+ byte*		bmp2mem(HBITMAP hbmp, size_t &size, REFGUID imgfmt);
+ HBITMAP		mem2bmp(const byte *inbuf, const size_t size);
+-HICON		ReplaceIconGreyedInImageList(CImageList &rList, int nPos);
+ 
+ ///////////////////////////////////////////////////////////////////////////////
+ // MD4/MD5 helpers
+diff --git a/srchybrid/TitledMenu.cpp b/srchybrid/TitledMenu.cpp
+index 9d7b27b..176b480 100644
+--- a/srchybrid/TitledMenu.cpp
++++ b/srchybrid/TitledMenu.cpp
+@@ -37,7 +37,6 @@ CTitledMenu::CTitledMenu()
+ 	, m_bDrawEdge()
+ 	, m_bIconMenu()
+ {
+-	m_mapMenuIdToIconIdx.InitHashTable(29);
+ }
+ 
+ CTitledMenu::~CTitledMenu()
+@@ -47,10 +46,6 @@ CTitledMenu::~CTitledMenu()
+ 
+ void CTitledMenu::DeleteIcons()
+ {
+-	m_ImageList.DeleteImageList();
+-	m_mapIconNameToIconIdx.RemoveAll();
+-	m_mapMenuIdToIconIdx.RemoveAll();
+-
+ 	CString strKey;
+ 	for (POSITION pos = m_mapIconNameToBitmap.GetStartPosition(); pos != NULL;) {
+ 		void *pvBmp;
+@@ -62,9 +57,6 @@ void CTitledMenu::DeleteIcons()
+ 
+ BOOL CTitledMenu::CreateMenu()
+ {
+-	ASSERT(m_mapIconNameToIconIdx.IsEmpty());
+-	ASSERT(m_mapMenuIdToIconIdx.IsEmpty());
+-	ASSERT(m_ImageList.m_hImageList == NULL || m_ImageList.GetImageCount() == 0);
+ 	ASSERT(m_mapIconNameToBitmap.IsEmpty());
+ 	return __super::CreateMenu();
+ }
+@@ -97,8 +89,6 @@ void CTitledMenu::AddMenuTitle(LPCTSTR lpszTitle, bool bIsIconMenu)
+ void CTitledMenu::EnableIcons()
+ {
+ 	m_bIconMenu = true;
+-	m_ImageList.DeleteImageList();
+-	m_ImageList.Create(ICONSIZE, ICONSIZE, theApp.m_iDfltImageListColorFlags | ILC_MASK, 0, 1);
+ 
+ 	MENUINFO mi;
+ 	mi.cbSize = (DWORD)sizeof mi;
+@@ -108,7 +98,7 @@ void CTitledMenu::EnableIcons()
+ 	SetMenuInfo(&mi);
+ }
+ 
+-// NOTE: This function is no longer used for Vista!
++// Only the title item is owner drawn, and only when no Vista theme is active
+ void CTitledMenu::MeasureItem(LPMEASUREITEMSTRUCT lpMIS)
+ {
+ 	if (lpMIS->itemID == MP_TITLE) {
+@@ -123,16 +113,11 @@ void CTitledMenu::MeasureItem(LPMEASUREITEMSTRUCT lpMIS)
+ 		static const int nBorderSize = 2;
+ 		lpMIS->itemWidth = size.cx + nBorderSize;
+ 		lpMIS->itemHeight = size.cy + nBorderSize;
+-	} else {
++	} else
+ 		CMenu::MeasureItem(lpMIS);
+-		if (m_bIconMenu) {
+-			lpMIS->itemHeight = max(lpMIS->itemHeight, 16);
+-			lpMIS->itemWidth += 18;
+-		}
+-	}
+ }
+ 
+-// NOTE: This function is no longer used for Vista!
++// Only the title item is owner drawn, and only when no Vista theme is active
+ void CTitledMenu::DrawItem(LPDRAWITEMSTRUCT lpDIS)
+ {
+ 	if (lpDIS->itemID == MP_TITLE) {
+@@ -171,19 +156,6 @@ void CTitledMenu::DrawItem(LPDRAWITEMSTRUCT lpDIS)
+ 		::SetTextColor(lpDIS->hDC, crOld);
+ 		::SetBkMode(lpDIS->hDC, iOldBkMode);
+ 		::SetBkColor(lpDIS->hDC, crOldBk);
+-	} else {
+-		int nIconPos;
+-		if (m_mapMenuIdToIconIdx.Lookup(lpDIS->itemID, nIconPos)) {
+-			int posY = lpDIS->rcItem.top + ((lpDIS->rcItem.bottom - lpDIS->rcItem.top) - ICONSIZE) / 2;
+-			CDC *dc = CDC::FromHandle(lpDIS->hDC);
+-			HICON hIcon = (lpDIS->itemState & ODS_GRAYED) ? ReplaceIconGreyedInImageList(m_ImageList, nIconPos) : 0;
+-			// Draw the bitmap on the menu.
+-			m_ImageList.Draw(dc, nIconPos, CPoint(lpDIS->rcItem.left, posY), ILD_TRANSPARENT);
+-			if (hIcon) { //restore coloured icon
+-				m_ImageList.Replace(nIconPos, hIcon);
+-				::DestroyIcon(hIcon);
+-			}
+-		}
+ 	}
+ }
+ 
+@@ -287,56 +259,28 @@ void CTitledMenu::SetMenuBitmap(UINT nFlags, UINT nIDNewItem, LPCTSTR /*lpszNewI
+ 	CString strIconLower(lpszIconName);
+ 	if (strIconLower.MakeLower().IsEmpty())
+ 		return;
+-	if (thePrefs.GetWindowsVersion() >= _WINVER_VISTA_) {
+-		// Vista+: Use the Windows built-in feature for 32-bit menu item bitmaps.
+-		// 'MeasureItem', 'DrawItem' will not get called any longer and Vista
+-		// cares properly about grayed/selected menu item bitmaps.
+-		HBITMAP hBmp;
+-		void *pvBmp;
+-		if (m_mapIconNameToBitmap.Lookup(strIconLower, pvBmp))
+-			hBmp = (HBITMAP)pvBmp;
+-		else {
+-			HICON hIcon = theApp.LoadIcon(strIconLower);
+-			if (hIcon) {
+-				hBmp = IconToBitmap32(hIcon, ICONSIZE, ICONSIZE);
+-				VERIFY(::DestroyIcon(hIcon));
+-			} else
+-				hBmp = NULL;
+-		}
+-
+-		if (hBmp) {
+-			MENUITEMINFO info = {};
+-			info.cbSize = (UINT)sizeof info;
+-			info.fMask = MIIM_BITMAP;
+-			info.hbmpItem = hBmp;
+-			VERIFY(SetMenuItemInfo(nIDNewItem, &info, FALSE));
+-			m_mapIconNameToBitmap[strIconLower] = hBmp;
+-		}
+-	} else {
+-		// pre-Vista: Use owner drawn menu items which are handled in 'MeasureItem' and 'DrawItem'
+-		int nPos;
+-		void *pvIndex;
+-		if (m_mapIconNameToIconIdx.Lookup(strIconLower, pvIndex)) {
+-			nPos = (int)pvIndex;
+-			m_mapMenuIdToIconIdx[nIDNewItem] = nPos;
+-		} else {
+-			HICON hIcon = theApp.LoadIcon(strIconLower);
+-			if (!hIcon)
+-				return;
+-			nPos = m_ImageList.Add(hIcon);
+-			if (nPos >= 0) {
+-				m_mapIconNameToIconIdx[strIconLower] = (void*)nPos;
+-				m_mapMenuIdToIconIdx[nIDNewItem] = nPos;
+-			}
++	// Use the Windows built-in feature for 32-bit menu item bitmaps, which
++	// cares properly about grayed/selected menu item bitmaps.
++	HBITMAP hBmp;
++	void *pvBmp;
++	if (m_mapIconNameToBitmap.Lookup(strIconLower, pvBmp))
++		hBmp = (HBITMAP)pvBmp;
++	else {
++		HICON hIcon = theApp.LoadIcon(strIconLower);
++		if (hIcon) {
++			hBmp = IconToBitmap32(hIcon, ICONSIZE, ICONSIZE);
+ 			VERIFY(::DestroyIcon(hIcon));
+-		}
+-		if (nPos != -1) {
+-			MENUITEMINFO info = {};
+-			info.cbSize = (UINT)sizeof info;
+-			info.fMask = MIIM_BITMAP;
+-			info.hbmpItem = HBMMENU_CALLBACK;
+-			VERIFY(SetMenuItemInfo(nIDNewItem, &info, FALSE));
+-		}
++		} else
++			hBmp = NULL;
++	}
++
++	if (hBmp) {
++		MENUITEMINFO info = {};
++		info.cbSize = (UINT)sizeof info;
++		info.fMask = MIIM_BITMAP;
++		info.hbmpItem = hBmp;
++		VERIFY(SetMenuItemInfo(nIDNewItem, &info, FALSE));
++		m_mapIconNameToBitmap[strIconLower] = hBmp;
+ 	}
+ }
+ 
+diff --git a/srchybrid/TitledMenu.h b/srchybrid/TitledMenu.h
+index 8bea7ab..f6046d1 100644
+--- a/srchybrid/TitledMenu.h
++++ b/srchybrid/TitledMenu.h
+@@ -42,9 +42,6 @@ public:
+ 
+ protected:
+ 	CString m_strTitle;
+-	CImageList m_ImageList;
+-	CMap<int, int, int, int> m_mapMenuIdToIconIdx;
+-	CMapStringToPtr m_mapIconNameToIconIdx;
+ 	CMapStringToPtr m_mapIconNameToBitmap;
+ 
+ 	long m_clRight;

@@ -1,0 +1,59 @@
+diff --git a/srchybrid/OtherFunctions.cpp b/srchybrid/OtherFunctions.cpp
+index f407fee..66129a4 100644
+--- a/srchybrid/OtherFunctions.cpp
++++ b/srchybrid/OtherFunctions.cpp
+@@ -4086,17 +4086,6 @@ static HICON GreyIcon(const HICON hIcon)
+ 	return hGreyIcon;
+ }
+ 
+-int AddIconGreyedToImageList(CImageList &rList, const HICON hIcon)
+-{
+-	int nPos = -1;
+-	HICON hGreyBmp = GreyIcon(hIcon);
+-	if (hGreyBmp) {
+-		nPos = rList.Add(hGreyBmp);
+-		::DeleteObject(hGreyBmp);
+-	}
+-	return nPos;
+-}
+-
+ byte* bmp2mem(HBITMAP hbmp, size_t &size, REFGUID imgfmt)
+ {
+ 	if (hbmp) {
+diff --git a/srchybrid/OtherFunctions.h b/srchybrid/OtherFunctions.h
+index a3582d6..a16322b 100644
+--- a/srchybrid/OtherFunctions.h
++++ b/srchybrid/OtherFunctions.h
+@@ -350,7 +350,6 @@ struct BGR //order of colours in bitmap and palette
+ int			bestclr(const RGBQUAD *const palette, const BGR c);
+ byte*		bmp2mem(HBITMAP hbmp, size_t &size, REFGUID imgfmt);
+ HBITMAP		mem2bmp(const byte *inbuf, const size_t size);
+-int			AddIconGreyedToImageList(CImageList &rList, HICON hIcon);
+ HICON		ReplaceIconGreyedInImageList(CImageList &rList, int nPos);
+ 
+ ///////////////////////////////////////////////////////////////////////////////
+diff --git a/srchybrid/ToolbarWnd.cpp b/srchybrid/ToolbarWnd.cpp
+index 9c2466d..a6aaceb 100644
+--- a/srchybrid/ToolbarWnd.cpp
++++ b/srchybrid/ToolbarWnd.cpp
+@@ -132,20 +132,6 @@ LRESULT CToolbarWnd::OnInitDialog(WPARAM, LPARAM)
+ 	iml.Create(16, 16, nFlags, 1, 1);
+ 	for (unsigned i = 0; i < _countof(sIconNames); ++i)
+ 		iml.Add(CTempIconLoader(sIconNames[i]));
+-
+-	// older Windows versions image list cannot create monochrome (disabled) icons with alpha support
+-	// so we have to take care of this ourselves
+-	if (thePrefs.GetWindowsVersion() < _WINVER_VISTA_ && nFlags != ILC_COLOR4) {
+-		CImageList iml2;
+-		iml2.Create(16, 16, nFlags, 1, 1);
+-		for (unsigned i = 0; i < _countof(sIconNames); ++i)
+-			VERIFY(AddIconGreyedToImageList(iml2, CTempIconLoader(sIconNames[i])) >= 0);
+-
+-		CImageList *pImlOld = m_btnBar.SetDisabledImageList(&iml2);
+-		iml2.Detach();
+-		if (pImlOld)
+-			pImlOld->DeleteImageList();
+-	}
+ 	CImageList *pImlOld = m_btnBar.SetImageList(&iml);
+ 	iml.Detach();
+ 	if (pImlOld)

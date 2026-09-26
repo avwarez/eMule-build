@@ -210,28 +210,6 @@ index 2e767ae..3c450d5 100644
  		, 0));
  	if (!CWnd::CreateEx(0
  				, strClassName
-diff --git a/srchybrid/TitledMenu.cpp b/srchybrid/TitledMenu.cpp
-index 506bdbc..e8ba715 100644
---- a/srchybrid/TitledMenu.cpp
-+++ b/srchybrid/TitledMenu.cpp
-@@ -322,7 +322,7 @@ void CTitledMenu::SetMenuBitmap(UINT nFlags, UINT nIDNewItem, LPCTSTR /*lpszNewI
- 		int nPos;
- 		void *pvIndex;
- 		if (m_mapIconNameToIconIdx.Lookup(strIconLower, pvIndex)) {
--			nPos = (int)pvIndex;
-+			nPos = PtrToInt(pvIndex);
- 			m_mapMenuIdToIconIdx[nIDNewItem] = nPos;
- 		} else {
- 			HICON hIcon = theApp.LoadIcon(strIconLower);
-@@ -330,7 +330,7 @@ void CTitledMenu::SetMenuBitmap(UINT nFlags, UINT nIDNewItem, LPCTSTR /*lpszNewI
- 				return;
- 			nPos = m_ImageList.Add(hIcon);
- 			if (nPos >= 0) {
--				m_mapIconNameToIconIdx[strIconLower] = (void*)nPos;
-+				m_mapIconNameToIconIdx[strIconLower] = IntToPtr(nPos);
- 				m_mapMenuIdToIconIdx[nIDNewItem] = nPos;
- 			}
- 			VERIFY(::DestroyIcon(hIcon));
 diff --git a/srchybrid/kademlia/kademlia/Search.cpp b/srchybrid/kademlia/kademlia/Search.cpp
 index c03364c..2a22b0e 100644
 --- a/srchybrid/kademlia/kademlia/Search.cpp

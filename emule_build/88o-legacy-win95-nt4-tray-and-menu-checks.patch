@@ -1,0 +1,40 @@
+diff --git a/srchybrid/MuleSystrayDlg.cpp b/srchybrid/MuleSystrayDlg.cpp
+index d21b42b..f561351 100644
+--- a/srchybrid/MuleSystrayDlg.cpp
++++ b/srchybrid/MuleSystrayDlg.cpp
+@@ -277,9 +277,7 @@ BOOL CMuleSystrayDlg::OnInitDialog()
+ 	CFont Font;
+ 	Font.CreateFont(-16, 0, 900, 0, 700, 0, 0, 0, 0, 3, 2, 1, 34, _T("Tahoma"));
+ 
+-	UINT winver = thePrefs.GetWindowsVersion();
+-	int iClr = (winver == _WINVER_95_ || winver == _WINVER_NT4_ || g_bLowColorDesktop)
+-		? COLOR_ACTIVECAPTION : COLOR_GRADIENTACTIVECAPTION;
++	int iClr = g_bLowColorDesktop ? COLOR_ACTIVECAPTION : COLOR_GRADIENTACTIVECAPTION;
+ 	m_ctrlSidebar.SetColors(::GetSysColor(COLOR_CAPTIONTEXT), ::GetSysColor(COLOR_ACTIVECAPTION), ::GetSysColor(iClr));
+ 
+ 	m_ctrlSidebar.SetHorizontal(false);
+diff --git a/srchybrid/TitledMenu.cpp b/srchybrid/TitledMenu.cpp
+index 506bdbc..9d7b27b 100644
+--- a/srchybrid/TitledMenu.cpp
++++ b/srchybrid/TitledMenu.cpp
+@@ -96,11 +96,6 @@ void CTitledMenu::AddMenuTitle(LPCTSTR lpszTitle, bool bIsIconMenu)
+ 
+ void CTitledMenu::EnableIcons()
+ {
+-	switch (thePrefs.GetWindowsVersion()) {
+-	case _WINVER_95_:
+-	case _WINVER_NT4_:
+-		return;
+-	}
+ 	m_bIconMenu = true;
+ 	m_ImageList.DeleteImageList();
+ 	m_ImageList.Create(ICONSIZE, ICONSIZE, theApp.m_iDfltImageListColorFlags | ILC_MASK, 0, 1);
+@@ -273,7 +268,7 @@ static HBITMAP IconToBitmap32(HICON hIcon, int cx, int cy)
+ 
+ void CTitledMenu::SetMenuBitmap(UINT nFlags, UINT nIDNewItem, LPCTSTR /*lpszNewItem*/, LPCTSTR lpszIconName)
+ {
+-	if (!m_bIconMenu || (nFlags & MF_SEPARATOR) != 0 || thePrefs.GetWindowsVersion() < _WINVER_2K_) {
++	if (!m_bIconMenu || (nFlags & MF_SEPARATOR) != 0) {
+ 		if (m_bIconMenu && lpszIconName != NULL)
+ 			ASSERT(0);
+ 		return;
