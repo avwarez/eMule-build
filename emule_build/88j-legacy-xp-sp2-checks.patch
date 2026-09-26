@@ -1,0 +1,98 @@
+diff --git a/srchybrid/OtherFunctions.cpp b/srchybrid/OtherFunctions.cpp
+index e9adee2..f407fee 100644
+--- a/srchybrid/OtherFunctions.cpp
++++ b/srchybrid/OtherFunctions.cpp
+@@ -670,33 +670,8 @@ WORD DetectWinVersion()
+ 
+ 	return _WINVER_95_;		// there shouldn't be anything lower than this
+ }
+-
+-bool IsRunningXPSP2()
+-{
+-	OSVERSIONINFOEX osvi;
+-	osvi.dwOSVersionInfoSize = (DWORD)sizeof(OSVERSIONINFOEX);
+-
+-	if (!GetVersionEx((OSVERSIONINFO*)&osvi)) {
+-		osvi.dwOSVersionInfoSize = (DWORD)sizeof(OSVERSIONINFO);
+-		if (!GetVersionEx((OSVERSIONINFO*)&osvi))
+-			return false;
+-	}
+-
+-	return osvi.dwPlatformId == VER_PLATFORM_WIN32_NT
+-		&& osvi.dwMajorVersion == 5
+-		&& osvi.dwMinorVersion == 1
+-		&& osvi.wServicePackMajor >= 2;
+-}
+ #pragma warning(pop)
+ 
+-bool IsRunningXPSP2OrHigher()
+-{
+-	WORD wv = thePrefs.GetWindowsVersion();
+-	if (wv == _WINVER_XP_)
+-		return IsRunningXPSP2();
+-	return wv > _WINVER_XP_;
+-}
+-
+ uint64 GetFreeDiskSpaceX(LPCTSTR pDirectory)
+ {
+ 	ULARGE_INTEGER nFreeDiskSpace;
+diff --git a/srchybrid/OtherFunctions.h b/srchybrid/OtherFunctions.h
+index fb4ec71..a3582d6 100644
+--- a/srchybrid/OtherFunctions.h
++++ b/srchybrid/OtherFunctions.h
+@@ -332,8 +332,6 @@ UINT GetMaxWindowsTCPConnections();
+ #define _WINVER_10_		0x0a00	// 10.0
+ 
+ WORD		DetectWinVersion();
+-bool		IsRunningXPSP2();
+-bool		IsRunningXPSP2OrHigher();
+ uint64		GetFreeDiskSpaceX(LPCTSTR pDirectory);
+ ULONGLONG	GetDiskFileSize(LPCTSTR pszFilePath);
+ int			GetAppImageListColorFlag();
+diff --git a/srchybrid/PPgNotify.cpp b/srchybrid/PPgNotify.cpp
+index 6ee5970..554782f 100644
+--- a/srchybrid/PPgNotify.cpp
++++ b/srchybrid/PPgNotify.cpp
+@@ -103,8 +103,6 @@ BOOL CPPgNotify::OnInitDialog()
+ 
+ 	SetDlgItemText(IDC_EDIT_TBN_WAVFILE, thePrefs.notifierSoundFile);
+ 
+-	bool b = IsRunningXPSP2OrHigher();
+-	m_mail.bSendMail &= b;
+ 	CheckDlgButton(IDC_CB_ENABLENOTIFICATIONS, m_mail.bSendMail ? BST_CHECKED : BST_UNCHECKED);
+ 	SetDlgItemText(IDC_EDIT_RECEIVER, m_mail.sTo);
+ 	SetDlgItemText(IDC_EDIT_SENDER, m_mail.sFrom);
+diff --git a/srchybrid/Preferences.cpp b/srchybrid/Preferences.cpp
+index ae15c72..bff29af 100644
+--- a/srchybrid/Preferences.cpp
++++ b/srchybrid/Preferences.cpp
+@@ -1743,7 +1743,6 @@ void CPreferences::SavePreferences()
+ 	ini.WriteBool(_T("HighresTimer"), m_bHighresTimer);
+ 	ini.WriteInt(_T("WebMirrorAlertLevel"), m_nWebMirrorAlertLevel);
+ 	ini.WriteInt(_T("DebugLogLevel"), m_byLogLevel);
+-	ini.WriteInt(_T("WinXPSP2OrHigher"), static_cast<int>(IsRunningXPSP2OrHigher()));
+ 	ini.WriteBool(_T("RememberCancelledFiles"), m_bRememberCancelledFiles);
+ 	ini.WriteBool(_T("RememberDownloadedFiles"), m_bRememberDownloadedFiles);
+ 
+@@ -1942,12 +1941,6 @@ void CPreferences::LoadPreferences()
+ 	maxhalfconnections = ini.GetInt(_T("MaxHalfConnections"), 9);
+ 	m_bConditionalTCPAccept = ini.GetBool(_T("ConditionalTCPAccept"), false);
+ 
+-	// reset max half-open to a default if OS changed to/from XP SP2 or higher
+-	int dwSP2OrHigher = ini.GetInt(_T("WinXPSP2OrHigher"), -1);
+-	bool dwCurSP2OrHigher = IsRunningXPSP2OrHigher();
+-	if (dwSP2OrHigher != static_cast<int>(dwCurSP2OrHigher))
+-		maxhalfconnections = dwCurSP2OrHigher ? 9 : 50;
+-
+ 	m_strBindAddrW = ini.GetString(_T("BindAddr")).Trim();
+ 	m_pszBindAddrW = m_strBindAddrW.IsEmpty() ? NULL : (LPCWSTR)m_strBindAddrW;
+ 	m_strBindAddrA = m_strBindAddrW;
+@@ -2302,7 +2295,7 @@ void CPreferences::LoadPreferences()
+ 	m_bRememberDownloadedFiles = ini.GetBool(_T("RememberDownloadedFiles"), true);
+ 	m_bPartiallyPurgeOldKnownFiles = ini.GetBool(_T("PartiallyPurgeOldKnownFiles"), true);
+ 
+-	m_email.bSendMail = IsRunningXPSP2OrHigher() && ini.GetBool(_T("NotifierSendMail"), false);
++	m_email.bSendMail = ini.GetBool(_T("NotifierSendMail"), false);
+ 	m_email.uAuth = static_cast<SMTPauth>(ini.GetInt(_T("NotifierMailAuth"), 0));
+ 	m_email.uTLS = static_cast<TLSmode>(ini.GetInt(_T("NotifierMailTLS"), 0));
+ 	m_email.sFrom = ini.GetString(_T("NotifierMailSender"), _T(""));

@@ -235,7 +235,7 @@ index 03acd39..97e935c 100644
  CDownloadListCtrl::CDownloadListCtrl()
  	: CDownloadListListCtrlItemWalk(this)
 diff --git a/srchybrid/EmuleDlg.cpp b/srchybrid/EmuleDlg.cpp
-index 34edf0a..f50c67f 100644
+index bc603ed..cd0f14c 100644
 --- a/srchybrid/EmuleDlg.cpp
 +++ b/srchybrid/EmuleDlg.cpp
 @@ -122,6 +122,8 @@ static const UINT UWM_TASK_BUTTON_CREATED = RegisterWindowMessage(_T("TaskbarBut
@@ -255,19 +255,19 @@ index 34edf0a..f50c67f 100644
  
  CemuleDlg::CemuleDlg(CWnd *pParent /*=NULL*/)
  	: CTrayDialog(CemuleDlg::IDD, pParent)
-@@ -375,8 +378,10 @@ BOOL CemuleDlg::OnInitDialog()
- 		m_bInitedCOM = SUCCEEDED(::CoInitialize(NULL));
- 		if (m_bInitedCOM) {
- 			typedef BOOL(WINAPI *PChangeWindowMessageFilter)(UINT message, DWORD dwFlag);
--			PChangeWindowMessageFilter ChangeWindowMessageFilter
--				= (PChangeWindowMessageFilter)(::GetProcAddress(::GetModuleHandle(_T("user32.dll")), "ChangeWindowMessageFilter"));
-+			// C4191: assigned through (FARPROC&) like every other GetProcAddress in eMule,
-+			// rather than by casting the FARPROC to an unrelated function type
-+			PChangeWindowMessageFilter ChangeWindowMessageFilter;
-+			(FARPROC&)ChangeWindowMessageFilter = ::GetProcAddress(::GetModuleHandle(_T("user32.dll")), "ChangeWindowMessageFilter");
- 			if (ChangeWindowMessageFilter) {
- 				ChangeWindowMessageFilter(UWM_TASK_BUTTON_CREATED, 1);
- 				ChangeWindowMessageFilter(WM_COMMAND, 1);
+@@ -374,8 +377,10 @@ BOOL CemuleDlg::OnInitDialog()
+ 	m_bInitedCOM = SUCCEEDED(::CoInitialize(NULL));
+ 	if (m_bInitedCOM) {
+ 		typedef BOOL(WINAPI *PChangeWindowMessageFilter)(UINT message, DWORD dwFlag);
+-		PChangeWindowMessageFilter ChangeWindowMessageFilter
+-			= (PChangeWindowMessageFilter)(::GetProcAddress(::GetModuleHandle(_T("user32.dll")), "ChangeWindowMessageFilter"));
++		// C4191: assigned through (FARPROC&) like every other GetProcAddress in eMule,
++		// rather than by casting the FARPROC to an unrelated function type
++		PChangeWindowMessageFilter ChangeWindowMessageFilter;
++		(FARPROC&)ChangeWindowMessageFilter = ::GetProcAddress(::GetModuleHandle(_T("user32.dll")), "ChangeWindowMessageFilter");
+ 		if (ChangeWindowMessageFilter) {
+ 			ChangeWindowMessageFilter(UWM_TASK_BUTTON_CREATED, 1);
+ 			ChangeWindowMessageFilter(WM_COMMAND, 1);
 diff --git a/srchybrid/FriendListCtrl.cpp b/srchybrid/FriendListCtrl.cpp
 index eea00c1..5578de0 100644
 --- a/srchybrid/FriendListCtrl.cpp
@@ -370,7 +370,7 @@ index f4ab80c..0b37353 100644
  CMetaDataDlg::CMetaDataDlg()
  	: CResizablePage(CMetaDataDlg::IDD)
 diff --git a/srchybrid/PPgConnection.cpp b/srchybrid/PPgConnection.cpp
-index 83d08c7..bb10d03 100644
+index e1c5703..24a3f66 100644
 --- a/srchybrid/PPgConnection.cpp
 +++ b/srchybrid/PPgConnection.cpp
 @@ -41,6 +41,8 @@ static char THIS_FILE[] = __FILE__;

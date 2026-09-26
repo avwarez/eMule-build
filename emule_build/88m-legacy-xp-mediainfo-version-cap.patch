@@ -1,0 +1,15 @@
+diff --git a/srchybrid/FileInfoDialog.cpp b/srchybrid/FileInfoDialog.cpp
+index 709a812..1f3a015 100644
+--- a/srchybrid/FileInfoDialog.cpp
++++ b/srchybrid/FileInfoDialog.cpp
+@@ -133,9 +133,7 @@ public:
+ 				// -----------------------------
+ 				// But then MediaInfo adopted YY.MM (year, month) versioning scheme...
+ 				ULONGLONG ullVersion = GetModuleVersion(m_hLib);
+-				if (ullVersion >= MAKEDLLVERULL(0, 7, 13, 0)
+-					&& (thePrefs.GetWindowsVersion() >= _WINVER_VISTA_ && ullVersion < MAKEDLLVERULL(26, 6, 0, 0)
+-						|| ullVersion < MAKEDLLVERULL(21, 4, 0, 0))) //21.03 for Windows XP
++				if (ullVersion >= MAKEDLLVERULL(0, 7, 13, 0) && ullVersion < MAKEDLLVERULL(26, 6, 0, 0))
+ 				{
+ 					(FARPROC &)m_pfnMediaInfo_New = ::GetProcAddress(m_hLib, "MediaInfo_New");
+ 					(FARPROC &)m_pfnMediaInfo_Delete = ::GetProcAddress(m_hLib, "MediaInfo_Delete");

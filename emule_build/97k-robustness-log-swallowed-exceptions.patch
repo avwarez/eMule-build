@@ -350,10 +350,10 @@ index 9f7c445..be32c82 100644
  			ex->Delete();
  			break;
 diff --git a/srchybrid/EmuleDlg.cpp b/srchybrid/EmuleDlg.cpp
-index f50c67f..4222b72 100644
+index cd0f14c..93b7e73 100644
 --- a/srchybrid/EmuleDlg.cpp
 +++ b/srchybrid/EmuleDlg.cpp
-@@ -1824,6 +1824,7 @@ void CemuleDlg::OnTrayLButtonUp()
+@@ -1822,6 +1822,7 @@ void CemuleDlg::OnTrayLButtonUp()
  			m_pMiniMule->SetForegroundWindow();
  			m_pMiniMule->BringWindowToTop();
  		} catch (...) {
@@ -361,7 +361,7 @@ index f50c67f..4222b72 100644
  			ASSERT(0);
  			m_pMiniMule = NULL;
  		}
-@@ -1857,6 +1858,7 @@ void CemuleDlg::OnTrayRButtonUp(CPoint pt)
+@@ -1855,6 +1856,7 @@ void CemuleDlg::OnTrayRButtonUp(CPoint pt)
  			, thePrefs.GetMaxGraphUploadRate(true), thePrefs.GetMaxGraphDownloadRate()
  			, thePrefs.GetMaxUpload(), thePrefs.GetMaxDownload());
  	} catch (...) {
@@ -369,7 +369,7 @@ index f50c67f..4222b72 100644
  		return;
  	}
  
-@@ -2789,6 +2791,7 @@ void CemuleDlg::ShowSplash()
+@@ -2787,6 +2789,7 @@ void CemuleDlg::ShowSplash()
  		try {
  			m_pSplashWnd = new CSplashScreen;
  		} catch (...) {
@@ -377,7 +377,7 @@ index f50c67f..4222b72 100644
  			return;
  		}
  		ASSERT(m_hWnd);
-@@ -3466,8 +3469,10 @@ void CemuleDlg::StartUPnP(bool bReset, uint16 nForceTCPPort, uint16 nForceUDPPor
+@@ -3464,8 +3467,10 @@ void CemuleDlg::StartUPnP(bool bReset, uint16 nForceTCPPort, uint16 nForceUDPPor
  			} else
  				/*theApp.emuledlg->*/PostMessage(UM_UPNP_RESULT, (WPARAM)CUPnPImpl::UPNP_FAILED, 0);
  		} catch (const CUPnPImpl::UPnPError&) {
@@ -388,7 +388,7 @@ index f50c67f..4222b72 100644
  			ex->Delete();
  		}
  	} else
-@@ -3491,8 +3496,10 @@ void CemuleDlg::RefreshUPnP(bool bRequestAnswer)
+@@ -3489,8 +3494,10 @@ void CemuleDlg::RefreshUPnP(bool bRequestAnswer)
  			} else
  				DebugLogWarning(_T("RefreshUPnP, implementation not ready"));
  		} catch (const CUPnPImpl::UPnPError&) {
@@ -412,7 +412,7 @@ index f68fcb6..c517b3d 100644
  		ex->Delete();
  		ASSERT(0);
 diff --git a/srchybrid/FileInfoDialog.cpp b/srchybrid/FileInfoDialog.cpp
-index 9761875..db17b86 100644
+index 45b1cad..58a0738 100644
 --- a/srchybrid/FileInfoDialog.cpp
 +++ b/srchybrid/FileInfoDialog.cpp
 @@ -26,6 +26,7 @@
@@ -423,7 +423,7 @@ index 9761875..db17b86 100644
  
  // MediaInfoDLL
  /** @brief Kinds of Stream */
-@@ -471,6 +472,7 @@ int CGetMediaInfoThread::Run()
+@@ -469,6 +470,7 @@ int CGetMediaInfoThread::Run()
  			paMediaInfo->Add(mi);
  		}
  	} catch (...) {
@@ -431,7 +431,7 @@ index 9761875..db17b86 100644
  		ASSERT(0);
  		delete paMediaInfo;
  		paMediaInfo = NULL;
-@@ -830,6 +832,7 @@ bool CGetMediaInfoThread::GetMediaInfo(HWND hWndOwner, const CShareableFile *pFi
+@@ -828,6 +830,7 @@ bool CGetMediaInfoThread::GetMediaInfo(HWND hWndOwner, const CShareableFile *pFi
  				return true;
  			}
  		} catch (...) {
@@ -439,7 +439,7 @@ index 9761875..db17b86 100644
  			ASSERT(0);
  		}
  	}
-@@ -849,6 +852,7 @@ bool CGetMediaInfoThread::GetMediaInfo(HWND hWndOwner, const CShareableFile *pFi
+@@ -847,6 +850,7 @@ bool CGetMediaInfoThread::GetMediaInfo(HWND hWndOwner, const CShareableFile *pFi
  				return true;
  			}
  		} catch (...) {
@@ -447,7 +447,7 @@ index 9761875..db17b86 100644
  			ASSERT(0);
  		}
  	}
-@@ -876,6 +880,7 @@ bool CGetMediaInfoThread::GetMediaInfo(HWND hWndOwner, const CShareableFile *pFi
+@@ -874,6 +878,7 @@ bool CGetMediaInfoThread::GetMediaInfo(HWND hWndOwner, const CShareableFile *pFi
  				return true;
  			}
  		} catch (...) {
@@ -455,7 +455,7 @@ index 9761875..db17b86 100644
  			ASSERT(0);
  		}
  	}
-@@ -1304,6 +1309,7 @@ bool CGetMediaInfoThread::GetMediaInfo(HWND hWndOwner, const CShareableFile *pFi
+@@ -1302,6 +1307,7 @@ bool CGetMediaInfoThread::GetMediaInfo(HWND hWndOwner, const CShareableFile *pFi
  			}
  			delete iter;
  		} catch (...) {
@@ -463,7 +463,7 @@ index 9761875..db17b86 100644
  			ASSERT(0);
  		}
  
-@@ -1733,6 +1739,7 @@ bool CGetMediaInfoThread::GetMediaInfo(HWND hWndOwner, const CShareableFile *pFi
+@@ -1731,6 +1737,7 @@ bool CGetMediaInfoThread::GetMediaInfo(HWND hWndOwner, const CShareableFile *pFi
  					bGiveMediaInfoLibHint |= (FileType == ED2KFT_AUDIO || FileType == ED2KFT_VIDEO);
  				}
  			} catch (...) {
@@ -471,7 +471,7 @@ index 9761875..db17b86 100644
  				ASSERT(0);
  			}
  		}
-@@ -1932,6 +1939,7 @@ bool CGetMediaInfoThread::GetMediaInfo(HWND hWndOwner, const CShareableFile *pFi
+@@ -1930,6 +1937,7 @@ bool CGetMediaInfoThread::GetMediaInfo(HWND hWndOwner, const CShareableFile *pFi
  						TRACE(_T("Failed to open \"%s\" - %s\n"), (LPCTSTR)pFile->GetFilePath(), (LPCTSTR)GetErrorMessage(hr, 1));
  				}
  			} catch (...) {
@@ -798,10 +798,10 @@ index e5f5eaa..6c4896f 100644
  		ex->Delete();
  	}
 diff --git a/srchybrid/OtherFunctions.cpp b/srchybrid/OtherFunctions.cpp
-index 1cf8749..c2ec104 100644
+index cda2e50..79437cb 100644
 --- a/srchybrid/OtherFunctions.cpp
 +++ b/srchybrid/OtherFunctions.cpp
-@@ -2193,9 +2193,11 @@ void DebugHexDump(CFile &file)
+@@ -2180,9 +2180,11 @@ void DebugHexDump(CFile &file)
  			file.Read(data, iSize);
  			DebugHexDump(data, iSize);
  		} catch (CFileException *ex) {
@@ -813,7 +813,7 @@ index 1cf8749..c2ec104 100644
  			TRACE("*** DebugHexDump(CFile&); CMemoryException\n");
  			ex->Delete();
  		}
-@@ -3410,7 +3412,8 @@ bool IsRegExpValid(const CString &regexpr)
+@@ -3397,7 +3399,8 @@ bool IsRegExpValid(const CString &regexpr)
  	try {
  		std::basic_regex<TCHAR> reFN(regexpr);
  		(void)reFN;
@@ -823,7 +823,7 @@ index 1cf8749..c2ec104 100644
  		return false;
  	}
  	return true;
-@@ -3426,7 +3429,8 @@ bool RegularExpressionMatch(const CString &regexpr, const CString &teststring)
+@@ -3413,7 +3416,8 @@ bool RegularExpressionMatch(const CString &regexpr, const CString &teststring)
  		std::cmatch mcUrl;
  #endif
  		return std::regex_match((LPCTSTR)teststring, mcUrl, reFN);
@@ -833,7 +833,7 @@ index 1cf8749..c2ec104 100644
  		return false;
  	}
  }
-@@ -3785,6 +3789,7 @@ EFileType GetFileTypeEx(CShareableFile *kfile, bool checkextention, bool checkfi
+@@ -3772,6 +3776,7 @@ EFileType GetFileTypeEx(CShareableFile *kfile, bool checkextention, bool checkfi
  				inFile.Close();
  			}
  		} catch (...) {
@@ -873,7 +873,7 @@ index 0f78ee9..bc4d8a5 100644
  		return;
  	}
 diff --git a/srchybrid/Preferences.cpp b/srchybrid/Preferences.cpp
-index 55bdb39..3db1688 100644
+index 2370838..1c703b0 100644
 --- a/srchybrid/Preferences.cpp
 +++ b/srchybrid/Preferences.cpp
 @@ -570,6 +570,7 @@ void CPreferences::Init()

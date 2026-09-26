@@ -79,10 +79,10 @@ index 749f251..cd8e44c 100644
  					// We are connected to the proxy but it failed to connect to the peer.
  					if (thePrefs.GetVerbose() && iter->str && iter->str[0] != '\0')
 diff --git a/srchybrid/EmuleDlg.cpp b/srchybrid/EmuleDlg.cpp
-index 2480a0a..780d8f6 100644
+index 3d7905f..8ede112 100644
 --- a/srchybrid/EmuleDlg.cpp
 +++ b/srchybrid/EmuleDlg.cpp
-@@ -680,6 +680,7 @@ void CALLBACK CemuleDlg::StartupTimer(HWND /*hwnd*/, UINT /*uiMsg*/, UINT_PTR /*
+@@ -678,6 +678,7 @@ void CALLBACK CemuleDlg::StartupTimer(HWND /*hwnd*/, UINT /*uiMsg*/, UINT_PTR /*
  			++theApp.emuledlg->status;
  			theApp.sharedfiles->SetOutputCtrl(&theApp.emuledlg->sharedfileswnd->sharedfilesctrl);
  			++theApp.emuledlg->status;
@@ -90,7 +90,7 @@ index 2480a0a..780d8f6 100644
  		case 1:
  			break;
  		case 2:
-@@ -691,6 +692,7 @@ void CALLBACK CemuleDlg::StartupTimer(HWND /*hwnd*/, UINT /*uiMsg*/, UINT_PTR /*
+@@ -689,6 +690,7 @@ void CALLBACK CemuleDlg::StartupTimer(HWND /*hwnd*/, UINT /*uiMsg*/, UINT_PTR /*
  				LogError(LOG_STATUSBAR, _T("Failed to initialize server list - Unknown exception"));
  			}
  			++theApp.emuledlg->status;
@@ -98,7 +98,7 @@ index 2480a0a..780d8f6 100644
  		case 3:
  			break;
  		case 4:
-@@ -1301,6 +1303,7 @@ void CemuleDlg::ProcessED2KLink(LPCWSTR pszData)
+@@ -1299,6 +1301,7 @@ void CemuleDlg::ProcessED2KLink(LPCWSTR pszData)
  				SetActiveDialog(searchwnd);
  				searchwnd->ProcessEd2kSearchLinkRequest(pListLink->GetSearchTerm());
  			}
@@ -107,10 +107,10 @@ index 2480a0a..780d8f6 100644
  			break;
  		}
 diff --git a/srchybrid/FileInfoDialog.cpp b/srchybrid/FileInfoDialog.cpp
-index 709a812..9761875 100644
+index 1f3a015..45b1cad 100644
 --- a/srchybrid/FileInfoDialog.cpp
 +++ b/srchybrid/FileInfoDialog.cpp
-@@ -927,6 +927,7 @@ bool CGetMediaInfoThread::GetMediaInfo(HWND hWndOwner, const CShareableFile *pFi
+@@ -925,6 +925,7 @@ bool CGetMediaInfoThread::GetMediaInfo(HWND hWndOwner, const CShareableFile *pFi
  				case MPEGVERSION_1:
  					mi->strAudioFormat = _T("MPEG-1,");
  					mi->audio.wFormatTag = WAVE_FORMAT_MPEGLAYER3;
@@ -118,7 +118,7 @@ index 709a812..9761875 100644
  				default:
  					break;
  				}
-@@ -941,6 +942,7 @@ bool CGetMediaInfoThread::GetMediaInfo(HWND hWndOwner, const CShareableFile *pFi
+@@ -939,6 +940,7 @@ bool CGetMediaInfoThread::GetMediaInfo(HWND hWndOwner, const CShareableFile *pFi
  					break;
  				case MPEGLAYER_I:
  					mi->strAudioFormat += _T("Layer 1");
@@ -200,17 +200,17 @@ index bd13bcc..f839317 100644
  				continue;
  			case PB_ERROR:
 diff --git a/srchybrid/Preferences.cpp b/srchybrid/Preferences.cpp
-index ae15c72..035c09d 100644
+index d9f976e..6f2fd4b 100644
 --- a/srchybrid/Preferences.cpp
 +++ b/srchybrid/Preferences.cpp
-@@ -2912,6 +2912,7 @@ CString CPreferences::GetDefaultDirectory(EDefaultDirectory eDirectory, bool bCr
- 								strSelectedDataBaseDirectory = strPublicDownloads + _T("eMule\\");
- 								strSelectedConfigBaseDirectory = strProgramData + _T("eMule\\");
- 								strSelectedExpansionBaseDirectory = strProgramData + _T("eMule\\");
-+								[[fallthrough]];
- 							case 2: //program directory
- 								break;
- 							default:
+@@ -2900,6 +2900,7 @@ CString CPreferences::GetDefaultDirectory(EDefaultDirectory eDirectory, bool bCr
+ 							strSelectedDataBaseDirectory = strPublicDownloads + _T("eMule\\");
+ 							strSelectedConfigBaseDirectory = strProgramData + _T("eMule\\");
+ 							strSelectedExpansionBaseDirectory = strProgramData + _T("eMule\\");
++							[[fallthrough]];
+ 						case 2: //program directory
+ 							break;
+ 						default:
 diff --git a/srchybrid/QueueListCtrl.cpp b/srchybrid/QueueListCtrl.cpp
 index 2825b14..1ee31ac 100644
 --- a/srchybrid/QueueListCtrl.cpp
