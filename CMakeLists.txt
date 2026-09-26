@@ -71,10 +71,11 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          count back to zero.
 #   95-96  the code compiles and is warning-clean but is not correct on
 #          every target we build (see each patch's own subject).
-#   97     the code is wrong on every target, on input a peer or a web
-#          client controls. These are the commits on the fork's
-#          v0.72a-secfix branch, offered upstream as irwir/eMule#7; a file
-#          here goes away when the same change reaches a released v0.72x.
+#   97     the code is wrong on every target: on input a peer or a web
+#          client controls, or in how it stops its threads and what it does
+#          with the failures it catches. 97a-97c are the commits on the
+#          fork's v0.72a-secfix branch, offered upstream as irwir/eMule#7; a
+#          file here goes away when the same change reaches a released v0.72x.
 #   98     corrections to the shipped language resources, from the fork's
 #          v0.72a-lang branch - source data for the `languages` target
 #          rather than code, so they change no binary.

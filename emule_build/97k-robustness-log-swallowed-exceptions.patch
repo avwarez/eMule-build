@@ -1,0 +1,1114 @@
+diff --git a/srchybrid/AICHSyncThread.cpp b/srchybrid/AICHSyncThread.cpp
+index 76fe767..78344be 100644
+--- a/srchybrid/AICHSyncThread.cpp
++++ b/srchybrid/AICHSyncThread.cpp
+@@ -99,6 +99,7 @@ int CAICHSyncThread::Run()
+ 					file.WriteUInt8(KNOWN2_MET_VERSION);
+ 				}
+ 			} catch (CFileException *ex2) {
++				DebugLogCaughtException(__FUNCTION__, ex2);
+ 				ex2->Delete();
+ 			}
+ 		} else
+diff --git a/srchybrid/ArchiveRecovery.cpp b/srchybrid/ArchiveRecovery.cpp
+index 05ee756..8234109 100644
+--- a/srchybrid/ArchiveRecovery.cpp
++++ b/srchybrid/ArchiveRecovery.cpp
+@@ -199,8 +199,10 @@ bool CArchiveRecovery::performRecovery(CPartFile *partFile, CArray<Gap_Struct> *
+ 		} else
+ 			CFile::Remove(outputFileName);
+ 	} catch (CFileException *ex) {
++		DebugLogCaughtException(__FUNCTION__, ex);
+ 		ex->Delete();
+ 	} catch (...) {
++		DebugLogCaughtException(__FUNCTION__);
+ 		ASSERT(0);
+ 	}
+ 	return success;
+@@ -340,8 +342,10 @@ bool CArchiveRecovery::recoverZip(CFile *zipInput, CFile *zipOutput, archiveScan
+ 		}
+ 		retVal = true;
+ 	} catch (CFileException *ex) {
++		DebugLogCaughtException(__FUNCTION__, ex);
+ 		ex->Delete();
+ 	} catch (...) {
++		DebugLogCaughtException(__FUNCTION__);
+ 		ASSERT(0);
+ 	}
+ done:
+@@ -411,8 +415,10 @@ bool CArchiveRecovery::readZipCentralDirectory(CFile *zipInput, CTypedPtrList<CP
+ 
+ 		return true;
+ 	} catch (CFileException *ex) {
++		DebugLogCaughtException(__FUNCTION__, ex);
+ 		ex->Delete();
+ 	} catch (...) {
++		DebugLogCaughtException(__FUNCTION__);
+ 		ASSERT(0);
+ 	}
+ 	return false;
+@@ -548,8 +554,10 @@ bool CArchiveRecovery::processZipEntry(CFile *zipInput, CFile *zipOutput, uint32
+ 		}
+ 		return true;
+ 	} catch (CFileException *ex) {
++		DebugLogCaughtException(__FUNCTION__, ex);
+ 		ex->Delete();
+ 	} catch (...) {
++		DebugLogCaughtException(__FUNCTION__);
+ 		ASSERT(0);
+ 	}
+ 	return false;
+@@ -675,8 +683,10 @@ bool CArchiveRecovery::recoverRar(CFile *rarInput, CFile *rarOutput, archiveScan
+ 		}
+ 		retVal = true;
+ 	} catch (CFileException *ex) {
++		DebugLogCaughtException(__FUNCTION__, ex);
+ 		ex->Delete();
+ 	} catch (...) {
++		DebugLogCaughtException(__FUNCTION__);
+ 		ASSERT(0);
+ 	}
+ 
+@@ -745,8 +755,10 @@ bool CArchiveRecovery::scanForZipMarker(CFile *input, archiveScannerThreadParams
+ 			}
+ 		}
+ 	} catch (CFileException *ex) {
++		DebugLogCaughtException(__FUNCTION__, ex);
+ 		ex->Delete();
+ 	} catch (...) {
++		DebugLogCaughtException(__FUNCTION__);
+ 		ASSERT(0);
+ 	}
+ 	return false;
+@@ -918,8 +930,10 @@ RAR_BlockFile* CArchiveRecovery::scanForRarFileHeader(CFile *input, archiveScann
+ 			}
+ 		}
+ 	} catch (CFileException *ex) {
++		DebugLogCaughtException(__FUNCTION__, ex);
+ 		ex->Delete();
+ 	} catch (...) {
++		DebugLogCaughtException(__FUNCTION__);
+ 		ASSERT(0);
+ 	}
+ 	delete[] fileName;
+@@ -1015,13 +1029,16 @@ void CArchiveRecovery::writeRarBlock(CFile *input, CFile *output, RAR_BlockFile
+ 		output->Flush();
+ 		return;
+ 	} catch (CFileException *ex) {
++		DebugLogCaughtException(__FUNCTION__, ex);
+ 		ex->Delete();
+ 	} catch (...) {
++		DebugLogCaughtException(__FUNCTION__);
+ 		ASSERT(0);
+ 	}
+ 	try {
+ 		output->SetLength(offsetStart);
+ 	} catch (...) {
++		DebugLogCaughtException(__FUNCTION__);
+ 		ASSERT(0);
+ 	}
+ }
+@@ -1162,8 +1179,10 @@ bool CArchiveRecovery::recoverAce(CFile *aceInput, CFile *aceOutput, archiveScan
+ 		}
+ 		return true;
+ 	} catch (CFileException *ex) {
++		DebugLogCaughtException(__FUNCTION__, ex);
+ 		ex->Delete();
+ 	} catch (...) {
++		DebugLogCaughtException(__FUNCTION__);
+ 		ASSERT(0);
+ 	}
+ 	delete acehdr;
+@@ -1279,8 +1298,10 @@ ACE_BlockFile* CArchiveRecovery::scanForAceFileHeader(CFile *input, archiveScann
+ 			} // while foundpos
+ 		} // while available>0
+ 	} catch (CFileException *ex) {
++		DebugLogCaughtException(__FUNCTION__, ex);
+ 		ex->Delete();
+ 	} catch (...) {
++		DebugLogCaughtException(__FUNCTION__);
+ 		ASSERT(0);
+ 	}
+ 	return NULL;
+@@ -1365,13 +1386,16 @@ void CArchiveRecovery::writeAceBlock(CFile *input, CFile *output, ACE_BlockFile
+ 		output->Flush();
+ 		return;
+ 	} catch (CFileException *ex) {
++		DebugLogCaughtException(__FUNCTION__, ex);
+ 		ex->Delete();
+ 	} catch (...) {
++		DebugLogCaughtException(__FUNCTION__);
+ 		ASSERT(0);
+ 	}
+ 	try {
+ 		output->SetLength(offsetStart);
+ 	} catch (...) {
++		DebugLogCaughtException(__FUNCTION__);
+ 		ASSERT(0);
+ 	}
+ }
+diff --git a/srchybrid/AsyncSocketEx.cpp b/srchybrid/AsyncSocketEx.cpp
+index c8be63f..8a86893 100644
+--- a/srchybrid/AsyncSocketEx.cpp
++++ b/srchybrid/AsyncSocketEx.cpp
+@@ -65,6 +65,7 @@ to tim.kosse@filezilla-project.org
+ #include "AsyncSocketEx.h"
+ 
+ #include "AsyncSocketExLayer.h"
++#include "Log.h"
+ 
+ #ifdef _DEBUG
+ #define new DEBUG_NEW
+@@ -827,6 +828,7 @@ bool CAsyncSocketEx::InitAsyncSocketExInstance()
+ 				thread_local_data = new t_AsyncSocketExThreadData{};
+ 				thread_local_data->m_pHelperWindow = new CAsyncSocketExHelperWindow(thread_local_data);
+ 			} catch (...) {
++				DebugLogCaughtException(__FUNCTION__);
+ 				if (thread_local_data) {
+ 					delete thread_local_data;
+ 					thread_local_data = NULL;
+diff --git a/srchybrid/ClientCredits.cpp b/srchybrid/ClientCredits.cpp
+index 151cfce..6d3fa9f 100644
+--- a/srchybrid/ClientCredits.cpp
++++ b/srchybrid/ClientCredits.cpp
+@@ -442,6 +442,7 @@ uint8 CClientCreditsList::CreateSignature(CClientCredits *pTarget, uchar *pachOu
+ 		asink.Put(sbbSignature.begin(), sbbSignature.size());
+ 		return (uint8)asink.TotalPutLength();
+ 	} catch (...) {
++		DebugLogCaughtException(__FUNCTION__);
+ 		ASSERT(0);
+ 	}
+ 	return 0;
+diff --git a/srchybrid/Collection.cpp b/srchybrid/Collection.cpp
+index 03fb376..3810011 100644
+--- a/srchybrid/Collection.cpp
++++ b/srchybrid/Collection.cpp
+@@ -149,6 +149,7 @@ bool CCollection::InitCollectionFromFile(const CString &sFilePath, const CString
+ 					CCollectionFile *pCollectionFile = new CCollectionFile(data);
+ 					AddFileToCollection(pCollectionFile, false);
+ 				} catch (...) {
++					DebugLogCaughtException(__FUNCTION__);
+ 					ASSERT(0);
+ 				}
+ 
+@@ -189,9 +190,11 @@ bool CCollection::InitCollectionFromFile(const CString &sFilePath, const CString
+ 			m_sCollectionAuthorName.Empty();
+ 		data.Close();
+ 	} catch (CFileException *ex) {
++		DebugLogCaughtException(__FUNCTION__, ex);
+ 		ex->Delete();
+ 		return false;
+ 	} catch (...) {
++		DebugLogCaughtException(__FUNCTION__);
+ 		ASSERT(0);
+ 		return false;
+ 	}
+@@ -212,6 +215,7 @@ bool CCollection::InitCollectionFromFile(const CString &sFilePath, const CString
+ 							else
+ 								delete pCollectionFile;
+ 						} catch (...) {
++							DebugLogCaughtException(__FUNCTION__);
+ 							ASSERT(0);
+ 							return false;
+ 						}
+@@ -226,8 +230,10 @@ bool CCollection::InitCollectionFromFile(const CString &sFilePath, const CString
+ 				m_bTextFormat = true;
+ 				return true;
+ 			} catch (CFileException *ex) {
++				DebugLogCaughtException(__FUNCTION__, ex);
+ 				ex->Delete();
+ 			} catch (...) {
++				DebugLogCaughtException(__FUNCTION__);
+ 				ASSERT(0);
+ 			}
+ 		}
+@@ -252,9 +258,11 @@ void CCollection::WriteToFileAddShared(CryptoPP::RSASSA_PKCS1v15_SHA_Signer *pSi
+ 
+ 				data.Close();
+ 			} catch (CFileException *ex) {
++				DebugLogCaughtException(__FUNCTION__, ex);
+ 				ex->Delete();
+ 				return;
+ 			} catch (...) {
++				DebugLogCaughtException(__FUNCTION__);
+ 				ASSERT(0);
+ 				return;
+ 			}
+@@ -311,9 +319,11 @@ void CCollection::WriteToFileAddShared(CryptoPP::RSASSA_PKCS1v15_SHA_Signer *pSi
+ 				}
+ 				data.Close();
+ 			} catch (CFileException *ex) {
++				DebugLogCaughtException(__FUNCTION__, ex);
+ 				ex->Delete();
+ 				return;
+ 			} catch (...) {
++				DebugLogCaughtException(__FUNCTION__);
+ 				ASSERT(0);
+ 				return;
+ 			}
+diff --git a/srchybrid/CollectionCreateDialog.cpp b/srchybrid/CollectionCreateDialog.cpp
+index fa393b9..7cad8c2 100644
+--- a/srchybrid/CollectionCreateDialog.cpp
++++ b/srchybrid/CollectionCreateDialog.cpp
+@@ -28,6 +28,7 @@
+ #include "Preferences.h"
+ #include "cryptopp/base64.h"
+ #include "cryptopp/files.h"
++#include "Log.h"
+ 
+ #ifdef _DEBUG
+ #define new DEBUG_NEW
+@@ -269,6 +270,7 @@ void CCollectionCreateDialog::OnBnClickedOk()
+ 					privkey.DEREncode(privkeysink);
+ 					privkeysink.MessageEnd();
+ 				} catch (...) {
++					DebugLogCaughtException(__FUNCTION__);
+ 					ASSERT(0);
+ 				}
+ 
+@@ -283,6 +285,7 @@ void CCollectionCreateDialog::OnBnClickedOk()
+ 				asink.MessageEnd();
+ 				m_pCollection->SetCollectionAuthorKey(abyMyPublicKey, nLen);
+ 			} catch (...) {
++				DebugLogCaughtException(__FUNCTION__);
+ 				ASSERT(0);
+ 			}
+ 
+diff --git a/srchybrid/CollectionFile.cpp b/srchybrid/CollectionFile.cpp
+index 9029db9..86a832e 100644
+--- a/srchybrid/CollectionFile.cpp
++++ b/srchybrid/CollectionFile.cpp
+@@ -39,6 +39,10 @@ CCollectionFile::CCollectionFile(CFileDataIO &in_data)
+ 			CTag *toadd = new CTag(in_data, true);
+ 			m_taglist.Add(toadd);
+ 		} catch (...) {
++			DebugLogCaughtException(__FUNCTION__);
++			// the stream position after a tag that could not be read means nothing:
++			// going on would read every remaining count as garbage, up to 4 billion times
++			break;
+ 		}
+ 
+ 	CTag *pTagHash = GetTag(FT_FILEHASH);
+diff --git a/srchybrid/CreditsDlg.cpp b/srchybrid/CreditsDlg.cpp
+index 59ae5dc..4c66cc3 100644
+--- a/srchybrid/CreditsDlg.cpp
++++ b/srchybrid/CreditsDlg.cpp
+@@ -7,6 +7,7 @@
+ #include "emule.h"
+ #include "CreditsDlg.h"
+ #include "CreditsThread.h"
++#include "Log.h"
+ 
+ #ifdef _DEBUG
+ #define new DEBUG_NEW
+@@ -78,6 +79,7 @@ void CCreditsDlg::StartThread()
+ 		m_pThread = new CCreditsThread(this, m_pDC->GetSafeHdc(), &m_rectScreen);
+ 		((CCreditsThread*)m_pThread)->SetRunning(true);
+ 	} catch (...) {
++		DebugLogCaughtException(__FUNCTION__);
+ 		m_pThread = NULL;
+ 		return;
+ 	}
+diff --git a/srchybrid/CustomAutoComplete.cpp b/srchybrid/CustomAutoComplete.cpp
+index e021f24..1333bf9 100644
+--- a/srchybrid/CustomAutoComplete.cpp
++++ b/srchybrid/CustomAutoComplete.cpp
+@@ -37,6 +37,7 @@
+ #include <share.h>
+ #endif
+ #include "CustomAutoComplete.h"
++#include "Log.h"
+ 
+ #ifdef _DEBUG
+ #define new DEBUG_NEW
+@@ -263,6 +264,7 @@ STDMETHODIMP CCustomAutoComplete::Clone(IEnumString **ppenum) noexcept
+ 		pnew->AddRef();
+ 		*ppenum = pnew;
+ 	} catch (...) {
++		DebugLogCaughtException(__FUNCTION__);
+ 		return E_OUTOFMEMORY;
+ 	}
+ 	return S_OK;
+diff --git a/srchybrid/DownloadQueue.cpp b/srchybrid/DownloadQueue.cpp
+index 9f7c445..be32c82 100644
+--- a/srchybrid/DownloadQueue.cpp
++++ b/srchybrid/DownloadQueue.cpp
+@@ -197,6 +197,7 @@ void CDownloadQueue::AddSearchToDownload(CSearchFile *toadd, uint8 paused, int c
+ 			sources.SeekToBegin();
+ 			newfile->AddSources(&sources, toadd->GetClientServerIP(), toadd->GetClientServerPort(), false);
+ 		} catch (CFileException *ex) {
++			DebugLogCaughtException(__FUNCTION__, ex);
+ 			ASSERT(0);
+ 			ex->Delete();
+ 		}
+@@ -213,6 +214,7 @@ void CDownloadQueue::AddSearchToDownload(CSearchFile *toadd, uint8 paused, int c
+ 			sources.SeekToBegin();
+ 			newfile->AddSources(&sources, aClients[i].m_nServerIP, aClients[i].m_nServerPort, false);
+ 		} catch (CFileException *ex) {
++			DebugLogCaughtException(__FUNCTION__, ex);
+ 			ASSERT(0);
+ 			ex->Delete();
+ 			break;
+diff --git a/srchybrid/EmuleDlg.cpp b/srchybrid/EmuleDlg.cpp
+index f50c67f..4222b72 100644
+--- a/srchybrid/EmuleDlg.cpp
++++ b/srchybrid/EmuleDlg.cpp
+@@ -1824,6 +1824,7 @@ void CemuleDlg::OnTrayLButtonUp()
+ 			m_pMiniMule->SetForegroundWindow();
+ 			m_pMiniMule->BringWindowToTop();
+ 		} catch (...) {
++			DebugLogCaughtException(__FUNCTION__);
+ 			ASSERT(0);
+ 			m_pMiniMule = NULL;
+ 		}
+@@ -1857,6 +1858,7 @@ void CemuleDlg::OnTrayRButtonUp(CPoint pt)
+ 			, thePrefs.GetMaxGraphUploadRate(true), thePrefs.GetMaxGraphDownloadRate()
+ 			, thePrefs.GetMaxUpload(), thePrefs.GetMaxDownload());
+ 	} catch (...) {
++		DebugLogCaughtException(__FUNCTION__);
+ 		return;
+ 	}
+ 
+@@ -2789,6 +2791,7 @@ void CemuleDlg::ShowSplash()
+ 		try {
+ 			m_pSplashWnd = new CSplashScreen;
+ 		} catch (...) {
++			DebugLogCaughtException(__FUNCTION__);
+ 			return;
+ 		}
+ 		ASSERT(m_hWnd);
+@@ -3466,8 +3469,10 @@ void CemuleDlg::StartUPnP(bool bReset, uint16 nForceTCPPort, uint16 nForceUDPPor
+ 			} else
+ 				/*theApp.emuledlg->*/PostMessage(UM_UPNP_RESULT, (WPARAM)CUPnPImpl::UPNP_FAILED, 0);
+ 		} catch (const CUPnPImpl::UPnPError&) {
++			DebugLogCaughtException(__FUNCTION__, CString(_T("UPnP error")));
+ 			//ignore
+ 		} catch (CException *ex) {
++			DebugLogCaughtException(__FUNCTION__, ex);
+ 			ex->Delete();
+ 		}
+ 	} else
+@@ -3491,8 +3496,10 @@ void CemuleDlg::RefreshUPnP(bool bRequestAnswer)
+ 			} else
+ 				DebugLogWarning(_T("RefreshUPnP, implementation not ready"));
+ 		} catch (const CUPnPImpl::UPnPError&) {
++			DebugLogCaughtException(__FUNCTION__, CString(_T("UPnP error")));
+ 			//ignore
+ 		} catch (CException *ex) {
++			DebugLogCaughtException(__FUNCTION__, ex);
+ 			ex->Delete();
+ 		}
+ 	} else
+diff --git a/srchybrid/EncryptedStreamSocket.cpp b/srchybrid/EncryptedStreamSocket.cpp
+index f68fcb6..c517b3d 100644
+--- a/srchybrid/EncryptedStreamSocket.cpp
++++ b/srchybrid/EncryptedStreamSocket.cpp
+@@ -650,6 +650,7 @@ int CEncryptedStreamSocket::Negotiate(const uchar *pBuffer, int nLen)
+ 		}
+ 		return nRead;
+ 	} catch (CFileException *ex) {
++		DebugLogCaughtException(__FUNCTION__, ex);
+ 		// can only be caused by a bug in negotiation handling, not by the data stream
+ 		ex->Delete();
+ 		ASSERT(0);
+diff --git a/srchybrid/FileInfoDialog.cpp b/srchybrid/FileInfoDialog.cpp
+index 9761875..db17b86 100644
+--- a/srchybrid/FileInfoDialog.cpp
++++ b/srchybrid/FileInfoDialog.cpp
+@@ -26,6 +26,7 @@
+ 
+ #include "id3/tag.h"
+ #include "id3/misc_support.h"
++#include "Log.h"
+ 
+ // MediaInfoDLL
+ /** @brief Kinds of Stream */
+@@ -471,6 +472,7 @@ int CGetMediaInfoThread::Run()
+ 			paMediaInfo->Add(mi);
+ 		}
+ 	} catch (...) {
++		DebugLogCaughtException(__FUNCTION__);
+ 		ASSERT(0);
+ 		delete paMediaInfo;
+ 		paMediaInfo = NULL;
+@@ -830,6 +832,7 @@ bool CGetMediaInfoThread::GetMediaInfo(HWND hWndOwner, const CShareableFile *pFi
+ 				return true;
+ 			}
+ 		} catch (...) {
++			DebugLogCaughtException(__FUNCTION__);
+ 			ASSERT(0);
+ 		}
+ 	}
+@@ -849,6 +852,7 @@ bool CGetMediaInfoThread::GetMediaInfo(HWND hWndOwner, const CShareableFile *pFi
+ 				return true;
+ 			}
+ 		} catch (...) {
++			DebugLogCaughtException(__FUNCTION__);
+ 			ASSERT(0);
+ 		}
+ 	}
+@@ -876,6 +880,7 @@ bool CGetMediaInfoThread::GetMediaInfo(HWND hWndOwner, const CShareableFile *pFi
+ 				return true;
+ 			}
+ 		} catch (...) {
++			DebugLogCaughtException(__FUNCTION__);
+ 			ASSERT(0);
+ 		}
+ 	}
+@@ -1304,6 +1309,7 @@ bool CGetMediaInfoThread::GetMediaInfo(HWND hWndOwner, const CShareableFile *pFi
+ 			}
+ 			delete iter;
+ 		} catch (...) {
++			DebugLogCaughtException(__FUNCTION__);
+ 			ASSERT(0);
+ 		}
+ 
+@@ -1733,6 +1739,7 @@ bool CGetMediaInfoThread::GetMediaInfo(HWND hWndOwner, const CShareableFile *pFi
+ 					bGiveMediaInfoLibHint |= (FileType == ED2KFT_AUDIO || FileType == ED2KFT_VIDEO);
+ 				}
+ 			} catch (...) {
++				DebugLogCaughtException(__FUNCTION__);
+ 				ASSERT(0);
+ 			}
+ 		}
+@@ -1932,6 +1939,7 @@ bool CGetMediaInfoThread::GetMediaInfo(HWND hWndOwner, const CShareableFile *pFi
+ 						TRACE(_T("Failed to open \"%s\" - %s\n"), (LPCTSTR)pFile->GetFilePath(), (LPCTSTR)GetErrorMessage(hr, 1));
+ 				}
+ 			} catch (...) {
++				DebugLogCaughtException(__FUNCTION__);
+ 				ASSERT(0);
+ 			}
+ 		}
+diff --git a/srchybrid/FrameGrabThread.cpp b/srchybrid/FrameGrabThread.cpp
+index 6223839..0d63981 100644
+--- a/srchybrid/FrameGrabThread.cpp
++++ b/srchybrid/FrameGrabThread.cpp
+@@ -20,6 +20,7 @@
+ #include "FrameGrabThread.h"
+ #include "OtherFunctions.h"
+ #include "quantize.h"
++#include "Log.h"
+ #ifndef HAVE_QEDIT_H
+ // This is a separate feature, required in this module
+ // Check emule_site_config.h to fix it
+@@ -240,6 +241,7 @@ UINT CFrameGrabThread::GrabFrames()
+ 			dStartTime += TIMEBETWEENFRAMES;
+ 		}
+ 	} catch (...) {
++		DebugLogCaughtException(__FUNCTION__);
+ 		ASSERT(0);
+ 	}
+ 	::DeleteDC(hdc);
+diff --git a/srchybrid/HTRichEditCtrl.cpp b/srchybrid/HTRichEditCtrl.cpp
+index 8a27bc1..fe741c4 100644
+--- a/srchybrid/HTRichEditCtrl.cpp
++++ b/srchybrid/HTRichEditCtrl.cpp
+@@ -1185,6 +1185,7 @@ static HBITMAP IconToBitmap(HICON hIcon, COLORREF crBackground, int cx = 16, int
+ 		}
+ #endif
+ 	} catch (CException *ex) {
++		DebugLogCaughtException(__FUNCTION__, ex);
+ 		ASSERT(0);
+ 		ex->Delete();
+ 	}
+diff --git a/srchybrid/HttpDownloadDlg.cpp b/srchybrid/HttpDownloadDlg.cpp
+index a7e0d3b..56007e0 100644
+--- a/srchybrid/HttpDownloadDlg.cpp
++++ b/srchybrid/HttpDownloadDlg.cpp
+@@ -412,6 +412,7 @@ void CHttpDownloadDlg::HandleThreadErrorWithLastError(const CString &strIDError,
+ 	try {
+ 		m_FileToWrite.Close();
+ 	} catch (CFileException *ex) {
++		DebugLogCaughtException(__FUNCTION__, ex);
+ 		ex->Delete();
+ 	}
+ 	//Delete the file
+diff --git a/srchybrid/IPFilter.cpp b/srchybrid/IPFilter.cpp
+index cc0a0ea..d5ef58c 100644
+--- a/srchybrid/IPFilter.cpp
++++ b/srchybrid/IPFilter.cpp
+@@ -44,7 +44,8 @@ CIPFilter::~CIPFilter()
+ 	if (m_bModified) {
+ 		try {
+ 			SaveToDefaultFile();
+-		} catch (const CString&) {
++		} catch (const CString &strError) {
++			DebugLogCaughtException(__FUNCTION__, strError);
+ 		}
+ 	}
+ 	RemoveAllIPFilters();
+diff --git a/srchybrid/KadContactListCtrl.cpp b/srchybrid/KadContactListCtrl.cpp
+index 4aef640..a50425e 100644
+--- a/srchybrid/KadContactListCtrl.cpp
++++ b/srchybrid/KadContactListCtrl.cpp
+@@ -19,6 +19,7 @@
+ #include "KademliaWnd.h"
+ #include "KadContactListCtrl.h"
+ #include "emuledlg.h"
++#include "Log.h"
+ 
+ #ifdef _DEBUG
+ #define new DEBUG_NEW
+@@ -133,6 +134,7 @@ bool CKadContactListCtrl::ContactAdd(const Kademlia::CContact *contact)
+ 			return true;
+ 		}
+ 	} catch (...) {
++		DebugLogCaughtException(__FUNCTION__);
+ 		ASSERT(0);
+ 	}
+ 	return false;
+@@ -151,6 +153,7 @@ void CKadContactListCtrl::ContactRem(const Kademlia::CContact *contact)
+ 			UpdateKadContactCount();
+ 		}
+ 	} catch (...) {
++		DebugLogCaughtException(__FUNCTION__);
+ 		ASSERT(0);
+ 	}
+ }
+@@ -166,6 +169,7 @@ void CKadContactListCtrl::ContactRef(const Kademlia::CContact *contact)
+ 		if (iItem >= 0)
+ 			UpdateContact(iItem, contact);
+ 	} catch (...) {
++		DebugLogCaughtException(__FUNCTION__);
+ 		ASSERT(0);
+ 	}
+ }
+diff --git a/srchybrid/KadSearchListCtrl.cpp b/srchybrid/KadSearchListCtrl.cpp
+index 1dfb001..bce0fcc 100644
+--- a/srchybrid/KadSearchListCtrl.cpp
++++ b/srchybrid/KadSearchListCtrl.cpp
+@@ -22,6 +22,7 @@
+ #include "OtherFunctions.h"
+ #include "kademlia/kademlia/search.h"
+ #include "kademlia/utils/LookupHistory.h"
++#include "Log.h"
+ 
+ #ifdef _DEBUG
+ #define new DEBUG_NEW
+@@ -183,6 +184,7 @@ void CKadSearchListCtrl::SearchAdd(const Kademlia::CSearch *search)
+ 			UpdateKadSearchCount();
+ 		}
+ 	} catch (...) {
++		DebugLogCaughtException(__FUNCTION__);
+ 		ASSERT(0);
+ 	}
+ }
+@@ -200,6 +202,7 @@ void CKadSearchListCtrl::SearchRem(const Kademlia::CSearch *search)
+ 			UpdateKadSearchCount();
+ 		}
+ 	} catch (...) {
++		DebugLogCaughtException(__FUNCTION__);
+ 		ASSERT(0);
+ 	}
+ }
+@@ -215,6 +218,7 @@ void CKadSearchListCtrl::SearchRef(const Kademlia::CSearch *search)
+ 		if (iItem >= 0)
+ 			UpdateSearch(iItem, search);
+ 	} catch (...) {
++		DebugLogCaughtException(__FUNCTION__);
+ 		ASSERT(0);
+ 	}
+ }
+diff --git a/srchybrid/KnownFile.cpp b/srchybrid/KnownFile.cpp
+index 09c5b70..16b2f7d 100644
+--- a/srchybrid/KnownFile.cpp
++++ b/srchybrid/KnownFile.cpp
+@@ -981,6 +981,7 @@ bool CKnownFile::CreateHash(FILE *fp, uint64 uSize, uchar *pucHash, CAICHHashTre
+ 		CreateHash(&file, uSize, pucHash, pShaHashOut);
+ 		return true;
+ 	} catch (CFileException *ex) {
++		DebugLogCaughtException(__FUNCTION__, ex);
+ 		ex->Delete();
+ 	}
+ 	return false;
+@@ -993,6 +994,7 @@ bool CKnownFile::CreateHash(const uchar *pucData, uint32 uSize, uchar *pucHash,
+ 		CreateHash(&file, uSize, pucHash, pShaHashOut);
+ 		return true;
+ 	} catch (CFileException *ex) {
++		DebugLogCaughtException(__FUNCTION__, ex);
+ 		ex->Delete();
+ 	}
+ 	return false;
+diff --git a/srchybrid/ListCtrlX.cpp b/srchybrid/ListCtrlX.cpp
+index 16cf155..a40f7b3 100644
+--- a/srchybrid/ListCtrlX.cpp
++++ b/srchybrid/ListCtrlX.cpp
+@@ -5,6 +5,7 @@
+ #include "ListViewSearchDlg.h"
+ #include "OtherFunctions.h"
+ #include "Preferences.h"
++#include "Log.h"
+ 
+ #ifdef _DEBUG
+ #define new DEBUG_NEW
+@@ -533,6 +534,7 @@ void CreateItemReport(CListCtrl &lv, CString &rstrReport)
+ 	try {
+ 		paiColWidths = new int[iCols]{};
+ 	} catch (...) {
++		DebugLogCaughtException(__FUNCTION__);
+ 		return;
+ 	}
+ 	TCHAR szItem[512];
+@@ -617,6 +619,7 @@ void InitColumnOrders(CListCtrl &lv, int iColumns, const LCX_COLUMN_INIT *pColum
+ 	try {
+ 		piOrders = new INT[iColumns];
+ 	} catch (...) {
++		DebugLogCaughtException(__FUNCTION__);
+ 		return;
+ 	}
+ 	for (int iCol = 0; iCol < iColumns; ++iCol) {
+diff --git a/srchybrid/Log.cpp b/srchybrid/Log.cpp
+index 5ea05e8..819b356 100644
+--- a/srchybrid/Log.cpp
++++ b/srchybrid/Log.cpp
+@@ -222,6 +222,39 @@ void AddLogTextV(UINT uFlags, EDebugLogPriority dlpPriority, LPCTSTR pszLine, va
+ }
+ 
+ 
++void DebugLogCaughtException(LPCSTR pszWhere) noexcept
++{
++	try {
++		DebugLogError(_T("Unknown exception in %hs"), pszWhere);
++	} catch (CException *exLog) {
++		exLog->Delete();
++	} catch (...) {
++		// nothing left to report it with
++	}
++}
++
++void DebugLogCaughtException(LPCSTR pszWhere, CException *ex) noexcept
++{
++	try {
++		DebugLogError(_T("Exception in %hs: %s"), pszWhere, (LPCTSTR)CExceptionStr(*ex));
++	} catch (CException *exLog) {
++		exLog->Delete();
++	} catch (...) {
++		// nothing left to report it with
++	}
++}
++
++void DebugLogCaughtException(LPCSTR pszWhere, const CString &strError) noexcept
++{
++	try {
++		DebugLogError(_T("Exception in %hs: %s"), pszWhere, (LPCTSTR)strError);
++	} catch (CException *exLog) {
++		exLog->Delete();
++	} catch (...) {
++		// nothing left to report it with
++	}
++}
++
+ ///////////////////////////////////////////////////////////////////////////////
+ // CLogFile
+ 
+diff --git a/srchybrid/Log.h b/srchybrid/Log.h
+index 8a6b3a9..0f18b2a 100644
+--- a/srchybrid/Log.h
++++ b/srchybrid/Log.h
+@@ -47,6 +47,15 @@ void AddDebugLogLine(EDebugLogPriority Priority, bool bAddToStatusBar, LPCTSTR p
+ 
+ void AddLogTextV(UINT uFlags, EDebugLogPriority dlpPriority, LPCTSTR pszLine, va_list argptr);
+ 
++// One line in the verbose log for an exception that a catch block handles without
++// reporting it anywhere else, so that no failure passes without a trace. pszWhere
++// is the catching function (__FUNCTION__). An exception object, when there is one,
++// is described but not deleted - the catch block still owns it. These never throw:
++// a failure while logging must not escape a catch block that used to absorb it.
++void DebugLogCaughtException(LPCSTR pszWhere) noexcept;
++void DebugLogCaughtException(LPCSTR pszWhere, CException *ex) noexcept;
++void DebugLogCaughtException(LPCSTR pszWhere, const CString &strError) noexcept;
++
+ 
+ ///////////////////////////////////////////////////////////////////////////////
+ // CLogFile
+diff --git a/srchybrid/MediaInfo.cpp b/srchybrid/MediaInfo.cpp
+index e5f5eaa..6c4896f 100644
+--- a/srchybrid/MediaInfo.cpp
++++ b/srchybrid/MediaInfo.cpp
+@@ -21,6 +21,7 @@
+ #include "resource.h"
+ #include "MediaInfo.h"
+ #include "SafeFile.h"
++#include "Log.h"
+ #ifdef HAVE_WMSDK_H
+ #include <wmsdk.h>
+ #if !defined(HAVE_VISTA_SDK)
+@@ -582,6 +583,7 @@ static bool ParseStreamHeader(int hAviFile, DWORD dwLengthLeft, STREAMHEADER *pS
+ 				pStrmHdr->dwFormatLen = dwLength;
+ 				pStrmHdr->fmt.dat = new BYTE[dwLength];
+ 			} catch (...) {
++				DebugLogCaughtException(__FUNCTION__);
+ 				errno = ENOMEM;
+ 				return false;
+ 			}
+@@ -597,6 +599,7 @@ static bool ParseStreamHeader(int hAviFile, DWORD dwLengthLeft, STREAMHEADER *pS
+ 			try {
+ 				pStrmHdr->nam = new char[dwLength + 1];
+ 			} catch (...) {
++				DebugLogCaughtException(__FUNCTION__);
+ 				errno = ENOMEM;
+ 				return false;
+ 			}
+@@ -903,6 +906,7 @@ bool GetRIFFHeaders(LPCTSTR pszFileName, SMediaInfo *mi, bool &rbIsAVI, bool bFu
+ 										ck.Seek(1, CFile::current);
+ 								}
+ 							} catch (CException *ex) {
++								DebugLogCaughtException(__FUNCTION__, ex);
+ 								ex->Delete();
+ 								bError = true;
+ 							}
+@@ -946,6 +950,7 @@ bool GetRIFFHeaders(LPCTSTR pszFileName, SMediaInfo *mi, bool &rbIsAVI, bool bFu
+ 					strmhdr.dwFormatLen = dwLength;
+ 					strmhdr.fmt.dat = new BYTE[dwLength];
+ 				} catch (...) {
++					DebugLogCaughtException(__FUNCTION__);
+ 					errno = ENOMEM;
+ 					goto inv_format_errno;
+ 				}
+@@ -1263,6 +1268,7 @@ bool GetRMHeaders(LPCTSTR pszFileName, SMediaInfo *mi, bool &rbIsRM, bool bFullI
+ 										bReadMDPR_Video = true;
+ 									}
+ 								} catch (CException *ex) {
++									DebugLogCaughtException(__FUNCTION__, ex);
+ 									ex->Delete();
+ 									delete[] pucTypeData;
+ 									break;
+@@ -1315,6 +1321,7 @@ bool GetRMHeaders(LPCTSTR pszFileName, SMediaInfo *mi, bool &rbIsRM, bool bFullI
+ 										}
+ 									}
+ 								} catch (CException *ex) {
++									DebugLogCaughtException(__FUNCTION__, ex);
+ 									ex->Delete();
+ 									delete[] pucTypeData;
+ 									break;
+@@ -1450,6 +1457,7 @@ bool GetRMHeaders(LPCTSTR pszFileName, SMediaInfo *mi, bool &rbIsRM, bool bFullI
+ 			}
+ 		}
+ 	} catch (CException *ex) {
++		DebugLogCaughtException(__FUNCTION__, ex);
+ 		ex->Delete();
+ 	}
+ 
+@@ -2710,6 +2718,7 @@ bool GetWMHeaders(LPCTSTR pszFileName, SMediaInfo *mi, bool &rbIsWM, bool bFullI
+ 			}
+ 		}
+ 	} catch (CException *ex) {
++		DebugLogCaughtException(__FUNCTION__, ex);
+ 		ASSERT(ex->IsKindOf(RUNTIME_CLASS(CNotSupportedException)));
+ 		ex->Delete();
+ 	}
+diff --git a/srchybrid/OtherFunctions.cpp b/srchybrid/OtherFunctions.cpp
+index 62e8cc1..2a07e63 100644
+--- a/srchybrid/OtherFunctions.cpp
++++ b/srchybrid/OtherFunctions.cpp
+@@ -2244,9 +2244,11 @@ void DebugHexDump(CFile &file)
+ 			file.Read(data, iSize);
+ 			DebugHexDump(data, iSize);
+ 		} catch (CFileException *ex) {
++			DebugLogCaughtException(__FUNCTION__, ex);
+ 			TRACE("*** DebugHexDump(CFile&); CFileException\n");
+ 			ex->Delete();
+ 		} catch (CMemoryException *ex) {
++			DebugLogCaughtException(__FUNCTION__, ex);
+ 			TRACE("*** DebugHexDump(CFile&); CMemoryException\n");
+ 			ex->Delete();
+ 		}
+@@ -3461,7 +3463,8 @@ bool IsRegExpValid(const CString &regexpr)
+ 	try {
+ 		std::basic_regex<TCHAR> reFN(regexpr);
+ 		(void)reFN;
+-	} catch (const std::regex_error&) {
++	} catch (const std::regex_error &ex) {
++		DebugLogCaughtException(__FUNCTION__, CString(ex.what()));
+ 		return false;
+ 	}
+ 	return true;
+@@ -3477,7 +3480,8 @@ bool RegularExpressionMatch(const CString &regexpr, const CString &teststring)
+ 		std::cmatch mcUrl;
+ #endif
+ 		return std::regex_match((LPCTSTR)teststring, mcUrl, reFN);
+-	} catch (const std::regex_error&) {
++	} catch (const std::regex_error &ex) {
++		DebugLogCaughtException(__FUNCTION__, CString(ex.what()));
+ 		return false;
+ 	}
+ }
+@@ -3836,6 +3840,7 @@ EFileType GetFileTypeEx(CShareableFile *kfile, bool checkextention, bool checkfi
+ 				inFile.Close();
+ 			}
+ 		} catch (...) {
++			DebugLogCaughtException(__FUNCTION__);
+ 			ASSERT(0);
+ 			return FILETYPE_UNKNOWN;
+ 		}
+diff --git a/srchybrid/PartFile.cpp b/srchybrid/PartFile.cpp
+index 0f78ee9..bc4d8a5 100644
+--- a/srchybrid/PartFile.cpp
++++ b/srchybrid/PartFile.cpp
+@@ -1114,6 +1114,7 @@ EPartFileLoadResult CPartFile::LoadPartFile(LPCTSTR in_directory, LPCTSTR in_fil
+ 			try {
+ 				b = m_hpartfile.GetStatus(filestatus);
+ 			} catch (CException *ex) {
++				DebugLogCaughtException(__FUNCTION__, ex);
+ 				ex->Delete();
+ 			}
+ 			time_t fdate;
+@@ -4946,8 +4947,10 @@ bool CPartFile::CopyPartFile(CArray<Gap_Struct> &raFilled, const CString &tempFi
+ 		m_bPreviewing = false;
+ 		return true;
+ 	} catch (CFileException *ex) {
++		DebugLogCaughtException(__FUNCTION__, ex);
+ 		ex->Delete();
+ 	} catch (...) {
++		DebugLogCaughtException(__FUNCTION__);
+ 		ASSERT(0);
+ 	}
+ 	m_bPreviewing = false;
+@@ -5235,6 +5238,7 @@ void CPartFile::AICHRecoveryDataAvailable(UINT nPart)
+ 		m_hpartfile.Seek((LONGLONG)uStart, CFile::begin);
+ 		CreateHash(&m_hpartfile, length, NULL, &htOurHash);
+ 	} catch (...) {
++		DebugLogCaughtException(__FUNCTION__);
+ 		ASSERT(0);
+ 		return;
+ 	}
+diff --git a/srchybrid/Preferences.cpp b/srchybrid/Preferences.cpp
+index 48fe58c..eae5c15 100644
+--- a/srchybrid/Preferences.cpp
++++ b/srchybrid/Preferences.cpp
+@@ -570,6 +570,7 @@ void CPreferences::Init()
+ 				}
+ 			}
+ 		} catch (CFileException *ex) {
++			DebugLogCaughtException(__FUNCTION__, ex);
+ 			ASSERT(0);
+ 			ex->Delete();
+ 		}
+@@ -591,6 +592,7 @@ void CPreferences::Init()
+ 					addresses_list.AddTail(toadd);
+ 			}
+ 		} catch (CFileException *ex) {
++			DebugLogCaughtException(__FUNCTION__, ex);
+ 			ASSERT(0);
+ 			ex->Delete();
+ 		}
+diff --git a/srchybrid/Preview.cpp b/srchybrid/Preview.cpp
+index 5da5635..59f8ec8 100644
+--- a/srchybrid/Preview.cpp
++++ b/srchybrid/Preview.cpp
+@@ -22,6 +22,7 @@
+ #include "PartFile.h"
+ #include "Preview.h"
+ #include "MenuCmds.h"
++#include "Log.h"
+ 
+ #ifdef _DEBUG
+ #define new DEBUG_NEW
+@@ -106,6 +107,7 @@ BOOL CPreviewThread::Run()
+ 		}
+ 		CFile::Remove(strPreviewName);
+ 	} catch (CFileException *ex) {
++		DebugLogCaughtException(__FUNCTION__, ex);
+ 		m_pPartfile->m_bPreviewing = false;
+ 		ex->Delete();
+ 	}
+diff --git a/srchybrid/QArray.h b/srchybrid/QArray.h
+index b7c575d..a5d46c3 100644
+--- a/srchybrid/QArray.h
++++ b/srchybrid/QArray.h
+@@ -14,6 +14,7 @@
+ *********************************************************************************************/
+ 
+ #pragma once
++#include "Log.h"
+ 
+ //////////////////////////////////////////////////////////////////////////
+ // QuickSort functions
+@@ -85,6 +86,7 @@ template <class T> BOOL QuickSort(T *pArr, int iSize, BOOL bAscending = TRUE)
+ 			QuickSortRecursive(pArr, low, high, bAscending);
+ 			return TRUE;
+ 		} catch (...) {
++			DebugLogCaughtException(__FUNCTION__);
+ 		}
+ 	}
+ 	::SetLastError(ERROR_INVALID_PARAMETER);
+diff --git a/srchybrid/RARFile.cpp b/srchybrid/RARFile.cpp
+index 19e760e..5fe4c16 100644
+--- a/srchybrid/RARFile.cpp
++++ b/srchybrid/RARFile.cpp
+@@ -83,6 +83,7 @@ bool CRARFile::Open(LPCTSTR pszArchiveFilePath)
+ 	try {
+ 		m_hArchive = (*m_pfnRAROpenArchiveEx)(&OpenArchiveData);
+ 	} catch (...) {
++		DebugLogCaughtException(__FUNCTION__);
+ 		m_hArchive = NULL;
+ 	}
+ 
+@@ -101,6 +102,7 @@ void CRARFile::Close()
+ 			try {
+ 				VERIFY((*m_pfnRARCloseArchive)(m_hArchive) == 0);
+ 			} catch (...) {
++				DebugLogCaughtException(__FUNCTION__);
+ 			}
+ 		}
+ 		m_hArchive = NULL;
+@@ -120,6 +122,7 @@ bool CRARFile::GetNextFile(CString &strFile) const
+ 	try {
+ 		iReadHeaderResult = (*m_pfnRARReadHeaderEx)(m_hArchive, &HeaderData);
+ 	} catch (...) {
++		DebugLogCaughtException(__FUNCTION__);
+ 		return false;
+ 	}
+ 	if (iReadHeaderResult != 0)
+@@ -139,6 +142,7 @@ bool CRARFile::Extract(LPCTSTR pszDstFilePath) const
+ 	try {
+ 		iProcessFileResult = (*m_pfnRARProcessFileW)(m_hArchive, RAR_EXTRACT, NULL, (CStringW)pszDstFilePath);
+ 	} catch (...) {
++		DebugLogCaughtException(__FUNCTION__);
+ 		return false;
+ 	}
+ 	return !iProcessFileResult;
+@@ -155,6 +159,7 @@ bool CRARFile::Skip() const
+ 	try {
+ 		iProcessFileResult = (*m_pfnRARProcessFileW)(m_hArchive, RAR_SKIP, NULL, NULL);
+ 	} catch (...) {
++		DebugLogCaughtException(__FUNCTION__);
+ 		return false;
+ 	}
+ 	return !iProcessFileResult;
+diff --git a/srchybrid/ServerList.cpp b/srchybrid/ServerList.cpp
+index 7c44a1d..c63979f 100644
+--- a/srchybrid/ServerList.cpp
++++ b/srchybrid/ServerList.cpp
+@@ -811,6 +811,7 @@ void CServerList::AddServersFromTextFile(const CString &strFilename) const
+ 		}
+ 		f.Close();
+ 	} catch (CFileException *ex) {
++		DebugLogCaughtException(__FUNCTION__, ex);
+ 		ASSERT(0);
+ 		ex->Delete();
+ 	}
+diff --git a/srchybrid/ServerSocket.cpp b/srchybrid/ServerSocket.cpp
+index f440c43..6e7c81f 100644
+--- a/srchybrid/ServerSocket.cpp
++++ b/srchybrid/ServerSocket.cpp
+@@ -622,6 +622,7 @@ void CServerSocket::ProcessPacketError(UINT size, UINT opcode, LPCTSTR pszError)
+ 			else
+ 				strServer = _T("Unknown");
+ 		} catch (...) {
++			DebugLogCaughtException(__FUNCTION__);
+ 		}
+ 		DebugLogWarning(LOG_DEFAULT, _T("Error: Failed to process server TCP packet from %s: opcode=0x%02x size=%u - %s"), (LPCTSTR)strServer, opcode, size, pszError);
+ 	}
+diff --git a/srchybrid/SharedFileList.cpp b/srchybrid/SharedFileList.cpp
+index faac858..b8a4a2d 100644
+--- a/srchybrid/SharedFileList.cpp
++++ b/srchybrid/SharedFileList.cpp
+@@ -377,6 +377,7 @@ bool CAddFileThread::ImportParts()
+ 			if (!theApp.IsRunning() || partSize != PARTSIZE || m_partfile->GetFileOp() != PFOP_IMPORTPARTS)
+ 				break;
+ 		} catch (...) {
++			DebugLogCaughtException(__FUNCTION__);
+ 		}
+ 	}
+ 	f.Close();
+@@ -391,6 +392,7 @@ bool CAddFileThread::ImportParts()
+ 			, partsuccess
+ 			, (LPCTSTR)m_strFilename);
+ 	} catch (...) {
++		DebugLogCaughtException(__FUNCTION__);
+ 		//This could happen if we deleted the part file instance
+ 	}
+ 	return true;
+@@ -566,6 +568,7 @@ void CSharedFileList::FindSharedFiles()
+ 				_T("\nThanks for beta testing eMule :)"));
+ 			f.Close();
+ 		} catch (CFileException *ex) {
++			DebugLogCaughtException(__FUNCTION__, ex);
+ 			ASSERT(0);
+ 			ex->Delete();
+ 		}
+diff --git a/srchybrid/WebServer.cpp b/srchybrid/WebServer.cpp
+index 6d59bc4..628b0df 100644
+--- a/srchybrid/WebServer.cpp
++++ b/srchybrid/WebServer.cpp
+@@ -581,6 +581,7 @@ void CWebServer::_ProcessURL(const ThreadData &Data)
+ 						gzipOut = new TCHAR[gzipLen];
+ 						bUseGzip = (_GzipCompress((Bytef*)gzipOut, &gzipLen, (Bytef*)(LPCSTR)strA, strA.GetLength(), Z_DEFAULT_COMPRESSION) == Z_OK);
+ 					} catch (...) {
++						DebugLogCaughtException(__FUNCTION__);
+ 						ASSERT(0);
+ 					}
+ 					if (!bUseGzip) {
+@@ -3726,6 +3727,7 @@ CString CWebServer::_GetSearch(const ThreadData &Data)
+ 				strResponse = _GetPlainResString(IDS_ERR_NOTCONNECTEDKAD);
+ 			}
+ 		} catch (...) {
++			DebugLogCaughtException(__FUNCTION__);
+ 			strResponse = _GetPlainResString(IDS_ERROR);
+ 			ASSERT(0);
+ 			delete pParams;
+diff --git a/srchybrid/WebSocket.cpp b/srchybrid/WebSocket.cpp
+index 881f1b1..5fb405c 100644
+--- a/srchybrid/WebSocket.cpp
++++ b/srchybrid/WebSocket.cpp
+@@ -85,6 +85,7 @@ void CWebSocket::OnReceived(const void *pData, DWORD dwSize, const in_addr inad)
+ 			m_dwBufSize = dwSize + m_dwRecv + SIZE_PRESERVE;
+ 			pNewBuf = new char[m_dwBufSize];
+ 		} catch (...) {
++			DebugLogCaughtException(__FUNCTION__);
+ 			m_bValid = false; // internal problem
+ 			return;
+ 		}
+@@ -200,6 +201,7 @@ void CWebSocket::SendData(const void *pData, DWORD dwDataSize)
+ 			try {
+ 				pChunk = new CChunk;
+ 			} catch (...) {
++				DebugLogCaughtException(__FUNCTION__);
+ 				return;
+ 			}
+ 			pChunk->m_pNext = NULL;
+@@ -207,6 +209,7 @@ void CWebSocket::SendData(const void *pData, DWORD dwDataSize)
+ 			try {
+ 				pChunk->m_pData = new char[dwDataSize];
+ 			} catch (...) {
++				DebugLogCaughtException(__FUNCTION__);
+ 				delete pChunk; // oops, no memory (???)
+ 				return;
+ 			}
+@@ -259,6 +262,7 @@ void CWebSocket::Disconnect()
+ 				// push an empty chunk as the tail
+ 				m_pTail->m_pNext = new CChunk();
+ 			} catch (...) {
++				DebugLogCaughtException(__FUNCTION__);
+ 			}
+ 		else if (shutdown(m_hSocket, SD_SEND))
+ 			m_bValid = false;
+diff --git a/srchybrid/kademlia/kademlia/Prefs.cpp b/srchybrid/kademlia/kademlia/Prefs.cpp
+index 143c08f..ea59508 100644
+--- a/srchybrid/kademlia/kademlia/Prefs.cpp
++++ b/srchybrid/kademlia/kademlia/Prefs.cpp
+@@ -109,9 +109,11 @@ void CPrefs::ReadFile()
+ 			m_uClientID.SetValueRandom();
+ 		file.Close();
+ 	} catch (CException *ex) {
++		DebugLogCaughtException(__FUNCTION__, ex);
+ 		ASSERT(0);
+ 		ex->Delete();
+ 	} catch (...) {
++		DebugLogCaughtException(__FUNCTION__);
+ 		TRACE("Exception in CPrefs::ReadFile\n");
+ 	}
+ }
+@@ -129,9 +131,11 @@ void CPrefs::WriteFile()
+ 			file.Close();
+ 		}
+ 	} catch (CException *ex) {
++		DebugLogCaughtException(__FUNCTION__, ex);
+ 		ASSERT(0);
+ 		ex->Delete();
+ 	} catch (...) {
++		DebugLogCaughtException(__FUNCTION__);
+ 		TRACE("Exception in CPrefs::WriteFile\n");
+ 	}
+ }
