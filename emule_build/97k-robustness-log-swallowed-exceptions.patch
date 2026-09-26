@@ -798,10 +798,10 @@ index e5f5eaa..6c4896f 100644
  		ex->Delete();
  	}
 diff --git a/srchybrid/OtherFunctions.cpp b/srchybrid/OtherFunctions.cpp
-index 62e8cc1..2a07e63 100644
+index 1cf8749..c2ec104 100644
 --- a/srchybrid/OtherFunctions.cpp
 +++ b/srchybrid/OtherFunctions.cpp
-@@ -2244,9 +2244,11 @@ void DebugHexDump(CFile &file)
+@@ -2193,9 +2193,11 @@ void DebugHexDump(CFile &file)
  			file.Read(data, iSize);
  			DebugHexDump(data, iSize);
  		} catch (CFileException *ex) {
@@ -813,7 +813,7 @@ index 62e8cc1..2a07e63 100644
  			TRACE("*** DebugHexDump(CFile&); CMemoryException\n");
  			ex->Delete();
  		}
-@@ -3461,7 +3463,8 @@ bool IsRegExpValid(const CString &regexpr)
+@@ -3410,7 +3412,8 @@ bool IsRegExpValid(const CString &regexpr)
  	try {
  		std::basic_regex<TCHAR> reFN(regexpr);
  		(void)reFN;
@@ -823,7 +823,7 @@ index 62e8cc1..2a07e63 100644
  		return false;
  	}
  	return true;
-@@ -3477,7 +3480,8 @@ bool RegularExpressionMatch(const CString &regexpr, const CString &teststring)
+@@ -3426,7 +3429,8 @@ bool RegularExpressionMatch(const CString &regexpr, const CString &teststring)
  		std::cmatch mcUrl;
  #endif
  		return std::regex_match((LPCTSTR)teststring, mcUrl, reFN);
@@ -833,7 +833,7 @@ index 62e8cc1..2a07e63 100644
  		return false;
  	}
  }
-@@ -3836,6 +3840,7 @@ EFileType GetFileTypeEx(CShareableFile *kfile, bool checkextention, bool checkfi
+@@ -3785,6 +3789,7 @@ EFileType GetFileTypeEx(CShareableFile *kfile, bool checkextention, bool checkfi
  				inFile.Close();
  			}
  		} catch (...) {
@@ -873,7 +873,7 @@ index 0f78ee9..bc4d8a5 100644
  		return;
  	}
 diff --git a/srchybrid/Preferences.cpp b/srchybrid/Preferences.cpp
-index 48fe58c..eae5c15 100644
+index 55bdb39..3db1688 100644
 --- a/srchybrid/Preferences.cpp
 +++ b/srchybrid/Preferences.cpp
 @@ -570,6 +570,7 @@ void CPreferences::Init()

@@ -1,0 +1,84 @@
+diff --git a/srchybrid/Emule.cpp b/srchybrid/Emule.cpp
+index e2e1a13..b3bd9bd 100644
+--- a/srchybrid/Emule.cpp
++++ b/srchybrid/Emule.cpp
+@@ -1487,17 +1487,6 @@ void CemuleApp::CreateAllFonts()
+ 
+ const CString& CemuleApp::GetDefaultFontFaceName()
+ {
+-/* Support for old Windows was dropped
+-	if (m_strDefaultFontFaceName.IsEmpty()) {
+-		OSVERSIONINFO osvi;
+-		osvi.dwOSVersionInfoSize = (DWORD)sizeof osvi;
+-		if (GetVersionEx(&osvi)
+-			&& osvi.dwPlatformId == VER_PLATFORM_WIN32_NT
+-			&& osvi.dwMajorVersion >= 5) // Win2000/XP or higher
+-			m_strDefaultFontFaceName = _T("MS Shell Dlg 2");
+-		else
+-			m_strDefaultFontFaceName = _T("MS Shell Dlg");
+-	}*/
+ 	return m_strDefaultFontFaceName;
+ }
+ 
+diff --git a/srchybrid/OtherFunctions.cpp b/srchybrid/OtherFunctions.cpp
+index c4cac78..e9adee2 100644
+--- a/srchybrid/OtherFunctions.cpp
++++ b/srchybrid/OtherFunctions.cpp
+@@ -616,57 +616,6 @@ void RevertReg()
+ UINT GetMaxWindowsTCPConnections()
+ {
+ 	return UNLIMITED;
+-/*	OSVERSIONINFOEX osvi;
+-	osvi.dwOSVersionInfoSize = (DWORD)sizeof(OSVERSIONINFOEX);
+-
+-	if (!GetVersionEx((OSVERSIONINFO*)&osvi)) {
+-		//if OSVERSIONINFOEX doesn't work, try OSVERSIONINFO
+-		osvi.dwOSVersionInfoSize = (DWORD)sizeof(OSVERSIONINFO);
+-		if (!GetVersionEx((OSVERSIONINFO*)&osvi))
+-			return UNLIMITED;  //shouldn't ever happen
+-	}
+-
+-	if (osvi.dwPlatformId == VER_PLATFORM_WIN32_NT) // Windows NT product family
+-		return UNLIMITED;  //no limits
+-
+-	if (osvi.dwPlatformId == VER_PLATFORM_WIN32_WINDOWS) { // Windows 95 product family
+-
+-		HKEY hKey;
+-		if (osvi.dwMajorVersion == 4 && osvi.dwMinorVersion == 0) { //old school 95
+-			DWORD dwValue;
+-			DWORD dwLength = (DWORD)sizeof dwValue;
+-
+-			RegOpenKeyEx(HKEY_LOCAL_MACHINE, _T("System\\CurrentControlSet\\Services\\VxD\\MSTCP")
+-				, 0, KEY_QUERY_VALUE, &hKey);
+-			LONG lResult = RegQueryValueEx(hKey, _T("MaxConnections"), NULL, NULL
+-				, (LPBYTE)&dwValue, &dwLength);
+-			RegCloseKey(hKey);
+-
+-			if (lResult != ERROR_SUCCESS || dwValue < 1)
+-				return 100;  //the default for 95 is 100
+-
+-			return dwValue;
+-
+-		}
+-		//98 or ME
+-		TCHAR szValue[32];
+-		DWORD dwLength = (DWORD)sizeof szValue;
+-		LONG lResult;
+-
+-		RegOpenKeyEx(HKEY_LOCAL_MACHINE, _T("System\\CurrentControlSet\\Services\\VxD\\MSTCP")
+-			, 0, KEY_QUERY_VALUE, &hKey);
+-		lResult = RegQueryValueEx(hKey, TEXT("MaxConnections"), NULL, NULL, (LPBYTE)szValue, &dwLength);
+-		RegCloseKey(hKey);
+-
+-		LONG lMaxConnections;
+-		if (lResult != ERROR_SUCCESS || (lMaxConnections = _tstoi(szValue)) < 1)
+-			return 100;  //the default for 98/ME is 100
+-
+-		return lMaxConnections;
+-	}
+-
+-	return UNLIMITED;  //give the user the benefit of the doubt, most use NT+ anyway
+-*/
+ }
+ 
+ #pragma warning(push)

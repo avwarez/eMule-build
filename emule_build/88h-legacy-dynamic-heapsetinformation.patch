@@ -1,0 +1,25 @@
+diff --git a/srchybrid/Emule.cpp b/srchybrid/Emule.cpp
+index b3bd9bd..475650d 100644
+--- a/srchybrid/Emule.cpp
++++ b/srchybrid/Emule.cpp
+@@ -221,18 +221,11 @@ static void InitDEP()
+ ///////////////////////////////////////////////////////////////////////////////
+ // Heap Corruption Detection
+ //
+-// For Windows XP SP3 and later. Does *not* have any performance impact!
++// Does *not* have any performance impact!
+ //
+-#ifndef HeapEnableTerminationOnCorruption
+-#define HeapEnableTerminationOnCorruption (HEAP_INFORMATION_CLASS)1
+-#endif//!HeapEnableTerminationOnCorruption
+-
+ static void InitHeapCorruptionDetection()
+ {
+-	BOOL(WINAPI *pfnHeapSetInformation)(HANDLE HeapHandle, HEAP_INFORMATION_CLASS HeapInformationClass, PVOID HeapInformation, SIZE_T HeapInformationLength);
+-	(FARPROC &)pfnHeapSetInformation = ::GetProcAddress(::GetModuleHandle(_T("kernel32")), "HeapSetInformation");
+-	if (pfnHeapSetInformation)
+-		(*pfnHeapSetInformation)(NULL, HeapEnableTerminationOnCorruption, NULL, 0);
++	::HeapSetInformation(NULL, HeapEnableTerminationOnCorruption, NULL, 0);
+ }
+ 
+ 

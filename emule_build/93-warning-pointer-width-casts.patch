@@ -86,10 +86,10 @@ index 3903fd8..03acd39 100644
  void CDownloadListCtrl::FillCatsMenu(CMenu &rCatsMenu, int iFilesInCats)
  {
 diff --git a/srchybrid/Emule.cpp b/srchybrid/Emule.cpp
-index 492d981..fee8145 100644
+index 08f5ed3..2b10b09 100644
 --- a/srchybrid/Emule.cpp
 +++ b/srchybrid/Emule.cpp
-@@ -949,7 +949,7 @@ int CemuleApp::GetFileTypeSystemImageIdx(LPCTSTR pszFilePath, int iLength /* = -
+@@ -942,7 +942,7 @@ int CemuleApp::GetFileTypeSystemImageIdx(LPCTSTR pszFilePath, int iLength /* = -
  			m_hBigSystemImageList = hResult;
  
  			// Store icon index in local cache
@@ -98,7 +98,7 @@ index 492d981..fee8145 100644
  			return sfi.iIcon;
  		}
  	} else if (!m_aExtToSysImgIdx.Lookup(pszCacheExt, vData)) {
-@@ -963,12 +963,12 @@ int CemuleApp::GetFileTypeSystemImageIdx(LPCTSTR pszFilePath, int iLength /* = -
+@@ -956,12 +956,12 @@ int CemuleApp::GetFileTypeSystemImageIdx(LPCTSTR pszFilePath, int iLength /* = -
  		m_hSystemImageList = hResult;
  
  		// Store icon index in local cache
@@ -233,7 +233,7 @@ index 506bdbc..e8ba715 100644
  			}
  			VERIFY(::DestroyIcon(hIcon));
 diff --git a/srchybrid/kademlia/kademlia/Search.cpp b/srchybrid/kademlia/kademlia/Search.cpp
-index 7e67042..3904c51 100644
+index c03364c..2a22b0e 100644
 --- a/srchybrid/kademlia/kademlia/Search.cpp
 +++ b/srchybrid/kademlia/kademlia/Search.cpp
 @@ -1053,8 +1053,6 @@ void CSearch::ProcessResultNotes(const CUInt128 &uAnswer, TagList &rlistInfo)

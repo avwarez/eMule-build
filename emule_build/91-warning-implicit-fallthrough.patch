@@ -200,10 +200,10 @@ index bd13bcc..f839317 100644
  				continue;
  			case PB_ERROR:
 diff --git a/srchybrid/Preferences.cpp b/srchybrid/Preferences.cpp
-index 772a0f7..d681d64 100644
+index ae15c72..035c09d 100644
 --- a/srchybrid/Preferences.cpp
 +++ b/srchybrid/Preferences.cpp
-@@ -2925,6 +2925,7 @@ CString CPreferences::GetDefaultDirectory(EDefaultDirectory eDirectory, bool bCr
+@@ -2912,6 +2912,7 @@ CString CPreferences::GetDefaultDirectory(EDefaultDirectory eDirectory, bool bCr
  								strSelectedDataBaseDirectory = strPublicDownloads + _T("eMule\\");
  								strSelectedConfigBaseDirectory = strProgramData + _T("eMule\\");
  								strSelectedExpansionBaseDirectory = strProgramData + _T("eMule\\");

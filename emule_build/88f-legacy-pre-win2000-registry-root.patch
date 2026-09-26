@@ -1,0 +1,40 @@
+diff --git a/srchybrid/OtherFunctions.cpp b/srchybrid/OtherFunctions.cpp
+index 5cf579a..c4cac78 100644
+--- a/srchybrid/OtherFunctions.cpp
++++ b/srchybrid/OtherFunctions.cpp
+@@ -532,7 +532,7 @@ bool Ask4RegFix(bool checkOnly, bool dontAsk, bool bAutoTakeCollections)
+ 		// we actually need to change the registry and write an entry for HKCU
+ 		if (checkOnly)
+ 			return true;
+-		HKEY hkeyCR = thePrefs.GetWindowsVersion() < _WINVER_2K_ ? HKEY_LOCAL_MACHINE : HKEY_CURRENT_USER;
++		HKEY hkeyCR = HKEY_CURRENT_USER;
+ 		if (regkey.Create(hkeyCR, _T("Software\\Classes\\ed2k\\shell\\open\\command")) == ERROR_SUCCESS) {
+ 			if (dontAsk || (LocMessageBox(IDS_ASSIGNED2K, MB_ICONQUESTION | MB_YESNO, 0) == IDYES)) {
+ 				VERIFY(regkey.SetStringValue(NULL, regbuffer) == ERROR_SUCCESS);
+@@ -567,7 +567,7 @@ void BackupReg()
+ 	//		This means that saving/restoring existent registry keys works completely differently in Win98/XP.
+ 	//		Actually it works correctly under Win98 and is broken in WinXP+. Though, did someone notice it at all?
+ 
+-	HKEY hkeyCR = thePrefs.GetWindowsVersion() < _WINVER_2K_ ? HKEY_LOCAL_MACHINE : HKEY_CURRENT_USER;
++	HKEY hkeyCR = HKEY_CURRENT_USER;
+ 	// Look for pre-existing old ed2k links
+ 	CRegKey regkey;
+ 	if (regkey.Create(hkeyCR, _T("Software\\Classes\\ed2k\\shell\\open\\command")) == ERROR_SUCCESS) {
+@@ -591,7 +591,7 @@ void BackupReg()
+ // Barry - Restore previous values
+ void RevertReg()
+ {
+-	HKEY hkeyCR = thePrefs.GetWindowsVersion() < _WINVER_2K_ ? HKEY_LOCAL_MACHINE : HKEY_CURRENT_USER;
++	HKEY hkeyCR = HKEY_CURRENT_USER;
+ 	// restore previous ed2k links before being assigned to emule
+ 	CRegKey regkey;
+ 	if (regkey.Create(hkeyCR, _T("Software\\Classes\\ed2k\\shell\\open\\command")) == ERROR_SUCCESS) {
+@@ -3634,7 +3634,7 @@ bool DoCollectionRegFix(bool checkOnly)
+ 		// we actually need to change the registry and write an entry for HKCU
+ 		if (checkOnly)
+ 			return true;
+-		HKEY hkeyCR = thePrefs.GetWindowsVersion() < _WINVER_2K_ ? HKEY_LOCAL_MACHINE : HKEY_CURRENT_USER;
++		HKEY hkeyCR = HKEY_CURRENT_USER;
+ 		if (regkey.Create(hkeyCR, _T("Software\\Classes\\eMule\\shell\\open\\command")) == ERROR_SUCCESS) {
+ 			VERIFY(regkey.SetStringValue(NULL, regbuffer) == ERROR_SUCCESS);
+ 

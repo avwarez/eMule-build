@@ -1,5 +1,5 @@
 diff --git a/srchybrid/OtherFunctions.cpp b/srchybrid/OtherFunctions.cpp
-index 5cf579a..62e8cc1 100644
+index e9adee2..1cf8749 100644
 --- a/srchybrid/OtherFunctions.cpp
 +++ b/srchybrid/OtherFunctions.cpp
 @@ -22,6 +22,7 @@
@@ -10,8 +10,8 @@ index 5cf579a..62e8cc1 100644
  #include "emule.h"
  #include "UpDownClient.h"
  #include "DownloadQueue.h"
-@@ -669,76 +670,36 @@ UINT GetMaxWindowsTCPConnections()
- */
+@@ -618,76 +619,36 @@ UINT GetMaxWindowsTCPConnections()
+ 	return UNLIMITED;
  }
  
 -#pragma warning(push)

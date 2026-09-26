@@ -1,0 +1,57 @@
+diff --git a/srchybrid/Opcodes.h b/srchybrid/Opcodes.h
+index d46a864..2f7d827 100644
+--- a/srchybrid/Opcodes.h
++++ b/srchybrid/Opcodes.h
+@@ -106,7 +106,6 @@
+ 
+ #define CONFIGFOLDER			_T("config\\")
+ #define MAXCONPER5SEC			20
+-#define MAXCON5WIN9X			10
+ #define	UPLOAD_CLIENT_MAXDATARATE	(25*1024) // max. target upload speed per client
+ #define	MIN_UP_CLIENTS_ALLOWED	2			// min. clients allowed to download regardless of any other factors. Don't set this too high
+ #define	MAX_UP_CLIENTS_ALLOWED	100			// max. clients allowed regardless of any other factors; cannot be below MIN_UP_CLIENTS_ALLOWED+3
+diff --git a/srchybrid/Preferences.cpp b/srchybrid/Preferences.cpp
+index 772a0f7..ae15c72 100644
+--- a/srchybrid/Preferences.cpp
++++ b/srchybrid/Preferences.cpp
+@@ -1999,7 +1999,7 @@ void CPreferences::LoadPreferences()
+ 
+ 	statsMax = ini.GetInt(_T("VariousStatisticsMaxValue"), 100);
+ 	statsAverageMinutes = ini.GetInt(_T("StatsAverageMinutes"), 5);
+-	MaxConperFive = ini.GetInt(_T("MaxConnectionsPerFiveSeconds"), GetDefaultMaxConperFive());
++	MaxConperFive = ini.GetInt(_T("MaxConnectionsPerFiveSeconds"), MAXCONPER5SEC);
+ 
+ 	reconnect = ini.GetBool(_T("Reconnect"), true);
+ 	m_bUseServerPriorities = ini.GetBool(_T("Scoresystem"), true);
+@@ -2410,19 +2410,6 @@ WORD CPreferences::GetWindowsVersion()
+ 	return m_wWinVer;
+ }
+ 
+-UINT CPreferences::GetDefaultMaxConperFive()
+-{
+-	switch (GetWindowsVersion()) {
+-	case _WINVER_98_:
+-		return 5;
+-	case _WINVER_95_:
+-	case _WINVER_ME_:
+-		return MAXCON5WIN9X;
+-	default:
+-		return MAXCONPER5SEC;
+-	}
+-}
+-
+ //////////////////////////////////////////////////////////
+ // category implementations
+ //////////////////////////////////////////////////////////
+diff --git a/srchybrid/Preferences.h b/srchybrid/Preferences.h
+index 031d87a..fd77eb6 100644
+--- a/srchybrid/Preferences.h
++++ b/srchybrid/Preferences.h
+@@ -1126,7 +1126,6 @@ public:
+ 	static COLORREF GetLogSuccessColor()				{ return m_crLogSuccess; }
+ 
+ 	static UINT		GetMaxConperFive()					{ return MaxConperFive; }
+-	static UINT		GetDefaultMaxConperFive();
+ 
+ 	static bool		IsSafeServerConnectEnabled()		{ return m_bSafeServerConnect; }
+ 	static void		SetSafeServerConnectEnabled(bool in) { m_bSafeServerConnect = in; }

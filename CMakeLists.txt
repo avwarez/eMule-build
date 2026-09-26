@@ -66,7 +66,10 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #   88     legacy features taken out: code that only ever ran on Windows
 #          versions we no longer target, or that nothing calls any more.
 #          Each patch removes one feature, down to its resources and ini keys
-#          (the translated strings stay, the language DLLs still carry them).
+#          (the translated strings stay, the language DLLs still carry them),
+#          or one branch no supported Windows ever takes, or one run-time
+#          lookup of an API every supported Windows has - small on purpose,
+#          so each can be judged on its own.
 #   90-94  the code compiles but /Wall flags it; these bring the warning
 #          count back to zero.
 #   95-96  the code compiles and is warning-clean but is not correct on
