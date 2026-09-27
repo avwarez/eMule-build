@@ -83,8 +83,10 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          v0.72a-lang branch - source data for the `languages` target
 #          rather than code, so they change no binary.
 #   99     reserved for temporary diagnostics - a patch that makes a build
-#          report something rather than fix it. Nothing lives here now;
-#          whatever lands here is meant to be deleted once it has been read.
+#          report something rather than fix it; whatever lands here is meant
+#          to be deleted once it has been read. 99a: the crash in Kad's search
+#          teardown on Disconnect (checks before each delete, and a log of
+#          every access violation as it is raised, emule_diag_av.log).
 # ---------------------------------------------------------------------------
 find_package(Git REQUIRED)
 

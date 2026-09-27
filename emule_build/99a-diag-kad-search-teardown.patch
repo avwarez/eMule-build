@@ -1,0 +1,362 @@
+diff --git a/srchybrid/Emule.cpp b/srchybrid/Emule.cpp
+index 2b10b09..8824452 100644
+--- a/srchybrid/Emule.cpp
++++ b/srchybrid/Emule.cpp
+@@ -232,6 +232,126 @@ static void InitHeapCorruptionDetection()
+ 	::HeapSetInformation(NULL, HeapEnableTerminationOnCorruption, NULL, 0);
+ }
+ 
++///////////////////////////////////////////////////////////////////////////////
++// 99a diagnostics: access violations logged when they are raised
++//
++// Every access violation (and heap corruption report) is appended to
++// emule_diag_av.log next to the executable as soon as it is raised, before any
++// handler sees it. Wine ignores the ones raised inside a window procedure that
++// user32 called back, so without this they leave no trace but their damage.
++// The handler calls the Windows API only - no CRT, no heap.
++//
++extern UINT g_uMainThreadId;
++static HANDLE s_hDiagAVLog = INVALID_HANDLE_VALUE;
++static volatile LONG s_nDiagAVLogged;
++static __declspec(thread) bool s_bInDiagAVHandler;
++static ULONG_PTR s_uDiagImageBase;
++static ULONG_PTR s_uDiagImageSize;
++
++static void DiagFormatAddr(char *psz, ULONG_PTR uAddr)
++{
++	if (uAddr >= s_uDiagImageBase && uAddr < s_uDiagImageBase + s_uDiagImageSize)
++		wsprintfA(psz, "emule+0x%lx", (DWORD)(uAddr - s_uDiagImageBase));
++	else
++		wsprintfA(psz, "0x%08lx%08lx", (DWORD)((ULONGLONG)uAddr >> 32), (DWORD)uAddr);
++}
++
++static void DiagWrite(const char *psz, int nLen)
++{
++	DWORD dwWritten;
++	::WriteFile(s_hDiagAVLog, psz, (DWORD)nLen, &dwWritten, NULL);
++}
++
++static LONG CALLBACK DiagAVHandler(PEXCEPTION_POINTERS pExInfo)
++{
++	const EXCEPTION_RECORD *pRec = pExInfo->ExceptionRecord;
++	switch (pRec->ExceptionCode) {
++	case EXCEPTION_ACCESS_VIOLATION:
++	case EXCEPTION_DATATYPE_MISALIGNMENT:
++	case EXCEPTION_IN_PAGE_ERROR:
++	case 0xC0000374:	// STATUS_HEAP_CORRUPTION, from ntstatus.h
++		break;
++	default:
++		return EXCEPTION_CONTINUE_SEARCH;
++	}
++	// a fault while reading the stack below comes back here: let the __except take it
++	if (s_hDiagAVLog == INVALID_HANDLE_VALUE || s_bInDiagAVHandler || ::InterlockedIncrement(&s_nDiagAVLogged) > 200)
++		return EXCEPTION_CONTINUE_SEARCH;
++	s_bInDiagAVHandler = true;
++
++	const CONTEXT *pCtx = pExInfo->ContextRecord;
++#if defined _M_ARM64
++	const ULONG_PTR uPc = pCtx->Pc, uSp = pCtx->Sp, uLr = pCtx->Lr;
++#elif defined _M_X64
++	const ULONG_PTR uPc = pCtx->Rip, uSp = pCtx->Rsp, uLr = 0;
++#else
++	const ULONG_PTR uPc = pCtx->Eip, uSp = pCtx->Esp, uLr = 0;
++#endif
++	const bool bAV = pRec->ExceptionCode == EXCEPTION_ACCESS_VIOLATION && pRec->NumberParameters >= 2;
++	char szPc[32], szLr[32], szAddr[32];
++	DiagFormatAddr(szPc, uPc);
++	DiagFormatAddr(szLr, uLr);
++	DiagFormatAddr(szAddr, bAV ? pRec->ExceptionInformation[1] : 0);
++	SYSTEMTIME st;
++	::GetLocalTime(&st);
++	const DWORD dwThread = ::GetCurrentThreadId();
++	char szLine[1024];
++	int nLen = wsprintfA(szLine, "%02u.%02u.%04u %02u:%02u:%02u.%03u thread %lu%s: exception %08lx at %s, lr %s"
++		, st.wDay, st.wMonth, st.wYear, st.wHour, st.wMinute, st.wSecond, st.wMilliseconds
++		, dwThread, (dwThread == g_uMainThreadId ? " (main)" : "")
++		, pRec->ExceptionCode, szPc, szLr);
++	if (bAV)
++		nLen += wsprintfA(szLine + nLen, ", %s %s"
++			, pRec->ExceptionInformation[0] == 0 ? "reading" : (pRec->ExceptionInformation[0] == 1 ? "writing" : "executing"), szAddr);
++	DiagWrite(szLine, nLen);
++
++	// the addresses inside eMule found on the stack: the callers, and some stale values
++	nLen = wsprintfA(szLine, "\r\n    stack:");
++	int nFound = 0;
++	__try {
++		const ULONG_PTR *puStack = reinterpret_cast<const ULONG_PTR*>(uSp);
++		for (int i = 0; i < 512 && nFound < 24; ++i) {
++			const ULONG_PTR u = puStack[i];
++			if (u > s_uDiagImageBase + 0x1000 && u < s_uDiagImageBase + s_uDiagImageSize) {
++				nLen += wsprintfA(szLine + nLen, " +0x%lx", (DWORD)(u - s_uDiagImageBase));
++				++nFound;
++			}
++		}
++	} __except (EXCEPTION_EXECUTE_HANDLER) {
++		nLen += wsprintfA(szLine + nLen, " (end of readable stack)");
++	}
++	nLen += wsprintfA(szLine + nLen, "\r\n");
++	DiagWrite(szLine, nLen);
++
++	s_bInDiagAVHandler = false;
++	return EXCEPTION_CONTINUE_SEARCH;
++}
++
++static void InitDiagAVLog()
++{
++	WCHAR szPath[MAX_PATH + 32];
++	const DWORD dwLen = ::GetModuleFileNameW(NULL, szPath, MAX_PATH);
++	if (dwLen == 0 || dwLen >= MAX_PATH)
++		return;
++	WCHAR *pSlash = wcsrchr(szPath, L'\\');
++	if (pSlash == NULL)
++		return;
++	wcscpy_s(pSlash + 1, 32, L"emule_diag_av.log");
++	s_hDiagAVLog = ::CreateFileW(szPath, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
++	if (s_hDiagAVLog == INVALID_HANDLE_VALUE)
++		return;
++	s_uDiagImageBase = reinterpret_cast<ULONG_PTR>(::GetModuleHandle(NULL));
++	const IMAGE_DOS_HEADER *pDos = reinterpret_cast<const IMAGE_DOS_HEADER*>(s_uDiagImageBase);
++	s_uDiagImageSize = reinterpret_cast<const IMAGE_NT_HEADERS*>(s_uDiagImageBase + pDos->e_lfanew)->OptionalHeader.SizeOfImage;
++	SYSTEMTIME st;
++	::GetLocalTime(&st);
++	char szLine[256];
++	DiagWrite(szLine, wsprintfA(szLine, "%02u.%02u.%04u %02u:%02u:%02u.%03u process %lu started, image base 0x%08lx%08lx, size 0x%lx\r\n"
++		, st.wDay, st.wMonth, st.wYear, st.wHour, st.wMinute, st.wSecond, st.wMilliseconds
++		, ::GetCurrentProcessId(), (DWORD)((ULONGLONG)s_uDiagImageBase >> 32), (DWORD)s_uDiagImageBase, (DWORD)s_uDiagImageSize));
++	::AddVectoredExceptionHandler(1, DiagAVHandler);
++}
++
+ 
+ struct SLogItem
+ {
+@@ -286,6 +406,8 @@ CemuleApp::CemuleApp(LPCTSTR lpszAppName)
+ 	, m_bAutoStart()
+ 	, m_bStandbyOff()
+ {
++	InitDiagAVLog();	// 99a diagnostics, first so that it sees everything after it
++
+ 	// Initialize Windows security features.
+ #if !defined(_DEBUG) && !defined(_WIN64)
+ 	InitSafeSEH();
+diff --git a/srchybrid/kademlia/kademlia/Search.cpp b/srchybrid/kademlia/kademlia/Search.cpp
+index 2a22b0e..38c0e5f 100644
+--- a/srchybrid/kademlia/kademlia/Search.cpp
++++ b/srchybrid/kademlia/kademlia/Search.cpp
+@@ -30,6 +30,7 @@ their client on the eMule forum.
+ */
+ 
+ #include "stdafx.h"
++#include <algorithm>
+ #include "ClientList.h"
+ #include "DownloadQueue.h"
+ #include "emule.h"
+@@ -68,6 +69,31 @@ using namespace Kademlia;
+ 
+ //void DebugSend(LPCTSTR pszMsg, uint32 uIP, uint16 uUDPPort);
+ 
++// 99a diagnostics: read a contact through a pointer that may not point to one
++static bool DiagProbeContact(const CContact *pContact, uint32 &ruMagic, uint32 &ruInUse)
++{
++	__try {
++		ruMagic = pContact->GetDiagMagic();
++		ruInUse = pContact->GetDiagInUse();
++		return true;
++	} __except (EXCEPTION_EXECUTE_HANDLER) {
++		return false;
++	}
++}
++
++bool CSearch::DiagProbe(const CSearch *pSearch, uint32 &ruMagic, uint32 &ruSearchID, uint32 &ruType, size_t &rnDelete)
++{
++	__try {
++		ruMagic = pSearch->m_uDiagMagic;
++		ruSearchID = pSearch->m_uSearchID;
++		ruType = pSearch->m_uType;
++		rnDelete = pSearch->m_listDelete.size();
++		return true;
++	} __except (EXCEPTION_EXECUTE_HANDLER) {
++		return false;
++	}
++}
++
+ CSearch::CSearch()
+ 	: m_uTarget()
+ 	, m_uClosestDistantFound()
+@@ -151,9 +177,25 @@ CSearch::~CSearch()
+ 		itInUseMap->second->DecUse();
+ 
+ 	// Delete any temp contacts.
+-	for (ContactArray::const_iterator itContact = m_listDelete.begin(); itContact != m_listDelete.end(); ++itContact)
+-		if (!(*itContact)->InUse())
+-			delete *itContact;
++	// 99a diagnostics: an entry that is listed twice, cannot be read or is not a live
++	// contact is reported and left alone, instead of being used
++	{
++		ContactArray listSorted(m_listDelete);
++		std::sort(listSorted.begin(), listSorted.end());
++		for (size_t i = 1; i < listSorted.size(); ++i)
++			if (listSorted[i] == listSorted[i - 1])
++				DebugLogError(_T("KadDiag: search %u (type %u): contact %p is listed more than once for deletion"), m_uSearchID, m_uType, (void*)listSorted[i]);
++	}
++	for (size_t i = 0; i < m_listDelete.size(); ++i) {
++		CContact *pContact = m_listDelete[i];
++		uint32 uMagic, uInUse;
++		if (!DiagProbeContact(pContact, uMagic, uInUse))
++			DebugLogError(_T("KadDiag: search %u (type %u): contact %u of %u to delete, %p, cannot be read - skipped"), m_uSearchID, m_uType, (UINT)i, (UINT)m_listDelete.size(), (void*)pContact);
++		else if (uMagic != KADDIAG_CONTACT_ALIVE)
++			DebugLogError(_T("KadDiag: search %u (type %u): contact %u of %u to delete, %p, is not a live contact (magic %08x, in use %u) - skipped"), m_uSearchID, m_uType, (UINT)i, (UINT)m_listDelete.size(), (void*)pContact, uMagic, uInUse);
++		else if (uInUse == 0)
++			delete pContact;
++	}
+ 
+ 	// Check if this search was contacting an overloaded node and adjust time of next time we use that node.
+ 	if (CKademlia::IsRunning() && GetNodeLoad() > 20 && GetSearchType() == CSearch::STOREKEYWORD)
+@@ -162,6 +204,7 @@ CSearch::~CSearch()
+ 
+ 	CKademlia::GetUDPListener()->Free(m_pSearchTerm);
+ 	m_pSearchTerm = NULL;
++	m_uDiagMagic = KADDIAG_DEAD;
+ }
+ 
+ void CSearch::Go()
+diff --git a/srchybrid/kademlia/kademlia/Search.h b/srchybrid/kademlia/kademlia/Search.h
+index 1673d2d..4aa4c39 100644
+--- a/srchybrid/kademlia/kademlia/Search.h
++++ b/srchybrid/kademlia/kademlia/Search.h
+@@ -32,6 +32,12 @@ their client on the eMule forum.
+ #include "kademlia/routing/Maps.h"
+ #include "kademlia/kademlia/Tag.h"
+ 
++// 99a diagnostics: set while a CSearch is alive, overwritten by its destructor
++#define KADDIAG_SEARCH_ALIVE	0x48435253u	// "SRCH"
++#ifndef KADDIAG_DEAD
++#define KADDIAG_DEAD			0x44414544u	// "DEAD"
++#endif
++
+ class CKnownFile;
+ class CSafeMemFile;
+ struct SSearchTerm;
+@@ -92,6 +98,10 @@ namespace Kademlia
+ 		CSearch(const CSearch&) = delete;
+ 		CSearch& operator=(const CSearch&) = delete;
+ 
++		// 99a diagnostics: reads what it can from a pointer that may not be a live
++		// search; false if reading it faulted
++		static bool DiagProbe(const CSearch *pSearch, uint32 &ruMagic, uint32 &ruSearchID, uint32 &ruType, size_t &rnDelete);
++
+ 	private:
+ 		void Go();
+ 		void ProcessResponse(uint32 uFromIP, uint16 uFromPort, const ContactArray &rlistResults);
+@@ -131,6 +141,7 @@ namespace Kademlia
+ 		uint32 m_uSearchID;
+ 		uint32 m_uSearchTermsDataSize;
+ 		bool m_bStoping;
++		uint32 m_uDiagMagic = KADDIAG_SEARCH_ALIVE;	// 99a diagnostics; last, so every other member keeps its offset
+ 	};
+ }
+ 
+diff --git a/srchybrid/kademlia/kademlia/SearchManager.cpp b/srchybrid/kademlia/kademlia/SearchManager.cpp
+index 02d27d5..e943290 100644
+--- a/srchybrid/kademlia/kademlia/SearchManager.cpp
++++ b/srchybrid/kademlia/kademlia/SearchManager.cpp
+@@ -74,6 +74,23 @@ bool CSearchManager::IsSearching(uint32 uSearchID)
+ 	return false;
+ }
+ 
++// 99a diagnostics: a search is probed before it is deleted; one that cannot be read or
++// is not a live search is reported and left alone
++static void DiagDeleteSearch(CSearch *pSearch, LPCTSTR pszWhere, bool bLogDelete)
++{
++	uint32 uMagic, uSearchID, uType;
++	size_t nDelete;
++	if (!CSearch::DiagProbe(pSearch, uMagic, uSearchID, uType, nDelete))
++		DebugLogError(_T("KadDiag: %s: search %p cannot be read - not deleted"), pszWhere, (void*)pSearch);
++	else if (uMagic != KADDIAG_SEARCH_ALIVE)
++		DebugLogError(_T("KadDiag: %s: search %p is not a live search (magic %08x, id %u, type %u) - not deleted"), pszWhere, (void*)pSearch, uMagic, uSearchID, uType);
++	else {
++		if (bLogDelete)
++			DebugLog(_T("KadDiag: %s: deleting search %u (type %u, %u temporary contacts)"), pszWhere, uSearchID, uType, (UINT)nDelete);
++		delete pSearch;
++	}
++}
++
+ void CSearchManager::StopSearch(uint32 uSearchID, bool bDelayDelete)
+ {
+ 	// Stop a specific searchID
+@@ -86,7 +103,7 @@ void CSearchManager::StopSearch(uint32 uSearchID, bool bDelayDelete)
+ 				// Delete this search now.
+ 				// If this method is changed to continue looping, take care of the iterator as we will already
+ 				// be pointing to the next entry and the for-loop could cause you to iterate past the end.
+-				delete itSearchMap->second;
++				DiagDeleteSearch(itSearchMap->second, _T("StopSearch"), true);
+ 				m_mapSearches.erase(itSearchMap);
+ 			}
+ 			return;
+@@ -96,9 +113,11 @@ void CSearchManager::StopSearch(uint32 uSearchID, bool bDelayDelete)
+ void CSearchManager::StopAllSearches()
+ {
+ 	// Stop and delete all searches.
++	DebugLog(_T("KadDiag: StopAllSearches: %u searches"), (UINT)m_mapSearches.size());
+ 	for (SearchMap::const_iterator itSearchMap = m_mapSearches.begin(); itSearchMap != m_mapSearches.end(); ++itSearchMap)
+-		delete itSearchMap->second;
++		DiagDeleteSearch(itSearchMap->second, _T("StopAllSearches"), true);
+ 	m_mapSearches.clear();
++	DebugLog(_T("KadDiag: StopAllSearches: done"));
+ }
+ 
+ bool CSearchManager::StartSearch(CSearch *pSearch)
+@@ -342,7 +361,7 @@ void CSearchManager::JumpStart()
+ 				bDel = true;
+ 		}
+ 		if (bDel) {
+-			delete pSearch;
++			DiagDeleteSearch(pSearch, _T("JumpStart"), false);
+ 			itSearchMap = m_mapSearches.erase(itSearchMap);	//Don't do anything after this. We are already at the next entry.
+ 		} else {
+ 			if (bStop)
+diff --git a/srchybrid/kademlia/routing/Contact.cpp b/srchybrid/kademlia/routing/Contact.cpp
+index 7f2c7f1..76c0115 100644
+--- a/srchybrid/kademlia/routing/Contact.cpp
++++ b/srchybrid/kademlia/routing/Contact.cpp
+@@ -56,6 +56,7 @@ CContact::~CContact()
+ {
+ 	if (m_bGuiRefs)
+ 		theApp.emuledlg->kademliawnd->ContactRem(this);
++	m_uDiagMagic = KADDIAG_DEAD;
+ }
+ 
+ CContact::CContact()
+diff --git a/srchybrid/kademlia/routing/Contact.h b/srchybrid/kademlia/routing/Contact.h
+index 8614d3f..652ac39 100644
+--- a/srchybrid/kademlia/routing/Contact.h
++++ b/srchybrid/kademlia/routing/Contact.h
+@@ -37,6 +37,12 @@ their client on the eMule forum.
+ #include "kademlia/utils/KadUDPKey.h"
+ #include "kademlia/utils/UInt128.h"
+ 
++// 99a diagnostics: set while a CContact is alive, overwritten by its destructor
++#define KADDIAG_CONTACT_ALIVE	0x544E4F43u	// "CONT"
++#ifndef KADDIAG_DEAD
++#define KADDIAG_DEAD			0x44414544u	// "DEAD"
++#endif
++
+ namespace Kademlia
+ {
+ 	class CContact
+@@ -95,6 +101,8 @@ namespace Kademlia
+ 
+ 		// bootstrapcontact functions only used for GUI
+ 		bool	IsBootstrapContact() const				{ return m_bBootstrapContact; }
++		uint32	GetDiagMagic() const					{ return m_uDiagMagic; }
++		uint32	GetDiagInUse() const					{ return m_uInUse; }
+ 		void	SetBootstrapContact()					{ m_bBootstrapContact = true; }
+ 
+ 	private:
+@@ -118,5 +126,6 @@ namespace Kademlia
+ 		bool	m_bIPVerified;
+ 		bool	m_bReceivedHelloPacket;
+ 		bool	m_bBootstrapContact;
++		uint32	m_uDiagMagic = KADDIAG_CONTACT_ALIVE;	// last, so every other member keeps its offset
+ 	};
+ }
+\ No newline at end of file
