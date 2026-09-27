@@ -239,8 +239,13 @@ target_link_options(emule PRIVATE
     "/MANIFESTINPUT:${EMULE_SRC_DIR}/res/emule${EMULE_PLATFORM_DIR}.manifest"
     $<$<CONFIG:Release>:/OPT:REF>                                     # OptimizeReferences=true (Release only; Debug's explicit "false" is CMake's default anyway)
     $<$<CONFIG:Release>:/OPT:ICF>                                     # EnableCOMDATFolding=true (Release only)
+    /SUBSYSTEM:WINDOWS,10.00
 )
-# WIN32 on add_executable() already implies /SUBSYSTEM:WINDOWS.
+# WIN32 on add_executable() already implies /SUBSYSTEM:WINDOWS; the explicit one
+# above adds the version. Windows 10 is the minimum eMule is built for, so the
+# executable says so in its header on every platform. Left to the linker the
+# header says 6.0 on Win32/x64 and 6.2 on ARM64 (Vista, 8), and Windows versions
+# eMule no longer supports would still try to start it.
 
 # ---------------------------------------------------------------------------
 # Optional: regenerate Parser.cpp/Scanner.cpp from their grammar/lexer

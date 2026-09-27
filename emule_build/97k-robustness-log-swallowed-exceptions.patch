@@ -275,17 +275,14 @@ index fa393b9..7cad8c2 100644
  			}
  
 diff --git a/srchybrid/CollectionFile.cpp b/srchybrid/CollectionFile.cpp
-index 9029db9..86a832e 100644
+index 9029db9..c2a266e 100644
 --- a/srchybrid/CollectionFile.cpp
 +++ b/srchybrid/CollectionFile.cpp
-@@ -39,6 +39,10 @@ CCollectionFile::CCollectionFile(CFileDataIO &in_data)
+@@ -39,6 +39,7 @@ CCollectionFile::CCollectionFile(CFileDataIO &in_data)
  			CTag *toadd = new CTag(in_data, true);
  			m_taglist.Add(toadd);
  		} catch (...) {
 +			DebugLogCaughtException(__FUNCTION__);
-+			// the stream position after a tag that could not be read means nothing:
-+			// going on would read every remaining count as garbage, up to 4 billion times
-+			break;
  		}
  
  	CTag *pTagHash = GetTag(FT_FILEHASH);

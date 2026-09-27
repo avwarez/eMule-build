@@ -1,0 +1,56 @@
+diff --git a/srchybrid/res/emuleARM64.manifest b/srchybrid/res/emuleARM64.manifest
+index 5e04dc6..6da4d83 100644
+--- a/srchybrid/res/emuleARM64.manifest
++++ b/srchybrid/res/emuleARM64.manifest
+@@ -18,10 +18,6 @@
+     <application>
+       <!-- Windows 10 -->
+       <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}"/>
+-      <!-- Windows 8.1 -->
+-      <supportedOS Id="{1f676c76-80e1-4239-95bb-83d0f6d0da78}"/>
+-      <!-- Windows 8 -->
+-      <supportedOS Id="{4a2f28e3-53b9-4441-ba9c-d69d4a4a6e38}"/>
+     </application>
+   </compatibility>
+ </assembly>
+\ No newline at end of file
+diff --git a/srchybrid/res/emuleWin32.manifest b/srchybrid/res/emuleWin32.manifest
+index 44d9277..903eae4 100644
+--- a/srchybrid/res/emuleWin32.manifest
++++ b/srchybrid/res/emuleWin32.manifest
+@@ -18,14 +18,6 @@
+     <application>
+       <!-- Windows 10 -->
+       <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}"/>
+-      <!-- Windows 8.1 -->
+-      <supportedOS Id="{1f676c76-80e1-4239-95bb-83d0f6d0da78}"/>
+-      <!-- Windows 8 -->
+-      <supportedOS Id="{4a2f28e3-53b9-4441-ba9c-d69d4a4a6e38}"/>
+-      <!-- Windows 7 -->
+-      <supportedOS Id="{35138b9a-5d96-4fbd-8e2d-a2440225f93a}"/>
+-      <!-- Windows Vista -->
+-      <supportedOS Id="{e2011457-1546-43c5-a5fe-008deee3d3f0}"/>
+     </application>
+   </compatibility>
+ </assembly>
+\ No newline at end of file
+diff --git a/srchybrid/res/emulex64.manifest b/srchybrid/res/emulex64.manifest
+index 09ce0d5..ea9b4ba 100644
+--- a/srchybrid/res/emulex64.manifest
++++ b/srchybrid/res/emulex64.manifest
+@@ -18,14 +18,6 @@
+     <application>
+       <!-- Windows 10 -->
+       <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}"/>
+-      <!-- Windows 8.1 -->
+-      <supportedOS Id="{1f676c76-80e1-4239-95bb-83d0f6d0da78}"/>
+-      <!-- Windows 8 -->
+-      <supportedOS Id="{4a2f28e3-53b9-4441-ba9c-d69d4a4a6e38}"/>
+-      <!-- Windows 7 -->
+-      <supportedOS Id="{35138b9a-5d96-4fbd-8e2d-a2440225f93a}"/>
+-      <!-- Windows Vista -->
+-      <supportedOS Id="{e2011457-1546-43c5-a5fe-008deee3d3f0}"/>
+     </application>
+   </compatibility>
+ </assembly>
+\ No newline at end of file
