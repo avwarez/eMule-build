@@ -1,5 +1,5 @@
 diff --git a/srchybrid/Emule.cpp b/srchybrid/Emule.cpp
-index 2b10b09..8824452 100644
+index 2b10b09..50e3b73 100644
 --- a/srchybrid/Emule.cpp
 +++ b/srchybrid/Emule.cpp
 @@ -232,6 +232,126 @@ static void InitHeapCorruptionDetection()
@@ -36,7 +36,7 @@ index 2b10b09..8824452 100644
 +	::WriteFile(s_hDiagAVLog, psz, (DWORD)nLen, &dwWritten, NULL);
 +}
 +
-+static LONG CALLBACK DiagAVHandler(PEXCEPTION_POINTERS pExInfo)
++static LONG CALLBACK DiagAVHandler(PEXCEPTION_POINTERS pExInfo) noexcept
 +{
 +	const EXCEPTION_RECORD *pRec = pExInfo->ExceptionRecord;
 +	switch (pRec->ExceptionCode) {
