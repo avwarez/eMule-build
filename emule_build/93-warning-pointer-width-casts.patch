@@ -86,10 +86,10 @@ index 3903fd8..03acd39 100644
  void CDownloadListCtrl::FillCatsMenu(CMenu &rCatsMenu, int iFilesInCats)
  {
 diff --git a/srchybrid/Emule.cpp b/srchybrid/Emule.cpp
-index 08f5ed3..2b10b09 100644
+index 31a3b2c..3f48c05 100644
 --- a/srchybrid/Emule.cpp
 +++ b/srchybrid/Emule.cpp
-@@ -942,7 +942,7 @@ int CemuleApp::GetFileTypeSystemImageIdx(LPCTSTR pszFilePath, int iLength /* = -
+@@ -923,7 +923,7 @@ int CemuleApp::GetFileTypeSystemImageIdx(LPCTSTR pszFilePath, int iLength /* = -
  			m_hBigSystemImageList = hResult;
  
  			// Store icon index in local cache
@@ -98,7 +98,7 @@ index 08f5ed3..2b10b09 100644
  			return sfi.iIcon;
  		}
  	} else if (!m_aExtToSysImgIdx.Lookup(pszCacheExt, vData)) {
-@@ -956,12 +956,12 @@ int CemuleApp::GetFileTypeSystemImageIdx(LPCTSTR pszFilePath, int iLength /* = -
+@@ -937,12 +937,12 @@ int CemuleApp::GetFileTypeSystemImageIdx(LPCTSTR pszFilePath, int iLength /* = -
  		m_hSystemImageList = hResult;
  
  		// Store icon index in local cache

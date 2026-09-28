@@ -105,7 +105,7 @@ index f561351..b631881 100644
  void CMuleSystrayDlg::OnChangeDowntxt()
  {
 diff --git a/srchybrid/SearchResultsWnd.cpp b/srchybrid/SearchResultsWnd.cpp
-index e3b20d8..eb822ed 100644
+index 6a04849..00cef6f 100644
 --- a/srchybrid/SearchResultsWnd.cpp
 +++ b/srchybrid/SearchResultsWnd.cpp
 @@ -1389,13 +1389,11 @@ void CSearchResultsWnd::DeleteSelectedSearch()

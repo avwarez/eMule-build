@@ -627,7 +627,7 @@ index 09c5b70..16b2f7d 100644
  	}
  	return false;
 diff --git a/srchybrid/ListCtrlX.cpp b/srchybrid/ListCtrlX.cpp
-index 16cf155..a40f7b3 100644
+index 50fe5eb..75557f5 100644
 --- a/srchybrid/ListCtrlX.cpp
 +++ b/srchybrid/ListCtrlX.cpp
 @@ -5,6 +5,7 @@
@@ -638,7 +638,7 @@ index 16cf155..a40f7b3 100644
  
  #ifdef _DEBUG
  #define new DEBUG_NEW
-@@ -533,6 +534,7 @@ void CreateItemReport(CListCtrl &lv, CString &rstrReport)
+@@ -505,6 +506,7 @@ void CreateItemReport(CListCtrl &lv, CString &rstrReport)
  	try {
  		paiColWidths = new int[iCols]{};
  	} catch (...) {
@@ -646,7 +646,7 @@ index 16cf155..a40f7b3 100644
  		return;
  	}
  	TCHAR szItem[512];
-@@ -617,6 +619,7 @@ void InitColumnOrders(CListCtrl &lv, int iColumns, const LCX_COLUMN_INIT *pColum
+@@ -589,6 +591,7 @@ void InitColumnOrders(CListCtrl &lv, int iColumns, const LCX_COLUMN_INIT *pColum
  	try {
  		piOrders = new INT[iColumns];
  	} catch (...) {
@@ -870,7 +870,7 @@ index 0f78ee9..bc4d8a5 100644
  		return;
  	}
 diff --git a/srchybrid/Preferences.cpp b/srchybrid/Preferences.cpp
-index 938457e..c8b2b85 100644
+index fd456ec..8d604a4 100644
 --- a/srchybrid/Preferences.cpp
 +++ b/srchybrid/Preferences.cpp
 @@ -572,6 +572,7 @@ void CPreferences::Init()

@@ -1,5 +1,5 @@
 diff --git a/srchybrid/BuddyButton.cpp b/srchybrid/BuddyButton.cpp
-index 2183b16..c1c75f2 100644
+index b764d52..b39165a 100644
 --- a/srchybrid/BuddyButton.cpp
 +++ b/srchybrid/BuddyButton.cpp
 @@ -34,11 +34,13 @@ struct SBuddyData

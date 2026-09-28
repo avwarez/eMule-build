@@ -1,5 +1,5 @@
 diff --git a/srchybrid/IrcWnd.cpp b/srchybrid/IrcWnd.cpp
-index 773423c..54b6300 100644
+index 511ccf7..6c55ef9 100644
 --- a/srchybrid/IrcWnd.cpp
 +++ b/srchybrid/IrcWnd.cpp
 @@ -661,8 +661,6 @@ void CIrcWnd::AddInfoMessageF(const CString &sChannel, LPCTSTR sLine, ...)

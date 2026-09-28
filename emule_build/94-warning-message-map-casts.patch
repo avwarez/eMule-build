@@ -20,7 +20,7 @@ index 1fc309a..a22ca7e 100644
  CChatSelector::CChatSelector()
  	: m_pParent()
 diff --git a/srchybrid/ChatWnd.cpp b/srchybrid/ChatWnd.cpp
-index ff9e808..b577440 100644
+index 8db5b5a..1b0bcd2 100644
 --- a/srchybrid/ChatWnd.cpp
 +++ b/srchybrid/ChatWnd.cpp
 @@ -44,6 +44,8 @@ static char THIS_FILE[] = __FILE__;
@@ -328,7 +328,7 @@ index be15813..1dfb001 100644
  CKadSearchListCtrl::CKadSearchListCtrl()
  {
 diff --git a/srchybrid/KademliaWnd.cpp b/srchybrid/KademliaWnd.cpp
-index 3d80522..5f4ff8b 100644
+index d688b17..5a660d4 100644
 --- a/srchybrid/KademliaWnd.cpp
 +++ b/srchybrid/KademliaWnd.cpp
 @@ -55,6 +55,8 @@ static char THIS_FILE[] = __FILE__;
@@ -508,7 +508,7 @@ index 15c6ca3..c6c4786 100644
  CPShtWiz1::CPShtWiz1(UINT nIDCaption, CWnd *pParentWnd, UINT iSelectPage)
  	: CPropertySheetEx(nIDCaption, pParentWnd, iSelectPage)
 diff --git a/srchybrid/SearchResultsWnd.cpp b/srchybrid/SearchResultsWnd.cpp
-index eb822ed..d564a23 100644
+index 00cef6f..3509ba6 100644
 --- a/srchybrid/SearchResultsWnd.cpp
 +++ b/srchybrid/SearchResultsWnd.cpp
 @@ -82,6 +82,8 @@ enum ESearchResultImage

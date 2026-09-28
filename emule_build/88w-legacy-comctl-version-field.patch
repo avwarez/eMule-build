@@ -1,0 +1,90 @@
+diff --git a/srchybrid/BuddyButton.cpp b/srchybrid/BuddyButton.cpp
+index 2183b16..b764d52 100644
+--- a/srchybrid/BuddyButton.cpp
++++ b/srchybrid/BuddyButton.cpp
+@@ -108,10 +108,6 @@ void DestroyIconsArr(HICON *pIcon, size_t cnt)
+ 
+ bool InitAttachedBrowseButton(HWND hwndButton, HICON &ricoBrowse)
+ {
+-	// Showing an icon button works for all Windows versions *except* Windows XP w/ active styles
+-	if (theApp.IsXPThemeActive())
+-		return false;
+-
+ 	if (ricoBrowse == NULL) {
+ 		ricoBrowse = theApp.LoadIcon(_T("BrowseFolderSmall"));
+ 		if (ricoBrowse == NULL)
+diff --git a/srchybrid/Emule.cpp b/srchybrid/Emule.cpp
+index 574b4c0..c1d9092 100644
+--- a/srchybrid/Emule.cpp
++++ b/srchybrid/Emule.cpp
+@@ -269,7 +269,6 @@ END_MESSAGE_MAP()
+ CemuleApp::CemuleApp(LPCTSTR lpszAppName)
+ 	: CWinApp(lpszAppName)
+ 	, emuledlg()
+-	, m_ullComCtrlVer(MAKEDLLVERULL(4, 0, 0, 0))
+ 	, m_iDfltImageListColorFlags(ILC_COLOR)
+ 	, m_app_state(APP_STATE_STARTING)
+ 	, m_hSystemImageList()
+@@ -435,25 +434,7 @@ BOOL CemuleApp::InitInstance()
+ 	///////////////////////////////////////////////////////////////////////////
+ 	// Common Controls initialization
+ 	//
+-	//						Mjr Min
+-	// ----------------------------
+-	// W98 SE, IE5			5	8
+-	// W2K SP4, IE6 SP1		5	81
+-	// XP SP2				6   0
+-	// XP SP3				6   0
+-	// Vista SP1			6   16
+ 	::InitCommonControls();
+-	switch (thePrefs.GetWindowsVersion()) {
+-	case _WINVER_2K_:
+-		m_ullComCtrlVer = MAKEDLLVERULL(5, 81, 0, 0);
+-		break;
+-	case _WINVER_XP_:
+-	case _WINVER_2003_:
+-		m_ullComCtrlVer = MAKEDLLVERULL(6, 0, 0, 0);
+-		break;
+-	default:  //Vista .. Win11
+-		m_ullComCtrlVer = MAKEDLLVERULL(6, 16, 0, 0);
+-	};
+ 
+ 	m_sizSmallSystemIcon.SetSize(::GetSystemMetrics(SM_CXSMICON), ::GetSystemMetrics(SM_CYSMICON));
+ 	UpdateLargeIconSize();
+@@ -1629,14 +1610,8 @@ void CemuleApp::ResetStandByIdleTimer()
+ 		m_bStandbyOff = false;
+ }
+ 
+-bool CemuleApp::IsXPThemeActive() const
+-{
+-	// TRUE: If an XP style (and only an XP style) is active
+-	return theApp.m_ullComCtrlVer < MAKEDLLVERULL(6, 16, 0, 0) && ::IsThemeActive() && ::IsAppThemed();
+-}
+-
+ bool CemuleApp::IsVistaThemeActive() const
+ {
+ 	// Return true if Vista (or better) style is active
+-	return theApp.m_ullComCtrlVer >= MAKEDLLVERULL(6, 16, 0, 0) && ::IsThemeActive() && ::IsAppThemed();
++	return ::IsThemeActive() && ::IsAppThemed();
+ }
+\ No newline at end of file
+diff --git a/srchybrid/Emule.h b/srchybrid/Emule.h
+index c631457..92f25cc 100644
+--- a/srchybrid/Emule.h
++++ b/srchybrid/Emule.h
+@@ -113,7 +113,6 @@ public:
+ 	CString		m_strCurVersionLongDbg;
+ 	UINT		m_uCurVersionShort;
+ 	UINT		m_uCurVersionCheck;
+-	ULONGLONG	m_ullComCtrlVer;
+ 	CMutex		hashing_mut;
+ 	CString		m_strPendingLink;
+ 	COPYDATASTRUCT sendstruct;
+@@ -170,7 +169,6 @@ public:
+ 	void		DisableRTLWindowsLayout();
+ 	void		UpdateDesktopColorDepth();
+ 	void		UpdateLargeIconSize();
+-	bool		IsXPThemeActive() const;
+ 	bool		IsVistaThemeActive() const;
+ 
+ 	bool		GetLangHelpFilePath(CString &strResult);

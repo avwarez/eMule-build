@@ -1,0 +1,244 @@
+diff --git a/srchybrid/ChatWnd.cpp b/srchybrid/ChatWnd.cpp
+index ff9e808..8db5b5a 100644
+--- a/srchybrid/ChatWnd.cpp
++++ b/srchybrid/ChatWnd.cpp
+@@ -185,7 +185,7 @@ BOOL CChatWnd::OnInitDialog()
+ 	m_wndSplitterHorz.CreateWnd(WS_CHILD | WS_VISIBLE, rcSpl, this, IDC_SPLITTER_FRIEND);
+ 
+ 	// Vista: Remove the TBSTYLE_TRANSPARENT to avoid flickering (can be done only after the toolbar was initially created with TBSTYLE_TRANSPARENT !?)
+-	m_wndFormat.ModifyStyle((theApp.m_ullComCtrlVer >= MAKEDLLVERULL(6, 16, 0, 0)) ? TBSTYLE_TRANSPARENT : 0, TBSTYLE_TOOLTIPS);
++	m_wndFormat.ModifyStyle(TBSTYLE_TRANSPARENT, TBSTYLE_TOOLTIPS);
+ 	m_wndFormat.SetExtendedStyle(m_wndFormat.GetExtendedStyle() | TBSTYLE_EX_MIXEDBUTTONS);
+ 	TBBUTTON atb[1] = {};
+ 	//atb[0].iBitmap = 0;
+diff --git a/srchybrid/IrcWnd.cpp b/srchybrid/IrcWnd.cpp
+index 13daeab..c5a66f0 100644
+--- a/srchybrid/IrcWnd.cpp
++++ b/srchybrid/IrcWnd.cpp
+@@ -177,7 +177,7 @@ BOOL CIrcWnd::OnInitDialog()
+ 	AddAnchor(m_wndChanList, TOP_LEFT, BOTTOM_RIGHT);
+ 
+ 	// Vista: Remove the TBSTYLE_TRANSPARENT to avoid flickering (can be done only after the toolbar was initially created with TBSTYLE_TRANSPARENT !?)
+-	m_wndFormat.ModifyStyle((theApp.m_ullComCtrlVer >= MAKEDLLVERULL(6, 16, 0, 0)) ? TBSTYLE_TRANSPARENT : 0, TBSTYLE_TOOLTIPS);
++	m_wndFormat.ModifyStyle(TBSTYLE_TRANSPARENT, TBSTYLE_TOOLTIPS);
+ 	m_wndFormat.SetExtendedStyle(m_wndFormat.GetExtendedStyle() | TBSTYLE_EX_MIXEDBUTTONS);
+ 
+ 	TBBUTTON atb[6] = {};
+diff --git a/srchybrid/KademliaWnd.cpp b/srchybrid/KademliaWnd.cpp
+index 3d80522..d688b17 100644
+--- a/srchybrid/KademliaWnd.cpp
++++ b/srchybrid/KademliaWnd.cpp
+@@ -132,7 +132,7 @@ BOOL CKademliaWnd::OnInitDialog()
+ 	SetAllIcons();
+ 
+ 	// Vista: Remove the TBSTYLE_TRANSPARENT to avoid flickering (can be done only after the toolbar was initially created with TBSTYLE_TRANSPARENT !?)
+-	m_pbtnWnd->ModifyStyle((theApp.m_ullComCtrlVer >= MAKEDLLVERULL(6, 16, 0, 0)) ? TBSTYLE_TRANSPARENT : 0, TBSTYLE_TOOLTIPS);
++	m_pbtnWnd->ModifyStyle(TBSTYLE_TRANSPARENT, TBSTYLE_TOOLTIPS);
+ 	m_pbtnWnd->SetExtendedStyle(m_pbtnWnd->GetExtendedStyle() | TBSTYLE_EX_MIXEDBUTTONS);
+ 
+ 	TBBUTTON atb1[1 + WND1_NUM_BUTTONS] = {};
+@@ -169,16 +169,14 @@ BOOL CKademliaWnd::OnInitDialog()
+ 	// So, to circumvent such problems, the toolbar control should be created right with
+ 	// the needed size so that we do not really need to call the 'GetMaxSize' function.
+ 	// Although it would be better to call it to adapt for system metrics basically.
+-	if (theApp.m_ullComCtrlVer > MAKEDLLVERULL(5, 81, 0, 0)) {
+-		SIZE size;
+-		m_pbtnWnd->GetMaxSize(&size);
+-		CRect rc;
+-		m_pbtnWnd->GetWindowRect(rc);
+-		ScreenToClient(rc);
+-		// the with of the toolbar should already match the needed size (see comment above)
+-		ASSERT(size.cx == rc.Width());
+-		m_pbtnWnd->MoveWindow(rc.left, rc.top, size.cx, rc.Height());
+-	}
++	SIZE size;
++	m_pbtnWnd->GetMaxSize(&size);
++	CRect rc;
++	m_pbtnWnd->GetWindowRect(rc);
++	ScreenToClient(rc);
++	// the with of the toolbar should already match the needed size (see comment above)
++	ASSERT(size.cx == rc.Width());
++	m_pbtnWnd->MoveWindow(rc.left, rc.top, size.cx, rc.Height());
+ 
+ 	Localize();
+ 
+diff --git a/srchybrid/MuleToolBarCtrl.cpp b/srchybrid/MuleToolBarCtrl.cpp
+index 57d885e..0317b09 100644
+--- a/srchybrid/MuleToolBarCtrl.cpp
++++ b/srchybrid/MuleToolBarCtrl.cpp
+@@ -266,13 +266,7 @@ void CMuleToolbarCtrl::SetAllButtonsWidth()
+ 
+ 		SetButtonWidth(iCalcSize, iCalcSize);
+ 	} else {
+-		int iSmallIconsButtonHeight;
+-		if (theApp.m_ullComCtrlVer < MAKEDLLVERULL(6, 0, 0, 0)) {
+-			// Win98,WinME,Win2000: Comtrl32 prior to 6.0 cannot make a toolbar smaller than 22 pixels
+-			// in height and if it gets larger than 22 pixels the icons do not get centered vertically.
+-			iSmallIconsButtonHeight = 22;
+-		} else
+-			iSmallIconsButtonHeight = ::GetSystemMetrics(SM_CYSCREEN) <= 600 ? 16 : 28;
++		int iSmallIconsButtonHeight = ::GetSystemMetrics(SM_CYSCREEN) <= 600 ? 16 : 28;
+ 
+ 		int iFixedButtonWidth;
+ 		int iFixedButtonHeight;
+@@ -858,11 +852,8 @@ void CMuleToolbarCtrl::OnSettingChange(UINT uFlags, LPCTSTR lpszSection)
+ 	// not use the value of that parameter to limit the invocation of our correction code.
+ 	//
+ 
+-	if (theApp.m_ullComCtrlVer >= MAKEDLLVERULL(6, 16, 0, 0)
+-		&& (m_eLabelType == NoLabels || (m_eLabelType == LabelsRight && m_sizBtnBmp.cx == 16)))
+-	{
++	if (m_eLabelType == NoLabels || (m_eLabelType == LabelsRight && m_sizBtnBmp.cx == 16))
+ 		ChangeToolbarBitmap(thePrefs.GetToolbarBitmapSettings(), true);
+-	}
+ }
+ 
+ void CMuleToolbarCtrl::PressMuleButton(int nID)
+@@ -964,22 +955,6 @@ void CMuleToolbarCtrl::AutoSize()
+ #endif
+ }
+ 
+-BOOL CMuleToolbarCtrl::GetMaxSize(LPSIZE pSize) const
+-{
+-	BOOL bResult = CToolBarCtrl::GetMaxSize(pSize);
+-	if (theApp.m_ullComCtrlVer <= MAKEDLLVERULL(5, 81, 0, 0)) {
+-		int iWidth = 0;
+-		CRect rcButton;
+-		for (int i = GetButtonCount(); --i >= 0;)
+-			if (GetItemRect(i, &rcButton))
+-				iWidth += rcButton.Width();
+-
+-		if (iWidth > pSize->cx)
+-			pSize->cx = iWidth;
+-	}
+-	return bResult;
+-}
+-
+ void CMuleToolbarCtrl::SaveCurHeight()
+ {
+ 	CRect rcWnd;
+diff --git a/srchybrid/MuleToolBarCtrl.h b/srchybrid/MuleToolBarCtrl.h
+index ec8b781..fff99d0 100644
+--- a/srchybrid/MuleToolBarCtrl.h
++++ b/srchybrid/MuleToolBarCtrl.h
+@@ -39,7 +39,6 @@ public:
+ 	void SaveCurHeight();
+ 	void UpdateBackground();
+ 	void PressMuleButton(int nID);
+-	BOOL GetMaxSize(LPSIZE pSize) const;
+ 
+ 	static int GetDefaultLabelType()		{ return (int)LabelsBelow; }
+ 
+diff --git a/srchybrid/Preferences.cpp b/srchybrid/Preferences.cpp
+index 16aa4f9..db4b581 100644
+--- a/srchybrid/Preferences.cpp
++++ b/srchybrid/Preferences.cpp
+@@ -2679,7 +2679,7 @@ UINT CPreferences::GetWebMirrorAlertLevel()
+ 
+ bool CPreferences::GetUseReBarToolbar()
+ {
+-	return GetReBarToolbar() && theApp.m_ullComCtrlVer >= MAKEDLLVERULL(5, 8, 0, 0);
++	return GetReBarToolbar();
+ }
+ 
+ uint32 CPreferences::GetMaxGraphUploadRate(bool bEstimateIfUnlimited)
+diff --git a/srchybrid/SearchResultsWnd.cpp b/srchybrid/SearchResultsWnd.cpp
+index e3b20d8..6a04849 100644
+--- a/srchybrid/SearchResultsWnd.cpp
++++ b/srchybrid/SearchResultsWnd.cpp
+@@ -147,7 +147,7 @@ void CSearchResultsWnd::OnInitialUpdate()
+ 	m_btnSearchListMenu.MoveWindow(&rc);
+ 	m_btnSearchListMenu.AddBtnStyle(IDC_SEARCHLST_ICO, TBSTYLE_AUTOSIZE);
+ 	// Vista: Remove the TBSTYLE_TRANSPARENT to avoid flickering (can be done only after the toolbar was initially created with TBSTYLE_TRANSPARENT !?)
+-	m_btnSearchListMenu.ModifyStyle(TBSTYLE_TOOLTIPS | ((theApp.m_ullComCtrlVer >= MAKEDLLVERULL(6, 16, 0, 0)) ? TBSTYLE_TRANSPARENT : 0), 0);
++	m_btnSearchListMenu.ModifyStyle(TBSTYLE_TOOLTIPS | TBSTYLE_TRANSPARENT, 0);
+ 	m_btnSearchListMenu.SetExtendedStyle(m_btnSearchListMenu.GetExtendedStyle() & ~TBSTYLE_EX_MIXEDBUTTONS);
+ 	m_btnSearchListMenu.RecalcLayout(true);
+ 
+diff --git a/srchybrid/ToolbarWnd.cpp b/srchybrid/ToolbarWnd.cpp
+index a6aaceb..01c16e4 100644
+--- a/srchybrid/ToolbarWnd.cpp
++++ b/srchybrid/ToolbarWnd.cpp
+@@ -137,7 +137,7 @@ LRESULT CToolbarWnd::OnInitDialog(WPARAM, LPARAM)
+ 	if (pImlOld)
+ 		pImlOld->DeleteImageList();
+ 
+-	m_btnBar.ModifyStyle((theApp.m_ullComCtrlVer >= MAKEDLLVERULL(6, 16, 0, 0)) ? TBSTYLE_TRANSPARENT : 0, 0);
++	m_btnBar.ModifyStyle(TBSTYLE_TRANSPARENT, 0);
+ 	m_btnBar.SetMaxTextRows(0);
+ 
+ 	Localize();
+diff --git a/srchybrid/TransferWnd.cpp b/srchybrid/TransferWnd.cpp
+index 5a56858..e1a7e98 100644
+--- a/srchybrid/TransferWnd.cpp
++++ b/srchybrid/TransferWnd.cpp
+@@ -1618,7 +1618,7 @@ void CTransferWnd::ResetTransToolbar(bool bShowToolbar, bool bResetLists)
+ 
+ 	if (bShowToolbar) {
+ 		// Vista: Remove the TBSTYLE_TRANSPARENT to avoid flickering (can be done only after the toolbar was initially created with TBSTYLE_TRANSPARENT !?)
+-		m_btnWnd1.ModifyStyle((theApp.m_ullComCtrlVer >= MAKEDLLVERULL(6, 16, 0, 0)) ? TBSTYLE_TRANSPARENT : 0, TBSTYLE_TOOLTIPS);
++		m_btnWnd1.ModifyStyle(TBSTYLE_TRANSPARENT, TBSTYLE_TOOLTIPS);
+ 		m_btnWnd1.SetExtendedStyle(m_btnWnd1.GetExtendedStyle() | TBSTYLE_EX_MIXEDBUTTONS);
+ 
+ 		TBBUTTON atb1[1 + WND1_NUM_BUTTONS] = {};
+@@ -1679,18 +1679,16 @@ void CTransferWnd::ResetTransToolbar(bool bShowToolbar, bool bResetLists)
+ 		// So, to circumvent such problems, the toolbar control should be created right with
+ 		// the needed size so that we do not really need to call the 'GetMaxSize' function.
+ 		// Although it would be better to call it to adapt for system metrics basically.
+-		if (theApp.m_ullComCtrlVer > MAKEDLLVERULL(5, 81, 0, 0)) {
+-			CSize size;
+-			m_btnWnd1.GetMaxSize(&size);
+-			m_btnWnd1.GetWindowRect(&rcBtn1);
+-			ScreenToClient(&rcBtn1);
+-			// the with of the toolbar should already match the needed size (see comment above)
+-			ASSERT(size.cx == rcBtn1.Width());
+-			m_btnWnd1.MoveWindow(rcBtn1.left, rcBtn1.top, size.cx, rcBtn1.Height());
+-		}
++		CSize size;
++		m_btnWnd1.GetMaxSize(&size);
++		m_btnWnd1.GetWindowRect(&rcBtn1);
++		ScreenToClient(&rcBtn1);
++		// the with of the toolbar should already match the needed size (see comment above)
++		ASSERT(size.cx == rcBtn1.Width());
++		m_btnWnd1.MoveWindow(rcBtn1.left, rcBtn1.top, size.cx, rcBtn1.Height());
+ 		/*---*/
+ 				// Vista: Remove the TBSTYLE_TRANSPARENT to avoid flickering (can be done only after the toolbar was initially created with TBSTYLE_TRANSPARENT !?)
+-		m_btnWnd2.ModifyStyle((theApp.m_ullComCtrlVer >= MAKEDLLVERULL(6, 16, 0, 0)) ? TBSTYLE_TRANSPARENT : 0, TBSTYLE_TOOLTIPS);
++		m_btnWnd2.ModifyStyle(TBSTYLE_TRANSPARENT, TBSTYLE_TOOLTIPS);
+ 		m_btnWnd2.SetExtendedStyle(m_btnWnd2.GetExtendedStyle() | TBSTYLE_EX_MIXEDBUTTONS);
+ 
+ 		TBBUTTON atb2[1 + WND2_NUM_BUTTONS] = {};
+@@ -1739,24 +1737,21 @@ void CTransferWnd::ResetTransToolbar(bool bShowToolbar, bool bResetLists)
+ 		// So, to circumvent such problems, the toolbar control should be created right with
+ 		// the needed size so that we do not really need to call the 'GetMaxSize' function.
+ 		// Although it would be better to call it to adapt for system metrics basically.
+-		if (theApp.m_ullComCtrlVer > MAKEDLLVERULL(5, 81, 0, 0)) {
+-			SIZE size;
+-			m_btnWnd2.GetMaxSize(&size);
+-			CRect rc;
+-			m_btnWnd2.GetWindowRect(&rc);
+-			ScreenToClient(&rc);
+-			// the with of the toolbar should already match the needed size (see comment above)
+-			ASSERT(size.cx == rc.Width());
+-			m_btnWnd2.MoveWindow(rc.left, rc.top, size.cx, rc.Height());
+-		}
++		m_btnWnd2.GetMaxSize(&size);
++		CRect rc;
++		m_btnWnd2.GetWindowRect(&rc);
++		ScreenToClient(&rc);
++		// the with of the toolbar should already match the needed size (see comment above)
++		ASSERT(size.cx == rc.Width());
++		m_btnWnd2.MoveWindow(rc.left, rc.top, size.cx, rc.Height());
+ 	} else {
+ 		// Vista: Remove the TBSTYLE_TRANSPARENT to avoid flickering (can be done only after the toolbar was initially created with TBSTYLE_TRANSPARENT !?)
+-		m_btnWnd1.ModifyStyle(TBSTYLE_TOOLTIPS | ((theApp.m_ullComCtrlVer >= MAKEDLLVERULL(6, 16, 0, 0)) ? TBSTYLE_TRANSPARENT : 0), 0);
++		m_btnWnd1.ModifyStyle(TBSTYLE_TOOLTIPS | TBSTYLE_TRANSPARENT, 0);
+ 		m_btnWnd1.SetExtendedStyle(m_btnWnd1.GetExtendedStyle() & ~TBSTYLE_EX_MIXEDBUTTONS);
+ 		m_btnWnd1.RecalcLayout(true);
+ 
+ 		// Vista: Remove the TBSTYLE_TRANSPARENT to avoid flickering (can be done only after the toolbar was initially created with TBSTYLE_TRANSPARENT !?)
+-		m_btnWnd2.ModifyStyle(TBSTYLE_TOOLTIPS | ((theApp.m_ullComCtrlVer >= MAKEDLLVERULL(6, 16, 0, 0)) ? TBSTYLE_TRANSPARENT : 0), 0);
++		m_btnWnd2.ModifyStyle(TBSTYLE_TOOLTIPS | TBSTYLE_TRANSPARENT, 0);
+ 		m_btnWnd2.SetExtendedStyle(m_btnWnd2.GetExtendedStyle() & ~TBSTYLE_EX_MIXEDBUTTONS);
+ 		m_btnWnd2.RecalcLayout(true);
+ 	}

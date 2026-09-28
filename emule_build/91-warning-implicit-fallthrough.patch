@@ -140,7 +140,7 @@ index 36c8634..8efab03 100644
  			case 3:
  			case 4:
 diff --git a/srchybrid/IrcWnd.cpp b/srchybrid/IrcWnd.cpp
-index 13daeab..773423c 100644
+index c5a66f0..511ccf7 100644
 --- a/srchybrid/IrcWnd.cpp
 +++ b/srchybrid/IrcWnd.cpp
 @@ -435,6 +435,7 @@ BOOL CIrcWnd::OnCommand(WPARAM wParam, LPARAM)
@@ -200,7 +200,7 @@ index bd13bcc..f839317 100644
  				continue;
  			case PB_ERROR:
 diff --git a/srchybrid/Preferences.cpp b/srchybrid/Preferences.cpp
-index 16aa4f9..e796f99 100644
+index db4b581..d1d5b61 100644
 --- a/srchybrid/Preferences.cpp
 +++ b/srchybrid/Preferences.cpp
 @@ -2902,6 +2902,7 @@ CString CPreferences::GetDefaultDirectory(EDefaultDirectory eDirectory, bool bCr
@@ -311,7 +311,7 @@ index eacd888..33ae4d2 100644
  	case IDT_WAITING:
  		RedrawWindow(&m_rcText);
 diff --git a/srchybrid/TransferWnd.cpp b/srchybrid/TransferWnd.cpp
-index 5a56858..18f849d 100644
+index e1a7e98..b73f23e 100644
 --- a/srchybrid/TransferWnd.cpp
 +++ b/srchybrid/TransferWnd.cpp
 @@ -453,6 +453,7 @@ void CTransferWnd::UpdateListCount(EWnd2 listindex, int iCount /*=-1*/)

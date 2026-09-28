@@ -1,0 +1,135 @@
+diff --git a/srchybrid/Emule.cpp b/srchybrid/Emule.cpp
+index 475650d..574b4c0 100644
+--- a/srchybrid/Emule.cpp
++++ b/srchybrid/Emule.cpp
+@@ -1511,21 +1511,6 @@ void CemuleApp::UpdateDesktopColorDepth()
+ 	} else {
+ 		// Get current desktop color depth and derive the image list format from it
+ 		m_iDfltImageListColorFlags = GetAppImageListColorFlag();
+-
+-		// Don't use 32-bit image lists if not supported by COMCTL32.DLL
+-		if (m_iDfltImageListColorFlags == ILC_COLOR32 && m_ullComCtrlVer < MAKEDLLVERULL(6, 0, 0, 0)) {
+-			// We fall back to 16-bit image lists because we do not provide 24-bit
+-			// versions of icons any longer (due to resource size restrictions for Win98). We
+-			// could also fall back to 24-bit image lists here but the difference is minimal
+-			// and considered not to be worth the additional memory consumption.
+-			//
+-			// Though, do not fall back to 8-bit image lists because this would let Windows
+-			// reduce the color resolution to the standard 256 color window system palette.
+-			// We need a 16-bit or 24-bit image list to hold all our 256 color icons (which
+-			// are not pre-quantized to standard 256 color windows system palette) without
+-			// losing any colors.
+-			m_iDfltImageListColorFlags = ILC_COLOR16;
+-		}
+ 	}
+ 
+ 	// Doesn't help.
+diff --git a/srchybrid/ListCtrlX.cpp b/srchybrid/ListCtrlX.cpp
+index 16cf155..50fe5eb 100644
+--- a/srchybrid/ListCtrlX.cpp
++++ b/srchybrid/ListCtrlX.cpp
+@@ -24,8 +24,6 @@ BEGIN_MESSAGE_MAP(CListCtrlX, CListCtrl)
+ 	ON_WM_INITMENUPOPUP()
+ 	ON_WM_MENUSELECT()
+ 	ON_WM_CONTEXTMENU()
+-	ON_NOTIFY_EX(HDN_BEGINDRAG, 0, OnHdrBeginDrag)
+-	ON_NOTIFY_EX(HDN_ENDDRAG, 0, OnHdrEndDrag)
+ 	ON_WM_KEYDOWN()
+ 	ON_MESSAGE(WM_COPY, OnCopy)
+ END_MESSAGE_MAP()
+@@ -191,7 +189,7 @@ void CListCtrlX::CreateColumns(int iColumns, LCX_COLUMN_INIT *pColumns)
+ 
+ void CListCtrlX::EnableHdrCtrlSortBitmaps(BOOL bUseHdrCtrlSortBitmaps)
+ {
+-	if (bUseHdrCtrlSortBitmaps && theApp.m_ullComCtrlVer >= MAKEDLLVERULL(6, 0, 0, 0))
++	if (bUseHdrCtrlSortBitmaps)
+ 		m_bUseHdrCtrlSortBitmaps = TRUE;
+ 	else {
+ #ifdef IDB_SORT_STATES
+@@ -320,12 +318,6 @@ void UpdateHdrImageList(CListCtrl &lv, CImageList &imlHdr, UINT uIDHdrImgList
+ 			// Fill images and masks into image list
+ 			VERIFY(imlHdr.Add(&bmSortStates, RGB(255, 0, 255)) >= 0);
+ 
+-			// To avoid drawing problems (which occur only with an image list *with* a mask) while
+-			// resizing list view columns which have the header control bitmap right aligned, set
+-			// the background color of the image list.
+-			if (theApp.m_ullComCtrlVer < MAKEDLLVERULL(6, 0, 0, 0))
+-				imlHdr.SetBkColor(::GetSysColor(COLOR_BTNFACE));
+-
+ 			// When setting the image list for the header control, this *ALWAYS* returns
+ 			// the image list which was set for the list view control!!!
+ 			pHdrCtrl->SetImageList(&imlHdr);
+@@ -354,26 +346,6 @@ void CListCtrlX::ApplyImageList(HIMAGELIST himl)
+ 	}
+ }
+ 
+-BOOL CListCtrlX::OnHdrBeginDrag(UINT, LPNMHDR, LRESULT*)
+-{
+-	if (theApp.m_ullComCtrlVer < MAKEDLLVERULL(6, 0, 0, 0)) {
+-		CImageList *piml = GetHeaderCtrl()->GetImageList();
+-		if (piml != NULL)
+-			piml->SetBkColor(::GetSysColor(COLOR_3DSHADOW));
+-	}
+-	return FALSE; // *Force* default processing of notification!
+-}
+-
+-BOOL CListCtrlX::OnHdrEndDrag(UINT, LPNMHDR, LRESULT*)
+-{
+-	if (theApp.m_ullComCtrlVer < MAKEDLLVERULL(6, 0, 0, 0)) {
+-		CImageList *piml = GetHeaderCtrl()->GetImageList();
+-		if (piml != NULL)
+-			piml->SetBkColor(::GetSysColor(COLOR_BTNFACE));
+-	}
+-	return FALSE; // *Force* default processing of notification!
+-}
+-
+ void CListCtrlX::SelectAllItems()
+ {
+ 	SetItemState(-1, LVIS_SELECTED, LVIS_SELECTED);
+diff --git a/srchybrid/ListCtrlX.h b/srchybrid/ListCtrlX.h
+index c5708cd..15029d0 100644
+--- a/srchybrid/ListCtrlX.h
++++ b/srchybrid/ListCtrlX.h
+@@ -140,7 +140,5 @@ protected:
+ 	afx_msg void OnInitMenuPopup(CMenu *pPopupMenu, UINT nIndex, BOOL bSysMenu);
+ 	afx_msg void OnMenuSelect(UINT nItemID, UINT nFlags, HMENU hSysMenu);
+ 	afx_msg void OnContextMenu(CWnd*, CPoint point);
+-	afx_msg BOOL OnHdrBeginDrag(UINT, LPNMHDR, LRESULT*);
+-	afx_msg BOOL OnHdrEndDrag(UINT, LPNMHDR, LRESULT*);
+ 	afx_msg LRESULT OnCopy(WPARAM, LPARAM);
+ };
+\ No newline at end of file
+diff --git a/srchybrid/MuleListCtrl.cpp b/srchybrid/MuleListCtrl.cpp
+index f1248fe..da60be5 100644
+--- a/srchybrid/MuleListCtrl.cpp
++++ b/srchybrid/MuleListCtrl.cpp
+@@ -488,12 +488,6 @@ void CMuleListCtrl::SetSortArrow(int iColumn, ArrowType atType)
+ 				if (imlSortStates.Create(14, 14, theApp.m_iDfltImageListColorFlags | ILC_MASK, 1, 0)) {
+ 					VERIFY(imlSortStates.Add(&bmSortStates, RGB(255, 0, 255)) >= 0);
+ 
+-					// To avoid drawing problems (which occur only with an image list *with* a mask) while
+-					// resizing list view columns which have the header control bitmap right aligned, set
+-					// the background color of the image list.
+-					if (theApp.m_ullComCtrlVer < MAKEDLLVERULL(6, 0, 0, 0))
+-						imlSortStates.SetBkColor(::GetSysColor(COLOR_BTNFACE));
+-
+ 					// When setting the image list for the header control for the first time we'll get
+ 					// the image list of the listview control!! So, better store the header control image list separate.
+ 					(void)pHeaderCtrl->SetImageList(&imlSortStates);
+@@ -502,12 +496,10 @@ void CMuleListCtrl::SetSortArrow(int iColumn, ArrowType atType)
+ 
+ 					// Use smaller bitmap margins -- this saves some pixels which may be required for
+ 					// rather small column titles.
+-					if (theApp.m_ullComCtrlVer >= MAKEDLLVERULL(5, 8, 0, 0)) {
+-						int iBmpMargin = pHeaderCtrl->GetBitmapMargin();
+-						int iNewBmpMargin = ::GetSystemMetrics(SM_CXEDGE) + ::GetSystemMetrics(SM_CXEDGE) / 2;
+-						if (iNewBmpMargin < iBmpMargin)
+-							pHeaderCtrl->SetBitmapMargin(iNewBmpMargin);
+-					}
++					int iBmpMargin = pHeaderCtrl->GetBitmapMargin();
++					int iNewBmpMargin = ::GetSystemMetrics(SM_CXEDGE) + ::GetSystemMetrics(SM_CXEDGE) / 2;
++					if (iNewBmpMargin < iBmpMargin)
++						pHeaderCtrl->SetBitmapMargin(iNewBmpMargin);
+ 				}
+ 			}
+ 		}
