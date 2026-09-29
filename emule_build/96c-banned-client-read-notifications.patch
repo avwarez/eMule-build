@@ -1,0 +1,20 @@
+diff --git a/srchybrid/UploadClient.cpp b/srchybrid/UploadClient.cpp
+index 61ad554..91c83ed 100644
+--- a/srchybrid/UploadClient.cpp
++++ b/srchybrid/UploadClient.cpp
+@@ -650,8 +650,14 @@ void CUpDownClient::Ban(LPCTSTR pszReason)
+ 	SetUploadState(US_BANNED);
+ 	theApp.emuledlg->transferwnd->ShowQueueCount(theApp.uploadqueue->GetWaitingUserCount());
+ 	theApp.emuledlg->transferwnd->GetQueueList().RefreshClient(this);
+-	if (socket != NULL && socket->IsConnected())
++	if (socket != NULL && socket->IsConnected()) {
++		// No more READ notifications. Where the stack does not reset the connection when data
++		// arrives after the read shutdown (Wine), that data keeps the socket readable: every
++		// FD_READ fails with WSAESHUTDOWN but restarts the timeout this relies on, so the socket
++		// never times out and the GUI thread spins on the notifications.
++		socket->AsyncSelect(FD_CLOSE | FD_WRITE);
+ 		socket->ShutDown(CAsyncSocket::receives); // let the socket timeout, since we don't want to risk to delete the client right now. This isn't actually perfect, could be changed later
++	}
+ }
+ 
+ DWORD CUpDownClient::GetWaitStartTime() const
