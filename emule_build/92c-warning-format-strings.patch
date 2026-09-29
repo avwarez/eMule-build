@@ -69,10 +69,10 @@ index 8fd11e8..19a7822 100644
  COLORREF CIni::GetColRef(LPCTSTR lpszEntry, COLORREF crDefault, LPCTSTR lpszSection)
  {
 diff --git a/srchybrid/Preferences.cpp b/srchybrid/Preferences.cpp
-index d1d5b61..fd456ec 100644
+index cd46635..2ce1037 100644
 --- a/srchybrid/Preferences.cpp
 +++ b/srchybrid/Preferences.cpp
-@@ -666,24 +666,15 @@ bool CPreferences::IsTempFile(const CString &rstrDirectory, const CString &rstrN
+@@ -665,24 +665,15 @@ bool CPreferences::IsTempFile(const CString &rstrDirectory, const CString &rstrN
  	CString strNameLower(rstrName);
  	strNameLower.MakeLower();
  	strNameLower += _T("|"); // append an EOS character which we can query for

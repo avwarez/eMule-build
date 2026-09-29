@@ -795,10 +795,10 @@ index e5f5eaa..6c4896f 100644
  		ex->Delete();
  	}
 diff --git a/srchybrid/OtherFunctions.cpp b/srchybrid/OtherFunctions.cpp
-index d092f80..0a4030d 100644
+index fc2a7ad..3d1c6f9 100644
 --- a/srchybrid/OtherFunctions.cpp
 +++ b/srchybrid/OtherFunctions.cpp
-@@ -2180,9 +2180,11 @@ void DebugHexDump(CFile &file)
+@@ -2153,9 +2153,11 @@ void DebugHexDump(CFile &file)
  			file.Read(data, iSize);
  			DebugHexDump(data, iSize);
  		} catch (CFileException *ex) {
@@ -810,7 +810,7 @@ index d092f80..0a4030d 100644
  			TRACE("*** DebugHexDump(CFile&); CMemoryException\n");
  			ex->Delete();
  		}
-@@ -3397,7 +3399,8 @@ bool IsRegExpValid(const CString &regexpr)
+@@ -3370,7 +3372,8 @@ bool IsRegExpValid(const CString &regexpr)
  	try {
  		std::basic_regex<TCHAR> reFN(regexpr);
  		(void)reFN;
@@ -820,7 +820,7 @@ index d092f80..0a4030d 100644
  		return false;
  	}
  	return true;
-@@ -3413,7 +3416,8 @@ bool RegularExpressionMatch(const CString &regexpr, const CString &teststring)
+@@ -3386,7 +3389,8 @@ bool RegularExpressionMatch(const CString &regexpr, const CString &teststring)
  		std::cmatch mcUrl;
  #endif
  		return std::regex_match((LPCTSTR)teststring, mcUrl, reFN);
@@ -830,7 +830,7 @@ index d092f80..0a4030d 100644
  		return false;
  	}
  }
-@@ -3772,6 +3776,7 @@ EFileType GetFileTypeEx(CShareableFile *kfile, bool checkextention, bool checkfi
+@@ -3745,6 +3749,7 @@ EFileType GetFileTypeEx(CShareableFile *kfile, bool checkextention, bool checkfi
  				inFile.Close();
  			}
  		} catch (...) {
@@ -870,10 +870,10 @@ index 0f78ee9..bc4d8a5 100644
  		return;
  	}
 diff --git a/srchybrid/Preferences.cpp b/srchybrid/Preferences.cpp
-index fd456ec..8d604a4 100644
+index 2ce1037..cec133c 100644
 --- a/srchybrid/Preferences.cpp
 +++ b/srchybrid/Preferences.cpp
-@@ -572,6 +572,7 @@ void CPreferences::Init()
+@@ -571,6 +571,7 @@ void CPreferences::Init()
  				}
  			}
  		} catch (CFileException *ex) {
@@ -881,7 +881,7 @@ index fd456ec..8d604a4 100644
  			ASSERT(0);
  			ex->Delete();
  		}
-@@ -593,6 +594,7 @@ void CPreferences::Init()
+@@ -592,6 +593,7 @@ void CPreferences::Init()
  					addresses_list.AddTail(toadd);
  			}
  		} catch (CFileException *ex) {
