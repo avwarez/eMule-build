@@ -870,7 +870,7 @@ index c9a889a..15a6712 100644
  		return;
  	}
 diff --git a/srchybrid/Preferences.cpp b/srchybrid/Preferences.cpp
-index 968df14..a70962b 100644
+index 0101fd0..dbc1a29 100644
 --- a/srchybrid/Preferences.cpp
 +++ b/srchybrid/Preferences.cpp
 @@ -570,6 +570,7 @@ void CPreferences::Init()
@@ -998,7 +998,7 @@ index f440c43..6e7c81f 100644
  		DebugLogWarning(LOG_DEFAULT, _T("Error: Failed to process server TCP packet from %s: opcode=0x%02x size=%u - %s"), (LPCTSTR)strServer, opcode, size, pszError);
  	}
 diff --git a/srchybrid/SharedFileList.cpp b/srchybrid/SharedFileList.cpp
-index faac858..b8a4a2d 100644
+index 56d664a..ffce0bc 100644
 --- a/srchybrid/SharedFileList.cpp
 +++ b/srchybrid/SharedFileList.cpp
 @@ -377,6 +377,7 @@ bool CAddFileThread::ImportParts()

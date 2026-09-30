@@ -69,7 +69,7 @@ index 8fd11e8..19a7822 100644
  COLORREF CIni::GetColRef(LPCTSTR lpszEntry, COLORREF crDefault, LPCTSTR lpszSection)
  {
 diff --git a/srchybrid/Preferences.cpp b/srchybrid/Preferences.cpp
-index 5d20e32..968df14 100644
+index cf54234..0101fd0 100644
 --- a/srchybrid/Preferences.cpp
 +++ b/srchybrid/Preferences.cpp
 @@ -664,24 +664,15 @@ bool CPreferences::IsTempFile(const CString &rstrDirectory, const CString &rstrN

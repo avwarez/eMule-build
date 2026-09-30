@@ -47,7 +47,7 @@ index 2d830e5..c7c389d 100644
 -#pragma warning(pop)
  #endif
 diff --git a/srchybrid/Stdafx.h b/srchybrid/Stdafx.h
-index 861e11a..1407db5 100644
+index 7f079a5..51ef962 100644
 --- a/srchybrid/Stdafx.h
 +++ b/srchybrid/Stdafx.h
 @@ -31,47 +31,20 @@

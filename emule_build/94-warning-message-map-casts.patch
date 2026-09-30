@@ -315,7 +315,7 @@ index be15813..1dfb001 100644
  CKadSearchListCtrl::CKadSearchListCtrl()
  {
 diff --git a/srchybrid/KademliaWnd.cpp b/srchybrid/KademliaWnd.cpp
-index d688b17..5a660d4 100644
+index c2ac4e7..24555d4 100644
 --- a/srchybrid/KademliaWnd.cpp
 +++ b/srchybrid/KademliaWnd.cpp
 @@ -55,6 +55,8 @@ static char THIS_FILE[] = __FILE__;

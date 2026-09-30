@@ -1,5 +1,5 @@
 diff --git a/srchybrid/Emule.cpp b/srchybrid/Emule.cpp
-index e99d213..95c36dd 100644
+index 041c505..aac9125 100644
 --- a/srchybrid/Emule.cpp
 +++ b/srchybrid/Emule.cpp
 @@ -98,7 +98,11 @@ bool g_bLowColorDesktop = false;
@@ -15,7 +15,7 @@ index e99d213..95c36dd 100644
  CMap<const unsigned char*, const unsigned char*, UINT, UINT> g_allocations;
  int eMuleAllocHook(int mode, void *pUserData, size_t nSize, int nBlockUse, long lRequest, const unsigned char *pszFileName, int nLine) noexcept;
  
-@@ -394,7 +398,7 @@ BOOL CemuleApp::InitInstance()
+@@ -389,7 +393,7 @@ BOOL CemuleApp::InitInstance()
  	oldMemState.Checkpoint();
  	// Installing that memory debug code works fine in Debug builds when running within VS Debugger,
  	// but some other test applications don't like that all....

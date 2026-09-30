@@ -200,10 +200,10 @@ index dc2dc95..7c5dfe0 100644
  				continue;
  			case PB_ERROR:
 diff --git a/srchybrid/Preferences.cpp b/srchybrid/Preferences.cpp
-index 89c67e9..5d20e32 100644
+index acf1a98..cf54234 100644
 --- a/srchybrid/Preferences.cpp
 +++ b/srchybrid/Preferences.cpp
-@@ -2885,6 +2885,7 @@ CString CPreferences::GetDefaultDirectory(EDefaultDirectory eDirectory, bool bCr
+@@ -2878,6 +2878,7 @@ CString CPreferences::GetDefaultDirectory(EDefaultDirectory eDirectory, bool bCr
  						strSelectedDataBaseDirectory = strPublicDownloads + _T("eMule\\");
  						strSelectedConfigBaseDirectory = strProgramData + _T("eMule\\");
  						strSelectedExpansionBaseDirectory = strProgramData + _T("eMule\\");
@@ -311,7 +311,7 @@ index eacd888..33ae4d2 100644
  	case IDT_WAITING:
  		RedrawWindow(&m_rcText);
 diff --git a/srchybrid/TransferWnd.cpp b/srchybrid/TransferWnd.cpp
-index e1a7e98..b73f23e 100644
+index a16bf7d..471b844 100644
 --- a/srchybrid/TransferWnd.cpp
 +++ b/srchybrid/TransferWnd.cpp
 @@ -453,6 +453,7 @@ void CTransferWnd::UpdateListCount(EWnd2 listindex, int iCount /*=-1*/)

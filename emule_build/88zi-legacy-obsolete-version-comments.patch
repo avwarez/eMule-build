@@ -1,0 +1,219 @@
+diff --git a/srchybrid/DialogMinTrayBtn.cpp b/srchybrid/DialogMinTrayBtn.cpp
+index 03d9b78..22b39e4 100644
+--- a/srchybrid/DialogMinTrayBtn.cpp
++++ b/srchybrid/DialogMinTrayBtn.cpp
+@@ -130,7 +130,7 @@ TEMPLATE LRESULT CDialogMinTrayBtn<BASE>::OnNcHitTest(CPoint point)
+ 	bool bPreviousHitTest = m_bMinTrayBtnHitTest;
+ 	m_bMinTrayBtnHitTest = MinTrayBtnHitTest(point);
+ 	if (!IsWindowsClassicStyle() && m_bMinTrayBtnHitTest != bPreviousHitTest)
+-		MinTrayBtnDraw(); // Windows XP Style (hot button)
++		MinTrayBtnDraw(); // themed style (hot button)
+ 	return m_bMinTrayBtnHitTest ? HTMINTRAYBUTTON : BASE::OnNcHitTest(point);
+ }
+ 
+@@ -222,9 +222,9 @@ TEMPLATE void CDialogMinTrayBtn<BASE>::MinTrayBtnUpdatePosAndSize()
+ 
+ 	// set our frame window button width/height...
+ 	if (IsWindowsClassicStyle())
+-		m_MinTrayBtnSize = szBtn; //the same as Windows' buttons for non WinXP
++		m_MinTrayBtnSize = szBtn; //the same as Windows' buttons in the classic style
+ 	else
+-		m_MinTrayBtnSize.cx = m_MinTrayBtnSize.cy = szBtn.cy; //a square for WinXP
++		m_MinTrayBtnSize.cx = m_MinTrayBtnSize.cy = szBtn.cy; //a square when themed
+ 
+ 	m_MinTrayBtnPos.x = rcWnd.Width() - (CAPTION_BUTTONSPACE + m_MinTrayBtnSize.cx + CAPTION_BUTTONSPACE + szBtn.cx);
+ 	m_MinTrayBtnPos.y = CAPTION_BUTTONSPACE;
+diff --git a/srchybrid/Emule.cpp b/srchybrid/Emule.cpp
+index e99d213..041c505 100644
+--- a/srchybrid/Emule.cpp
++++ b/srchybrid/Emule.cpp
+@@ -137,14 +137,9 @@ static void InitSafeSEH()
+ ///////////////////////////////////////////////////////////////////////////////
+ // DEP - Data Execution Prevention
+ //
+-// For Windows XP SP2 and later. Does *not* have any performance impact!
+-//
+-// VS2003:	DEP must be enabled dynamically because the linker does not support
+-//			the "/NXCOMPAT" command line option.
+-// VS2005:	DEP can get enabled at link time by using the "/NXCOMPAT" command
+-//			line option.
+-// VS2008:	DEP can get enabled at link time by using the "DEP" option within
+-//			'Visual Studio Linker Advanced Options'.
++// Does *not* have any performance impact! The linker's "/NXCOMPAT" option already
++// enables DEP; this makes the policy permanent where it could still be changed at
++// runtime (32-bit processes only, a 64-bit process always runs with DEP).
+ //
+ static void InitDEP()
+ {
+diff --git a/srchybrid/KademliaWnd.cpp b/srchybrid/KademliaWnd.cpp
+index d688b17..c2ac4e7 100644
+--- a/srchybrid/KademliaWnd.cpp
++++ b/srchybrid/KademliaWnd.cpp
+@@ -161,14 +161,6 @@ BOOL CKademliaWnd::OnInitDialog()
+ 	tbbi.cx = WND1_BUTTON_WIDTH;
+ 	m_pbtnWnd->SetButtonInfo(0, &tbbi);
+ 
+-	// 'GetMaxSize' does not work properly under:
+-	//	- Win98SE with COMCTL32 v5.80
+-	//	- Win2000 with COMCTL32 v5.81
+-	// The value returned by 'GetMaxSize' is just couple of pixels too small so that the
+-	// last toolbar button is nearly not visible at all.
+-	// So, to circumvent such problems, the toolbar control should be created right with
+-	// the needed size so that we do not really need to call the 'GetMaxSize' function.
+-	// Although it would be better to call it to adapt for system metrics basically.
+ 	SIZE size;
+ 	m_pbtnWnd->GetMaxSize(&size);
+ 	CRect rc;
+diff --git a/srchybrid/MuleListCtrl.cpp b/srchybrid/MuleListCtrl.cpp
+index 372092c..33e0282 100644
+--- a/srchybrid/MuleListCtrl.cpp
++++ b/srchybrid/MuleListCtrl.cpp
+@@ -1519,9 +1519,6 @@ void CMuleListCtrl::OnLvnGetInfoTip(LPNMHDR pNMHDR, LRESULT *pResult)
+ 			// Don't show the default label tip for the main item, if the mouse is not over
+ 			// the main item.
+ 			if ((pGetInfoTip->dwFlags & LVGIT_UNFOLDED) == 0 && pGetInfoTip->cchTextMax > 0 && pGetInfoTip->pszText[0] != _T('\0')) {
+-				// For any reason this does not work with Win98 (COMCTL32 v5.8). Even when
+-				// the info tip text is explicitly set to empty, the list view control may
+-				// display the unfolded text for the 1st item. It works for WinXP though.
+ 				pGetInfoTip->pszText[0] = _T('\0');
+ 			}
+ 			return;
+diff --git a/srchybrid/Preferences.cpp b/srchybrid/Preferences.cpp
+index 89c67e9..acf1a98 100644
+--- a/srchybrid/Preferences.cpp
++++ b/srchybrid/Preferences.cpp
+@@ -2791,16 +2791,9 @@ uint16 CPreferences::GetRandomUDPPort()
+ 
+ // General behavior:
+ //
+-// WinVer < Vista
+-// Default: ApplicationDir if preference.ini exists there.
+-//          If not: user specific dirs if preferences.ini exits there.
+-//          If not: again ApplicationDir
+-// Default overridden by Registry value (see below)
+-// Fallback: ApplicationDir
+-//
+-// WinVer >= Vista:
+ // Default: User specific Dir if preferences.ini exists there.
+ //          If not: All users dir, if preferences.ini exists there.
++//          If not: ApplicationDir, if preferences.ini exists there.
+ //          If not: User specific Dir again
+ // Default overridden by Registry value (see below)
+ // Fallback: ApplicationDir
+diff --git a/srchybrid/SelfTest.cpp b/srchybrid/SelfTest.cpp
+index 04b68b3..32f7567 100644
+--- a/srchybrid/SelfTest.cpp
++++ b/srchybrid/SelfTest.cpp
+@@ -87,35 +87,6 @@ int g_fooResult;
+ 
+ bool SelfTest()
+ {
+-	// Win98/WinME PROBLEM: Those Windows version have some icon resource limit.
+-	// That limit seems to be a combination of the total amount of icon (image)
+-	// data which is used by all icons as well as the total number of icon resources
+-	// which are listed here in that section. We already exceeded that limit and we
+-	// should take care about the order of the icons in that list. We would need to
+-	// place icons which are never used under Win98/WinME at the end of the list so
+-	// that all other icons have a chance to get loaded. It is though not easy to
+-	// find that kind of icons. So, for now, as a quick fix, the smiley icons are
+-	// placed at the end of the list - as they are for sure the least important ones.
+-	//
+-	// However, note also that it leads to quite serious problems if some particular
+-	// icons can not get loaded (under Win98/ME). If those icons are used within an
+-	// image list and can not get loaded, the remaining icons in that list will
+-	// change their position within the list which leads to the situation that the
+-	// user will see semantically *wrong* icons (e.g. seeing the 'connected' state
+-	// icon although the 'disconnect' state should be shown) - and this is actually
+-	// even worse than showing no icons at all.
+-	//
+-	// It seems that the total amount of icon (image) must not exceed sharp 1.0 MB.
+-	// All icons which are placed in the icon section of the resource file above
+-	// that 1.0 MB limit can not get loaded by Win98/ME. Note also, if the icon
+-	// resource section exceeds some other certain limit, the EXE file itself can
+-	// not get loaded by Win98/ME any longer.
+-	//
+-	// (See also "CheckResources" in SelfTest.cpp)
+-	//
+-	// TODO: Maybe we can put the icons in different language sections in the
+-	// rc file to avoid that Win98 restriction.
+-	//
+ #ifdef _DEBUG
+ 	//CheckResources();
+ #endif
+diff --git a/srchybrid/SharedFileList.cpp b/srchybrid/SharedFileList.cpp
+index faac858..56d664a 100644
+--- a/srchybrid/SharedFileList.cpp
++++ b/srchybrid/SharedFileList.cpp
+@@ -1491,7 +1491,6 @@ void CSharedFileList::CheckAndAddSingleFile(const CFileFind &ff)
+ 				TRACE(_T("%hs: Did not share file \"%s\" - not supported file type\n"), __FUNCTION__, (LPCTSTR)strFoundFilePath);
+ 				return;
+ 			}
+-			// Win98: Would need to implement a different code path which is using 'IShellLinkA' on Win9x.
+ 			CComPtr<IShellLink> pShellLink;
+ 			if (SUCCEEDED(pShellLink.CoCreateInstance(CLSID_ShellLink))) {
+ 				CComQIPtr<IPersistFile> pPersistFile(pShellLink);
+diff --git a/srchybrid/Stdafx.h b/srchybrid/Stdafx.h
+index 861e11a..7f079a5 100644
+--- a/srchybrid/Stdafx.h
++++ b/srchybrid/Stdafx.h
+@@ -103,7 +103,7 @@
+ #endif
+ #endif//!defined(_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES) || (_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES==0)
+ 
+-//Windows XP compatibility requires 'inet_addr' and 'WSAAsyncGetHostByName' (warning C4996)
++//eMule still uses 'inet_addr', 'inet_ntoa' and 'WSAAsyncGetHostByName' (warning C4996)
+ #ifndef _WINSOCK_DEPRECATED_NO_WARNINGS
+ #define _WINSOCK_DEPRECATED_NO_WARNINGS
+ #endif
+diff --git a/srchybrid/ToolTipCtrlX.cpp b/srchybrid/ToolTipCtrlX.cpp
+index 465476c..6fc4142 100644
+--- a/srchybrid/ToolTipCtrlX.cpp
++++ b/srchybrid/ToolTipCtrlX.cpp
+@@ -120,13 +120,6 @@ void CToolTipCtrlX::CustomPaint(LPNMTTCUSTOMDRAW pNMCD)
+ 	// So, actually we can use the Vista 'TOOLTIP' theme only for getting the proper
+ 	// tooltip background.
+ 	//
+-	// Windows XP
+-	// ----------
+-	// Can *not* use the 'TOOLTIP' theme at all because it would give us only a (non-bold)
+-	// black font on a white tooltip window background. Seems that the 'TOOLTIP' theme under
+-	// WinXP is just using the default Window values (black + white) and does not
+-	// use any of the tooltip specific Window metrics...
+-	//
+ 	bool bUseEmbeddedThemeFonts = false;
+ 	HTHEME hTheme = NULL;
+ 	if (theApp.IsVistaThemeActive()) {
+diff --git a/srchybrid/TransferWnd.cpp b/srchybrid/TransferWnd.cpp
+index e1a7e98..a16bf7d 100644
+--- a/srchybrid/TransferWnd.cpp
++++ b/srchybrid/TransferWnd.cpp
+@@ -1671,14 +1671,6 @@ void CTransferWnd::ResetTransToolbar(bool bShowToolbar, bool bResetLists)
+ 		tbbi.cx = WND1_BUTTON_WIDTH;
+ 		m_btnWnd1.SetButtonInfo(0, &tbbi);
+ 
+-		// 'GetMaxSize' does not work properly under:
+-		//	- Win98SE with COMCTL32 v5.80
+-		//	- Win2000 with COMCTL32 v5.81
+-		// The value returned by 'GetMaxSize' is just couple of pixels too small so that the
+-		// last toolbar button is nearly not visible at all.
+-		// So, to circumvent such problems, the toolbar control should be created right with
+-		// the needed size so that we do not really need to call the 'GetMaxSize' function.
+-		// Although it would be better to call it to adapt for system metrics basically.
+ 		CSize size;
+ 		m_btnWnd1.GetMaxSize(&size);
+ 		m_btnWnd1.GetWindowRect(&rcBtn1);
+@@ -1729,14 +1721,6 @@ void CTransferWnd::ResetTransToolbar(bool bShowToolbar, bool bResetLists)
+ 		tbbi.cx = WND2_BUTTON_WIDTH;
+ 		m_btnWnd2.SetButtonInfo(0, &tbbi);
+ 
+-		// 'GetMaxSize' does not work properly under:
+-		//	- Win98SE with COMCTL32 v5.80
+-		//	- Win2000 with COMCTL32 v5.81
+-		// The value returned by 'GetMaxSize' is just couple of pixels too small so that the
+-		// last toolbar button is nearly not visible at all.
+-		// So, to circumvent such problems, the toolbar control should be created right with
+-		// the needed size so that we do not really need to call the 'GetMaxSize' function.
+-		// Although it would be better to call it to adapt for system metrics basically.
+ 		m_btnWnd2.GetMaxSize(&size);
+ 		CRect rc;
+ 		m_btnWnd2.GetWindowRect(&rc);
