@@ -577,7 +577,7 @@ index 4a5cb60..c6019eb 100644
  CSharedFilesCtrl::CSharedFilesCtrl()
  	: CListCtrlItemWalk(this)
 diff --git a/srchybrid/StatisticsDlg.cpp b/srchybrid/StatisticsDlg.cpp
-index b8a7b78..60c745d 100644
+index de8a650..d61b08a 100644
 --- a/srchybrid/StatisticsDlg.cpp
 +++ b/srchybrid/StatisticsDlg.cpp
 @@ -50,6 +50,8 @@ extern int (__cdecl *g_pfnPrevCrtAllocHook)(int, void*, size_t, int, long, const

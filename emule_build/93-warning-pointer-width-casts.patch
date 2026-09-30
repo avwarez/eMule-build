@@ -172,10 +172,10 @@ index ac86a9a..4aceea4 100644
  		} else
  			ASSERT(0);
 diff --git a/srchybrid/SharedDirsTreeCtrl.cpp b/srchybrid/SharedDirsTreeCtrl.cpp
-index 63eb078..57d98dd 100644
+index 21eadb6..bd283e0 100644
 --- a/srchybrid/SharedDirsTreeCtrl.cpp
 +++ b/srchybrid/SharedDirsTreeCtrl.cpp
-@@ -505,7 +505,7 @@ void CSharedDirsTreeCtrl::OnContextMenu(CWnd*, CPoint point)
+@@ -502,7 +502,7 @@ void CSharedDirsTreeCtrl::OnContextMenu(CWnd*, CPoint point)
  		// - even if it can be done in other ways if the user really wants to do it
  		bool bWideRangeSelection = (pSelectedDir->m_nCatFilter == -1 && pSelectedDir->m_eItemType != SDI_NO);
  
@@ -198,7 +198,7 @@ index f538ba9..4a5cb60 100644
  
  	bool bSingleCompleteFileSelected = (iSelectedItems == 1 && (iCompleteFileSelected == 1 || bContainsOnlyShareableFile));
 diff --git a/srchybrid/SmileySelector.cpp b/srchybrid/SmileySelector.cpp
-index 2e767ae..3c450d5 100644
+index 2307693..1543e5a 100644
 --- a/srchybrid/SmileySelector.cpp
 +++ b/srchybrid/SmileySelector.cpp
 @@ -96,7 +96,7 @@ BOOL CSmileySelector::CreateWnd(CWnd *pWndParent, LPCRECT pRect, CEdit *pwndEdit

@@ -267,10 +267,10 @@ index 84a5c0c..6f618cd 100644
  				rcItem.left += sm_iSubItemInset;
  				dc.DrawText(sItem, &rcItem, MLC_DT_TEXT | uDrawTextAlignment);
 diff --git a/srchybrid/SharedDirsTreeCtrl.cpp b/srchybrid/SharedDirsTreeCtrl.cpp
-index c6fc64c..7e57bc6 100644
+index 798df56..5e26558 100644
 --- a/srchybrid/SharedDirsTreeCtrl.cpp
 +++ b/srchybrid/SharedDirsTreeCtrl.cpp
-@@ -668,6 +668,7 @@ BOOL CSharedDirsTreeCtrl::OnCommand(WPARAM wParam, LPARAM)
+@@ -665,6 +665,7 @@ BOOL CSharedDirsTreeCtrl::OnCommand(WPARAM wParam, LPARAM)
  						break;
  					case MP_PRIOVERYHIGH:
  						pri = PR_VERYHIGH;
@@ -278,7 +278,7 @@ index c6fc64c..7e57bc6 100644
  					case MP_PRIOAUTO:
  						break;
  					default:
-@@ -682,6 +683,7 @@ BOOL CSharedDirsTreeCtrl::OnCommand(WPARAM wParam, LPARAM)
+@@ -679,6 +680,7 @@ BOOL CSharedDirsTreeCtrl::OnCommand(WPARAM wParam, LPARAM)
  					}
  				}
  			}

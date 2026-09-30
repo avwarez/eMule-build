@@ -132,10 +132,10 @@ index 6a04849..00cef6f 100644
  void CSearchResultsWnd::DeleteAllSearches()
  {
 diff --git a/srchybrid/SharedDirsTreeCtrl.cpp b/srchybrid/SharedDirsTreeCtrl.cpp
-index 7e57bc6..63eb078 100644
+index 5e26558..21eadb6 100644
 --- a/srchybrid/SharedDirsTreeCtrl.cpp
 +++ b/srchybrid/SharedDirsTreeCtrl.cpp
-@@ -542,8 +542,6 @@ void CSharedDirsTreeCtrl::OnRButtonDown(UINT, CPoint point)
+@@ -539,8 +539,6 @@ void CSharedDirsTreeCtrl::OnRButtonDown(UINT, CPoint point)
  	}
  }
  
@@ -144,7 +144,7 @@ index 7e57bc6..63eb078 100644
  BOOL CSharedDirsTreeCtrl::OnCommand(WPARAM wParam, LPARAM)
  {
  	CTypedPtrList<CPtrList, CShareableFile*> selectedList;
-@@ -652,7 +650,7 @@ BOOL CSharedDirsTreeCtrl::OnCommand(WPARAM wParam, LPARAM)
+@@ -649,7 +647,7 @@ BOOL CSharedDirsTreeCtrl::OnCommand(WPARAM wParam, LPARAM)
  			for (POSITION pos = selectedList.GetHeadPosition(); pos != NULL;) {
  				CKnownFile *file = static_cast<CKnownFile*>(selectedList.GetNext(pos));
  				if (file->IsKindOf(RUNTIME_CLASS(CKnownFile))) {
@@ -153,7 +153,7 @@ index 7e57bc6..63eb078 100644
  					switch (wParam) {
  					case MP_PRIOVERYLOW:
  						pri = PR_VERYLOW;
-@@ -690,7 +688,6 @@ BOOL CSharedDirsTreeCtrl::OnCommand(WPARAM wParam, LPARAM)
+@@ -687,7 +685,6 @@ BOOL CSharedDirsTreeCtrl::OnCommand(WPARAM wParam, LPARAM)
  	}
  	return TRUE;
  }

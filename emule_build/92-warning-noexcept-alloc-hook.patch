@@ -38,7 +38,7 @@ index c7c389d..5a764d0 100644
  
  #define MAXAVERAGETIME	SEC2MS(40)
 diff --git a/srchybrid/StatisticsDlg.cpp b/srchybrid/StatisticsDlg.cpp
-index 0861110..b8a7b78 100644
+index 41c22fd..de8a650 100644
 --- a/srchybrid/StatisticsDlg.cpp
 +++ b/srchybrid/StatisticsDlg.cpp
 @@ -42,7 +42,7 @@ static char THIS_FILE[] = __FILE__;

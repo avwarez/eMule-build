@@ -1,0 +1,121 @@
+diff --git a/srchybrid/ArchivePreviewDlg.cpp b/srchybrid/ArchivePreviewDlg.cpp
+index 1c58208..ae07539 100644
+--- a/srchybrid/ArchivePreviewDlg.cpp
++++ b/srchybrid/ArchivePreviewDlg.cpp
+@@ -205,8 +205,6 @@ BOOL CArchivePreviewDlg::OnInitDialog()
+ 
+ 	AddAllOtherAnchors();
+ 
+-	// Win98: Explicitly set to Unicode to receive Unicode notifications.
+-	m_ContentList.SendMessage(CCM_SETUNICODEFORMAT, TRUE);
+ 	// To support full sorting of the archive entries list we'd need a separate list which
+ 	// is holding the unified archive entries for all different supported archive formats so
+ 	// that the ListView's sortproc can get valid 'lParam' values which are pointing to those
+diff --git a/srchybrid/DirectoryTreeCtrl.cpp b/srchybrid/DirectoryTreeCtrl.cpp
+index d97f431..540ecac 100644
+--- a/srchybrid/DirectoryTreeCtrl.cpp
++++ b/srchybrid/DirectoryTreeCtrl.cpp
+@@ -183,9 +183,6 @@ void CDirectoryTreeCtrl::OnTvnGetdispinfo(LPNMHDR pNMHDR, LRESULT *pResult)
+ 
+ void CDirectoryTreeCtrl::Init()
+ {
+-	// Win98: Explicitly set to Unicode to receive Unicode notifications.
+-	SendMessage(CCM_SETUNICODEFORMAT, TRUE);
+-
+ 	ShowWindow(SW_HIDE);
+ 	DeleteAllItems();
+ 
+diff --git a/srchybrid/IPFilterDlg.cpp b/srchybrid/IPFilterDlg.cpp
+index fa48d0b..37ab77a 100644
+--- a/srchybrid/IPFilterDlg.cpp
++++ b/srchybrid/IPFilterDlg.cpp
+@@ -173,8 +173,6 @@ BOOL CIPFilterDlg::OnInitDialog()
+ 	EnableSaveRestore(PREF_INI_SECTION);
+ 
+ 	ASSERT(m_ipfilter.GetStyle() & LVS_OWNERDATA);
+-	// Win98: Explicitly set to Unicode to receive Unicode notifications.
+-	m_ipfilter.SendMessage(CCM_SETUNICODEFORMAT, TRUE);
+ 	m_ipfilter.SetExtendedStyle(LVS_EX_FULLROWSELECT | LVS_EX_INFOTIP | LVS_EX_GRIDLINES);
+ 	m_ipfilter.EnableHdrCtrlSortBitmaps();
+ 	m_ipfilter.ReadColumnStats(_countof(s_aColumns), s_aColumns);
+diff --git a/srchybrid/MuleListCtrl.cpp b/srchybrid/MuleListCtrl.cpp
+index da60be5..372092c 100644
+--- a/srchybrid/MuleListCtrl.cpp
++++ b/srchybrid/MuleListCtrl.cpp
+@@ -113,8 +113,6 @@ void CMuleListCtrl::PreSubclassWindow()
+ {
+ 	SetColors();
+ 	CListCtrl::PreSubclassWindow();
+-	// Win98: Explicitly set to Unicode to receive Unicode notifications.
+-	SendMessage(CCM_SETUNICODEFORMAT, TRUE);
+ 	SetExtendedStyle(LVS_EX_HEADERDRAGDROP);
+ 
+ 	// Vista: Reduce flickering in header control
+diff --git a/srchybrid/MuleToolBarCtrl.cpp b/srchybrid/MuleToolBarCtrl.cpp
+index 0317b09..86434a3 100644
+--- a/srchybrid/MuleToolBarCtrl.cpp
++++ b/srchybrid/MuleToolBarCtrl.cpp
+@@ -104,9 +104,6 @@ void CMuleToolbarCtrl::Init()
+ {
+ 	m_astrToolbarPaths.RemoveAll();
+ 
+-	// Win98: Explicitly set to Unicode to receive Unicode notifications.
+-	SendMessage(CCM_SETUNICODEFORMAT, TRUE);
+-
+ 	ModifyStyle(0, TBSTYLE_FLAT | TBSTYLE_ALTDRAG | CCS_ADJUSTABLE | TBSTYLE_TRANSPARENT | TBSTYLE_TOOLTIPS | CCS_NODIVIDER);
+ 	if (thePrefs.GetUseReBarToolbar()) {
+ 		ModifyStyle(0, CCS_NORESIZE);
+diff --git a/srchybrid/SharedDirsTreeCtrl.cpp b/srchybrid/SharedDirsTreeCtrl.cpp
+index c6fc64c..798df56 100644
+--- a/srchybrid/SharedDirsTreeCtrl.cpp
++++ b/srchybrid/SharedDirsTreeCtrl.cpp
+@@ -109,9 +109,6 @@ void CSharedDirsTreeCtrl::Initialize(CSharedFilesCtrl *pSharedFilesCtrl)
+ {
+ 	m_pSharedFilesCtrl = pSharedFilesCtrl;
+ 
+-	// Win98: Explicitly set to Unicode to receive Unicode notifications.
+-	SendMessage(CCM_SETUNICODEFORMAT, TRUE);
+-
+ 	m_bUseIcons = true;
+ 	SetAllIcons();
+ 	Localize();
+diff --git a/srchybrid/SmileySelector.cpp b/srchybrid/SmileySelector.cpp
+index 2e767ae..2307693 100644
+--- a/srchybrid/SmileySelector.cpp
++++ b/srchybrid/SmileySelector.cpp
+@@ -122,8 +122,6 @@ BOOL CSmileySelector::CreateWnd(CWnd *pWndParent, LPCRECT pRect, CEdit *pwndEdit
+ 	{
+ 		return FALSE;
+ 	}
+-	// Win98: Explicitly set to Unicode to receive Unicode notifications.
+-	m_tb.SendMessage(CCM_SETUNICODEFORMAT, TRUE);
+ 
+ 	//////////////////////////////////////////////////////////////////////////
+ 	// Create toolbar image list with smileys
+diff --git a/srchybrid/StatisticsDlg.cpp b/srchybrid/StatisticsDlg.cpp
+index 0861110..41c22fd 100644
+--- a/srchybrid/StatisticsDlg.cpp
++++ b/srchybrid/StatisticsDlg.cpp
+@@ -151,8 +151,6 @@ BOOL CStatisticsDlg::OnInitDialog()
+ 		SetDlgItemText(IDC_BNMENU, _T("6")); // show a down-arrow
+ 	}
+ 
+-	// Win98: Explicitly set to Unicode to receive Unicode notifications.
+-	m_stattree.SendMessage(CCM_SETUNICODEFORMAT, TRUE);
+ 	if (thePrefs.GetUseSystemFontForMainControls())
+ 		m_stattree.SendMessage(WM_SETFONT, NULL, FALSE);
+ 	CreateMyTree();
+diff --git a/srchybrid/TreePropSheet.cpp b/srchybrid/TreePropSheet.cpp
+index e24d8d3..1a4ba09 100644
+--- a/srchybrid/TreePropSheet.cpp
++++ b/srchybrid/TreePropSheet.cpp
+@@ -724,9 +724,6 @@ BOOL CTreePropSheet::OnInitDialog()
+ // to the font which is used for the property pages.
+ 	m_pwndPageTree->SendMessage(WM_SETFONT, (WPARAM)AfxGetMainWnd()->GetFont()->m_hObject, TRUE);
+ 
+-	// Win98: Explicitly set to Unicode to receive Unicode notifications.
+-	m_pwndPageTree->SendMessage(CCM_SETUNICODEFORMAT, TRUE);
+-
+ 	m_pwndPageTree->SetItemHeight(m_pwndPageTree->GetItemHeight() + 6);
+ 
+ 	if (m_bTreeImages) {
