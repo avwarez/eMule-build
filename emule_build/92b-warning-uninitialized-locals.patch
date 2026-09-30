@@ -42,10 +42,10 @@ index de8bcd1..cc0a0ea 100644
  
  void CIPFilter::SaveToDefaultFile()
 diff --git a/srchybrid/MediaInfo.cpp b/srchybrid/MediaInfo.cpp
-index 37f33a7..e5f5eaa 100644
+index 0cf0d20..3fef67d 100644
 --- a/srchybrid/MediaInfo.cpp
 +++ b/srchybrid/MediaInfo.cpp
-@@ -302,8 +302,6 @@ bool IsEqualFOURCC(FOURCC fccA, FOURCC fccB)
+@@ -293,8 +293,6 @@ bool IsEqualFOURCC(FOURCC fccA, FOURCC fccB)
  	return true;
  }
  
@@ -54,7 +54,7 @@ index 37f33a7..e5f5eaa 100644
  static CString GetVideoFormatDisplayName(DWORD biCompression)
  {
  	CString sName;
-@@ -330,9 +328,9 @@ static CString GetVideoFormatDisplayName(DWORD biCompression)
+@@ -321,9 +319,9 @@ static CString GetVideoFormatDisplayName(DWORD biCompression)
  	default:
  		{
  			sName = CStringA((LPCSTR)&biCompression, 4);
@@ -66,7 +66,7 @@ index 37f33a7..e5f5eaa 100644
  
  			switch (fcc) {
  			case MAKEFOURCC('D', 'I', 'V', '3'):
-@@ -426,7 +424,6 @@ static CString GetVideoFormatDisplayName(DWORD biCompression)
+@@ -417,7 +415,6 @@ static CString GetVideoFormatDisplayName(DWORD biCompression)
  		sName += pFormat;
  	return sName;
  }

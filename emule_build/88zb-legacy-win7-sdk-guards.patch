@@ -1,0 +1,202 @@
+diff --git a/srchybrid/EmuleDlg.cpp b/srchybrid/EmuleDlg.cpp
+index cd73398..5590ef9 100644
+--- a/srchybrid/EmuleDlg.cpp
++++ b/srchybrid/EmuleDlg.cpp
+@@ -113,9 +113,7 @@ extern BOOL FirstTimeWizard();
+ UINT g_uMainThreadId = 0;
+ static const UINT UWM_ARE_YOU_EMULE = RegisterWindowMessage(EMULE_GUID);
+ 
+-#ifdef HAVE_WIN7_SDK_H
+ static const UINT UWM_TASK_BUTTON_CREATED = RegisterWindowMessage(_T("TaskbarButtonCreated"));
+-#endif
+ 
+ 
+ 
+@@ -199,9 +197,7 @@ BEGIN_MESSAGE_MAP(CemuleDlg, CTrayDialog)
+ 	ON_MESSAGE(TM_FILECOMPLETED, OnFileCompleted)
+ 	ON_MESSAGE(TM_CONSOLETHREADEVENT, OnConsoleThreadEvent)
+ 
+-#ifdef HAVE_WIN7_SDK_H
+ 	ON_REGISTERED_MESSAGE(UWM_TASK_BUTTON_CREATED, OnTaskbarBtnCreated)
+-#endif
+ 
+ END_MESSAGE_MAP()
+ 
+@@ -315,14 +311,12 @@ CemuleDlg::~CemuleDlg()
+ 	if (usericon)
+ 		VERIFY(::DestroyIcon(usericon));
+ 
+-#ifdef HAVE_WIN7_SDK_H
+ 	if (m_pTaskbarList != NULL) {
+ 		m_pTaskbarList.Release();
+ 		ASSERT(m_bInitedCOM);
+ 	}
+ 	if (m_bInitedCOM)
+ 		::CoUninitialize();
+-#endif
+ 
+ 	// already destroyed by windows?
+ 	//VERIFY(m_menuUploadCtrl.DestroyMenu());
+@@ -371,7 +365,6 @@ static void DialogCreateIndirect(CDialog *pWnd, UINT uID)
+ BOOL CemuleDlg::OnInitDialog()
+ {
+ 	theStats.starttime = ::GetTickCount();
+-#ifdef HAVE_WIN7_SDK_H
+ 	// allow the TaskbarButtonCreated- & (tbb-)WM_COMMAND message to be sent to our window if our app is running elevated
+ 	m_bInitedCOM = SUCCEEDED(::CoInitialize(NULL));
+ 	if (m_bInitedCOM) {
+@@ -384,7 +377,6 @@ BOOL CemuleDlg::OnInitDialog()
+ 		}
+ 	} else
+ 		ASSERT(0);
+-#endif
+ 
+ 	// temporary disable the 'startup minimized' option, otherwise no window will be shown at all
+ 	if (!thePrefs.IsFirstStart())
+@@ -735,9 +727,7 @@ void CALLBACK CemuleDlg::StartupTimer(HWND /*hwnd*/, UINT /*uiMsg*/, UINT_PTR /*
+ 				if (thePrefs.DoAutoConnect())
+ 					theApp.emuledlg->OnBnClickedConnect();
+ 
+-#ifdef HAVE_WIN7_SDK_H
+ 				theApp.emuledlg->UpdateStatusBarProgress();
+-#endif
+ 			}
+ 			break;
+ 		case 5:
+@@ -1043,9 +1033,7 @@ void CemuleDlg::ShowConnectionState()
+ 		}
+ 	}
+ 	ShowUserCount();
+-#ifdef HAVE_WIN7_SDK_H
+ 	UpdateThumbBarButtons();
+-#endif
+ }
+ 
+ void CemuleDlg::ShowUserCount()
+@@ -2540,11 +2528,9 @@ BOOL CemuleDlg::OnCommand(WPARAM wParam, LPARAM lParam)
+ 	else if (wParam >= MP_SCHACTIONS && wParam <= MP_SCHACTIONS + 99) {
+ 		theApp.scheduler->ActivateSchedule(wParam - MP_SCHACTIONS);
+ 		theApp.scheduler->SaveOriginals(); // use the new settings as original
+-#ifdef HAVE_WIN7_SDK_H
+ 	} else if (HIWORD(wParam) == THBN_CLICKED) {
+ 		OnTBBPressed(LOWORD(wParam));
+ 		return TRUE;
+-#endif
+ 	}
+ 
+ 	return CTrayDialog::OnCommand(wParam, lParam);
+@@ -3584,7 +3570,6 @@ void CemuleDlg::OnDrawClipboard()
+ //////////////////////////////////////////////////////////////////
+ // Windows 7 GUI goodies
+ 
+-#ifdef HAVE_WIN7_SDK_H
+ // update thumbbarbutton structs and add/update the GUI thumbbar
+ void CemuleDlg::UpdateThumbBarButtons(bool initialAddToDlg)
+ {
+@@ -3752,7 +3737,6 @@ void CemuleDlg::UpdateStatusBarProgress()
+ 		}
+ 	}
+ }
+-#endif
+ 
+ void CemuleDlg::SetTaskbarIconColor()
+ {
+diff --git a/srchybrid/EmuleDlg.h b/srchybrid/EmuleDlg.h
+index 2668f7d..09fd49e 100644
+--- a/srchybrid/EmuleDlg.h
++++ b/srchybrid/EmuleDlg.h
+@@ -89,7 +89,6 @@ public:
+ 	bool CopyTextToClipboard(const CString &strText);
+ 	void WatchClipboard(bool bWatch);
+ 
+-#ifdef HAVE_WIN7_SDK_H
+ 	void UpdateStatusBarProgress();
+ 	void UpdateThumbBarButtons(bool initialAddToDlg = false);
+ 	void OnTBBPressed(UINT id);
+@@ -105,7 +104,6 @@ public:
+ 		TBB_PREFERENCES,
+ 		TBB_LAST = TBB_PREFERENCES
+ 	};
+-#endif
+ 
+ 	// Logging
+ 	void AddLogText(UINT uFlags, LPCTSTR pszText);
+@@ -193,14 +191,12 @@ protected:
+ 	bool			m_bKadSuspendDisconnect;
+ 	bool			m_bEd2kSuspendDisconnect;
+ 	bool			m_bInitedCOM;
+-#ifdef HAVE_WIN7_SDK_H
+ 	CComPtr<ITaskbarList3>	m_pTaskbarList;
+ 	THUMBBUTTON		m_thbButtons[TBB_LAST + 1];
+ 
+ 	TBPFLAG			m_currentTBP_state;
+ 	float			m_prevProgress;
+ 	HICON			m_ovlIcon;
+-#endif
+ 
+ 	// Splash screen
+ 	DWORD m_dwSplashTime;
+@@ -297,9 +293,7 @@ protected:
+ 
+ 	afx_msg LRESULT OnAreYouEmule(WPARAM, LPARAM);
+ 
+-#ifdef HAVE_WIN7_SDK_H
+ 	afx_msg LRESULT OnTaskbarBtnCreated(WPARAM, LPARAM);
+-#endif
+ 
+ 	//Web Interface
+ 	afx_msg LRESULT OnWebGUIInteraction(WPARAM wParam, LPARAM lParam);
+diff --git a/srchybrid/PPgDisplay.cpp b/srchybrid/PPgDisplay.cpp
+index f07423e..06862ff 100644
+--- a/srchybrid/PPgDisplay.cpp
++++ b/srchybrid/PPgDisplay.cpp
+@@ -84,11 +84,7 @@ void CPPgDisplay::LoadSettings()
+ 	CheckDlgButton(IDC_SHOWTRANSTOOLBAR, static_cast<UINT>(thePrefs.IsTransToolbarEnabled()));
+ 	CheckDlgButton(IDC_DISABLEHIST, static_cast<UINT>(thePrefs.GetUseAutocompletion()));
+ 
+-#ifdef HAVE_WIN7_SDK_H
+ 	CheckDlgButton(IDC_WIN7TASKBARGOODIES, static_cast<UINT>(thePrefs.IsWin7TaskbarGoodiesEnabled()));
+-#else
+-	GetDlgItem(IDC_WIN7TASKBARGOODIES)->EnableWindow(FALSE);
+-#endif
+ 
+ 	SetDlgItemInt(IDC_TOOLTIPDELAY, thePrefs.m_iToolDelayTime, FALSE);
+ }
+@@ -127,10 +123,8 @@ BOOL CPPgDisplay::OnApply()
+ 	thePrefs.m_bUseAutocompl = IsDlgButtonChecked(IDC_DISABLEHIST) != 0;
+ 	thePrefs.m_bStoreSearches = IsDlgButtonChecked(IDC_STORESEARCHES) != 0;
+ 
+-#ifdef HAVE_WIN7_SDK_H
+ 	thePrefs.m_bShowWin7TaskbarGoodies = IsDlgButtonChecked(IDC_WIN7TASKBARGOODIES) != 0;
+ 	theApp.emuledlg->EnableTaskbarGoodies(thePrefs.m_bShowWin7TaskbarGoodies);
+-#endif
+ 
+ 	thePrefs.showRatesInTitle = IsDlgButtonChecked(IDC_SHOWRATEONTITLE) != 0;
+ 
+diff --git a/srchybrid/UploadQueue.cpp b/srchybrid/UploadQueue.cpp
+index c6130f6..7975554 100644
+--- a/srchybrid/UploadQueue.cpp
++++ b/srchybrid/UploadQueue.cpp
+@@ -911,10 +911,8 @@ VOID CALLBACK CUploadQueue::UploadTimer(HWND /*hwnd*/, UINT /*uMsg*/, UINT_PTR /
+ 				// Update connection stats...
+ 				theStats.UpdateConnectionStats((float)theApp.uploadqueue->GetDatarate() / 1024, (float)theApp.downloadqueue->GetDatarate() / 1024);
+ 
+-#ifdef HAVE_WIN7_SDK_H
+ 				if (thePrefs.IsWin7TaskbarGoodiesEnabled())
+ 					theApp.emuledlg->UpdateStatusBarProgress();
+-#endif
+ 			}
+ 
+ 			// display graphs
+diff --git a/srchybrid/emule_site_config.h b/srchybrid/emule_site_config.h
+index e70d4f9..e5b7a1c 100644
+--- a/srchybrid/emule_site_config.h
++++ b/srchybrid/emule_site_config.h
+@@ -9,7 +9,6 @@
+ #define	HAVE_SAPI_H
+ #define HAVE_QEDIT_H
+ #define HAVE_WMSDK_H
+-#define HAVE_WIN7_SDK_H
+ 
+ #ifdef XP_BUILD
+ #define _WIN32_WINNT _WIN32_WINNT_WINXP

@@ -79,10 +79,10 @@ index 749f251..cd8e44c 100644
  					// We are connected to the proxy but it failed to connect to the peer.
  					if (thePrefs.GetVerbose() && iter->str && iter->str[0] != '\0')
 diff --git a/srchybrid/EmuleDlg.cpp b/srchybrid/EmuleDlg.cpp
-index cd73398..e34c1ec 100644
+index 5590ef9..5e42b85 100644
 --- a/srchybrid/EmuleDlg.cpp
 +++ b/srchybrid/EmuleDlg.cpp
-@@ -680,6 +680,7 @@ void CALLBACK CemuleDlg::StartupTimer(HWND /*hwnd*/, UINT /*uiMsg*/, UINT_PTR /*
+@@ -672,6 +672,7 @@ void CALLBACK CemuleDlg::StartupTimer(HWND /*hwnd*/, UINT /*uiMsg*/, UINT_PTR /*
  			++theApp.emuledlg->status;
  			theApp.sharedfiles->SetOutputCtrl(&theApp.emuledlg->sharedfileswnd->sharedfilesctrl);
  			++theApp.emuledlg->status;
@@ -90,7 +90,7 @@ index cd73398..e34c1ec 100644
  		case 1:
  			break;
  		case 2:
-@@ -691,6 +692,7 @@ void CALLBACK CemuleDlg::StartupTimer(HWND /*hwnd*/, UINT /*uiMsg*/, UINT_PTR /*
+@@ -683,6 +684,7 @@ void CALLBACK CemuleDlg::StartupTimer(HWND /*hwnd*/, UINT /*uiMsg*/, UINT_PTR /*
  				LogError(LOG_STATUSBAR, _T("Failed to initialize server list - Unknown exception"));
  			}
  			++theApp.emuledlg->status;
@@ -98,7 +98,7 @@ index cd73398..e34c1ec 100644
  		case 3:
  			break;
  		case 4:
-@@ -1301,6 +1303,7 @@ void CemuleDlg::ProcessED2KLink(LPCWSTR pszData)
+@@ -1289,6 +1291,7 @@ void CemuleDlg::ProcessED2KLink(LPCWSTR pszData)
  				SetActiveDialog(searchwnd);
  				searchwnd->ProcessEd2kSearchLinkRequest(pListLink->GetSearchTerm());
  			}

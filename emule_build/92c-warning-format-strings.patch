@@ -1,8 +1,8 @@
 diff --git a/srchybrid/EmuleDlg.cpp b/srchybrid/EmuleDlg.cpp
-index e34c1ec..bded19a 100644
+index 5e42b85..9f32c66 100644
 --- a/srchybrid/EmuleDlg.cpp
 +++ b/srchybrid/EmuleDlg.cpp
-@@ -1392,10 +1392,11 @@ LRESULT CemuleDlg::OnWMData(WPARAM, LPARAM lParam)
+@@ -1380,10 +1380,11 @@ LRESULT CemuleDlg::OnWMData(WPARAM, LPARAM lParam)
  					else
  						uid = IDS_DISCONNECTED;
  					_ftprintf(file, _T("%s\n"), (LPCTSTR)GetResString(uid));

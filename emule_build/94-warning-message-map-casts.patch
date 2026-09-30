@@ -235,10 +235,10 @@ index 03acd39..97e935c 100644
  CDownloadListCtrl::CDownloadListCtrl()
  	: CDownloadListListCtrlItemWalk(this)
 diff --git a/srchybrid/EmuleDlg.cpp b/srchybrid/EmuleDlg.cpp
-index bded19a..398441d 100644
+index 9f32c66..f3312d5 100644
 --- a/srchybrid/EmuleDlg.cpp
 +++ b/srchybrid/EmuleDlg.cpp
-@@ -124,6 +124,8 @@ static const UINT UWM_TASK_BUTTON_CREATED = RegisterWindowMessage(_T("TaskbarBut
+@@ -122,6 +122,8 @@ static const UINT UWM_TASK_BUTTON_CREATED = RegisterWindowMessage(_T("TaskbarBut
  
  IMPLEMENT_DYNAMIC(CMsgBoxException, CException)
  
@@ -247,15 +247,15 @@ index bded19a..398441d 100644
  BEGIN_MESSAGE_MAP(CemuleDlg, CTrayDialog)
  	///////////////////////////////////////////////////////////////////////////
  	// Windows messages
-@@ -204,6 +206,7 @@ BEGIN_MESSAGE_MAP(CemuleDlg, CTrayDialog)
- #endif
+@@ -200,6 +202,7 @@ BEGIN_MESSAGE_MAP(CemuleDlg, CTrayDialog)
+ 	ON_REGISTERED_MESSAGE(UWM_TASK_BUTTON_CREATED, OnTaskbarBtnCreated)
  
  END_MESSAGE_MAP()
 +#pragma warning(pop)
  
  CemuleDlg::CemuleDlg(CWnd *pParent /*=NULL*/)
  	: CTrayDialog(CemuleDlg::IDD, pParent)
-@@ -376,8 +379,10 @@ BOOL CemuleDlg::OnInitDialog()
+@@ -369,8 +372,10 @@ BOOL CemuleDlg::OnInitDialog()
  	m_bInitedCOM = SUCCEEDED(::CoInitialize(NULL));
  	if (m_bInitedCOM) {
  		typedef BOOL(WINAPI *PChangeWindowMessageFilter)(UINT message, DWORD dwFlag);

@@ -347,10 +347,10 @@ index 9f7c445..be32c82 100644
  			ex->Delete();
  			break;
 diff --git a/srchybrid/EmuleDlg.cpp b/srchybrid/EmuleDlg.cpp
-index 398441d..88e4b98 100644
+index f3312d5..d95cd23 100644
 --- a/srchybrid/EmuleDlg.cpp
 +++ b/srchybrid/EmuleDlg.cpp
-@@ -1824,6 +1824,7 @@ void CemuleDlg::OnTrayLButtonUp()
+@@ -1812,6 +1812,7 @@ void CemuleDlg::OnTrayLButtonUp()
  			m_pMiniMule->SetForegroundWindow();
  			m_pMiniMule->BringWindowToTop();
  		} catch (...) {
@@ -358,7 +358,7 @@ index 398441d..88e4b98 100644
  			ASSERT(0);
  			m_pMiniMule = NULL;
  		}
-@@ -1857,6 +1858,7 @@ void CemuleDlg::OnTrayRButtonUp(CPoint pt)
+@@ -1845,6 +1846,7 @@ void CemuleDlg::OnTrayRButtonUp(CPoint pt)
  			, thePrefs.GetMaxGraphUploadRate(true), thePrefs.GetMaxGraphDownloadRate()
  			, thePrefs.GetMaxUpload(), thePrefs.GetMaxDownload());
  	} catch (...) {
@@ -366,7 +366,7 @@ index 398441d..88e4b98 100644
  		return;
  	}
  
-@@ -2789,6 +2791,7 @@ void CemuleDlg::ShowSplash()
+@@ -2775,6 +2777,7 @@ void CemuleDlg::ShowSplash()
  		try {
  			m_pSplashWnd = new CSplashScreen;
  		} catch (...) {
@@ -374,7 +374,7 @@ index 398441d..88e4b98 100644
  			return;
  		}
  		ASSERT(m_hWnd);
-@@ -3466,8 +3469,10 @@ void CemuleDlg::StartUPnP(bool bReset, uint16 nForceTCPPort, uint16 nForceUDPPor
+@@ -3452,8 +3455,10 @@ void CemuleDlg::StartUPnP(bool bReset, uint16 nForceTCPPort, uint16 nForceUDPPor
  			} else
  				/*theApp.emuledlg->*/PostMessage(UM_UPNP_RESULT, (WPARAM)CUPnPImpl::UPNP_FAILED, 0);
  		} catch (const CUPnPImpl::UPnPError&) {
@@ -385,7 +385,7 @@ index 398441d..88e4b98 100644
  			ex->Delete();
  		}
  	} else
-@@ -3491,8 +3496,10 @@ void CemuleDlg::RefreshUPnP(bool bRequestAnswer)
+@@ -3477,8 +3482,10 @@ void CemuleDlg::RefreshUPnP(bool bRequestAnswer)
  			} else
  				DebugLogWarning(_T("RefreshUPnP, implementation not ready"));
  		} catch (const CUPnPImpl::UPnPError&) {
@@ -719,7 +719,7 @@ index 8a6b3a9..0f18b2a 100644
  ///////////////////////////////////////////////////////////////////////////////
  // CLogFile
 diff --git a/srchybrid/MediaInfo.cpp b/srchybrid/MediaInfo.cpp
-index e5f5eaa..6c4896f 100644
+index 3fef67d..f815222 100644
 --- a/srchybrid/MediaInfo.cpp
 +++ b/srchybrid/MediaInfo.cpp
 @@ -21,6 +21,7 @@
@@ -729,8 +729,8 @@ index e5f5eaa..6c4896f 100644
 +#include "Log.h"
  #ifdef HAVE_WMSDK_H
  #include <wmsdk.h>
- #if !defined(HAVE_VISTA_SDK)
-@@ -582,6 +583,7 @@ static bool ParseStreamHeader(int hAviFile, DWORD dwLengthLeft, STREAMHEADER *pS
+ #endif//HAVE_WMSDK_H
+@@ -573,6 +574,7 @@ static bool ParseStreamHeader(int hAviFile, DWORD dwLengthLeft, STREAMHEADER *pS
  				pStrmHdr->dwFormatLen = dwLength;
  				pStrmHdr->fmt.dat = new BYTE[dwLength];
  			} catch (...) {
@@ -738,7 +738,7 @@ index e5f5eaa..6c4896f 100644
  				errno = ENOMEM;
  				return false;
  			}
-@@ -597,6 +599,7 @@ static bool ParseStreamHeader(int hAviFile, DWORD dwLengthLeft, STREAMHEADER *pS
+@@ -588,6 +590,7 @@ static bool ParseStreamHeader(int hAviFile, DWORD dwLengthLeft, STREAMHEADER *pS
  			try {
  				pStrmHdr->nam = new char[dwLength + 1];
  			} catch (...) {
@@ -746,7 +746,7 @@ index e5f5eaa..6c4896f 100644
  				errno = ENOMEM;
  				return false;
  			}
-@@ -903,6 +906,7 @@ bool GetRIFFHeaders(LPCTSTR pszFileName, SMediaInfo *mi, bool &rbIsAVI, bool bFu
+@@ -894,6 +897,7 @@ bool GetRIFFHeaders(LPCTSTR pszFileName, SMediaInfo *mi, bool &rbIsAVI, bool bFu
  										ck.Seek(1, CFile::current);
  								}
  							} catch (CException *ex) {
@@ -754,7 +754,7 @@ index e5f5eaa..6c4896f 100644
  								ex->Delete();
  								bError = true;
  							}
-@@ -946,6 +950,7 @@ bool GetRIFFHeaders(LPCTSTR pszFileName, SMediaInfo *mi, bool &rbIsAVI, bool bFu
+@@ -937,6 +941,7 @@ bool GetRIFFHeaders(LPCTSTR pszFileName, SMediaInfo *mi, bool &rbIsAVI, bool bFu
  					strmhdr.dwFormatLen = dwLength;
  					strmhdr.fmt.dat = new BYTE[dwLength];
  				} catch (...) {
@@ -762,7 +762,7 @@ index e5f5eaa..6c4896f 100644
  					errno = ENOMEM;
  					goto inv_format_errno;
  				}
-@@ -1263,6 +1268,7 @@ bool GetRMHeaders(LPCTSTR pszFileName, SMediaInfo *mi, bool &rbIsRM, bool bFullI
+@@ -1254,6 +1259,7 @@ bool GetRMHeaders(LPCTSTR pszFileName, SMediaInfo *mi, bool &rbIsRM, bool bFullI
  										bReadMDPR_Video = true;
  									}
  								} catch (CException *ex) {
@@ -770,7 +770,7 @@ index e5f5eaa..6c4896f 100644
  									ex->Delete();
  									delete[] pucTypeData;
  									break;
-@@ -1315,6 +1321,7 @@ bool GetRMHeaders(LPCTSTR pszFileName, SMediaInfo *mi, bool &rbIsRM, bool bFullI
+@@ -1306,6 +1312,7 @@ bool GetRMHeaders(LPCTSTR pszFileName, SMediaInfo *mi, bool &rbIsRM, bool bFullI
  										}
  									}
  								} catch (CException *ex) {
@@ -778,7 +778,7 @@ index e5f5eaa..6c4896f 100644
  									ex->Delete();
  									delete[] pucTypeData;
  									break;
-@@ -1450,6 +1457,7 @@ bool GetRMHeaders(LPCTSTR pszFileName, SMediaInfo *mi, bool &rbIsRM, bool bFullI
+@@ -1441,6 +1448,7 @@ bool GetRMHeaders(LPCTSTR pszFileName, SMediaInfo *mi, bool &rbIsRM, bool bFullI
  			}
  		}
  	} catch (CException *ex) {
@@ -786,7 +786,7 @@ index e5f5eaa..6c4896f 100644
  		ex->Delete();
  	}
  
-@@ -2710,6 +2718,7 @@ bool GetWMHeaders(LPCTSTR pszFileName, SMediaInfo *mi, bool &rbIsWM, bool bFullI
+@@ -2701,6 +2709,7 @@ bool GetWMHeaders(LPCTSTR pszFileName, SMediaInfo *mi, bool &rbIsWM, bool bFullI
  			}
  		}
  	} catch (CException *ex) {
