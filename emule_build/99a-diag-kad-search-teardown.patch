@@ -1,8 +1,8 @@
 diff --git a/srchybrid/Emule.cpp b/srchybrid/Emule.cpp
-index 3f48c05..fe1e210 100644
+index 178d7fb..70e8079 100644
 --- a/srchybrid/Emule.cpp
 +++ b/srchybrid/Emule.cpp
-@@ -232,6 +232,126 @@ static void InitHeapCorruptionDetection()
+@@ -221,6 +221,126 @@ static void InitHeapCorruptionDetection()
  	::HeapSetInformation(NULL, HeapEnableTerminationOnCorruption, NULL, 0);
  }
  
@@ -129,7 +129,7 @@ index 3f48c05..fe1e210 100644
  
  struct SLogItem
  {
-@@ -285,6 +405,8 @@ CemuleApp::CemuleApp(LPCTSTR lpszAppName)
+@@ -274,6 +394,8 @@ CemuleApp::CemuleApp(LPCTSTR lpszAppName)
  	, m_bAutoStart()
  	, m_bStandbyOff()
  {

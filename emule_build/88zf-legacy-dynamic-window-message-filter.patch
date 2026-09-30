@@ -1,0 +1,20 @@
+diff --git a/srchybrid/EmuleDlg.cpp b/srchybrid/EmuleDlg.cpp
+index 5590ef9..8a8fc6f 100644
+--- a/srchybrid/EmuleDlg.cpp
++++ b/srchybrid/EmuleDlg.cpp
+@@ -368,13 +368,8 @@ BOOL CemuleDlg::OnInitDialog()
+ 	// allow the TaskbarButtonCreated- & (tbb-)WM_COMMAND message to be sent to our window if our app is running elevated
+ 	m_bInitedCOM = SUCCEEDED(::CoInitialize(NULL));
+ 	if (m_bInitedCOM) {
+-		typedef BOOL(WINAPI *PChangeWindowMessageFilter)(UINT message, DWORD dwFlag);
+-		PChangeWindowMessageFilter ChangeWindowMessageFilter
+-			= (PChangeWindowMessageFilter)(::GetProcAddress(::GetModuleHandle(_T("user32.dll")), "ChangeWindowMessageFilter"));
+-		if (ChangeWindowMessageFilter) {
+-			ChangeWindowMessageFilter(UWM_TASK_BUTTON_CREATED, 1);
+-			ChangeWindowMessageFilter(WM_COMMAND, 1);
+-		}
++		::ChangeWindowMessageFilter(UWM_TASK_BUTTON_CREATED, MSGFLT_ADD);
++		::ChangeWindowMessageFilter(WM_COMMAND, MSGFLT_ADD);
+ 	} else
+ 		ASSERT(0);
+ 

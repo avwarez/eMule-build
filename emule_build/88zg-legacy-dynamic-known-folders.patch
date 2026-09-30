@@ -1,0 +1,185 @@
+diff --git a/srchybrid/Preferences.cpp b/srchybrid/Preferences.cpp
+index 59c374a..89c67e9 100644
+--- a/srchybrid/Preferences.cpp
++++ b/srchybrid/Preferences.cpp
+@@ -38,7 +38,6 @@
+ #include "StatisticsDlg.h"
+ #include "Log.h"
+ #include "MuleToolbarCtrl.h"
+-#include "VistaDefines.h"
+ #include "cryptopp/osrng.h"
+ 
+ #ifdef _DEBUG
+@@ -2840,73 +2839,64 @@ CString CPreferences::GetDefaultDirectory(EDefaultDirectory eDirectory, bool bCr
+ 
+ 		// Do we need to get SystemFolders, or do we use our old Default anyway? (Executable Dir)
+ 		if (nRegistrySetting != 2) {
+-			// function unavailable before WinVista
+-			HRESULT(WINAPI *pfnSHGetKnownFolderPath)(REFKNOWNFOLDERID, DWORD, HANDLE, PWSTR*);
+-			HMODULE hShell32 = ::GetModuleHandle(_T("shell32.dll"));
+-			(FARPROC&)pfnSHGetKnownFolderPath = hShell32 ? ::GetProcAddress(hShell32, "SHGetKnownFolderPath") : NULL;
+-			if (pfnSHGetKnownFolderPath) {
+-				PWSTR pszLocalAppData = NULL;
+-				PWSTR pszPersonalDownloads = NULL;
+-				PWSTR pszPublicDownloads = NULL;
+-				PWSTR pszProgramData = NULL;
+-				if (   (*pfnSHGetKnownFolderPath)(FOLDERID_LocalAppData, 0, NULL, &pszLocalAppData) == S_OK
+-					&& (*pfnSHGetKnownFolderPath)(FOLDERID_Downloads, 0, NULL, &pszPersonalDownloads) == S_OK
+-					&& (*pfnSHGetKnownFolderPath)(FOLDERID_PublicDownloads, 0, NULL, &pszPublicDownloads) == S_OK
+-					&& (*pfnSHGetKnownFolderPath)(FOLDERID_ProgramData, 0, NULL, &pszProgramData) == S_OK)
++			PWSTR pszLocalAppData = NULL;
++			PWSTR pszPersonalDownloads = NULL;
++			PWSTR pszPublicDownloads = NULL;
++			PWSTR pszProgramData = NULL;
++			if (   ::SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, NULL, &pszLocalAppData) == S_OK
++				&& ::SHGetKnownFolderPath(FOLDERID_Downloads, 0, NULL, &pszPersonalDownloads) == S_OK
++				&& ::SHGetKnownFolderPath(FOLDERID_PublicDownloads, 0, NULL, &pszPublicDownloads) == S_OK
++				&& ::SHGetKnownFolderPath(FOLDERID_ProgramData, 0, NULL, &pszProgramData) == S_OK)
++			{
++				if (   wcslen(pszLocalAppData) < MAX_PATH - 30
++					&& wcslen(pszPersonalDownloads) < MAX_PATH - 40
++					&& wcslen(pszProgramData) < MAX_PATH - 30
++					&& wcslen(pszPublicDownloads) < MAX_PATH - 40)
+ 				{
+-					if (   wcslen(pszLocalAppData) < MAX_PATH - 30
+-						&& wcslen(pszPersonalDownloads) < MAX_PATH - 40
+-						&& wcslen(pszProgramData) < MAX_PATH - 30
+-						&& wcslen(pszPublicDownloads) < MAX_PATH - 40)
+-					{
+-						CString strLocalAppData(pszLocalAppData);
+-						CString strPersonalDownloads(pszPersonalDownloads);
+-						CString strPublicDownloads(pszPublicDownloads);
+-						CString strProgramData(pszProgramData);
+-						slosh(strLocalAppData);
+-						slosh(strPersonalDownloads);
+-						slosh(strPublicDownloads);
+-						slosh(strProgramData);
+-
+-						if (nRegistrySetting == _UI32_MAX) {
+-							// no registry default, check if we find a preferences.ini to use
+-							if (::PathFileExists(strLocalAppData + _T("eMule\\") CONFIGFOLDER PREFINIFILE))
+-								m_nCurrentUserDirMode = 0;
+-							else if (::PathFileExists(strProgramData + _T("eMule\\") CONFIGFOLDER PREFINIFILE))
+-								m_nCurrentUserDirMode = 1;
+-							else if (bConfigAvailableExecutable)
+-								m_nCurrentUserDirMode = 2;
+-							else
+-								m_nCurrentUserDirMode = 0; // no preferences.ini found, use the default
+-						} else
+-							m_nCurrentUserDirMode = nRegistrySetting;
+-
+-						switch (m_nCurrentUserDirMode) {
+-						case 0: //multiuser
+-							strSelectedDataBaseDirectory = strPersonalDownloads + _T("eMule\\");
+-							strSelectedConfigBaseDirectory = strLocalAppData + _T("eMule\\");
+-							strSelectedExpansionBaseDirectory = strProgramData + _T("eMule\\");
+-							break;
+-						case 1: //public user
+-							strSelectedDataBaseDirectory = strPublicDownloads + _T("eMule\\");
+-							strSelectedConfigBaseDirectory = strProgramData + _T("eMule\\");
+-							strSelectedExpansionBaseDirectory = strProgramData + _T("eMule\\");
+-						case 2: //program directory
+-							break;
+-						default:
+-							ASSERT(0);
+-						}
++					CString strLocalAppData(pszLocalAppData);
++					CString strPersonalDownloads(pszPersonalDownloads);
++					CString strPublicDownloads(pszPublicDownloads);
++					CString strProgramData(pszProgramData);
++					slosh(strLocalAppData);
++					slosh(strPersonalDownloads);
++					slosh(strPublicDownloads);
++					slosh(strProgramData);
++
++					if (nRegistrySetting == _UI32_MAX) {
++						// no registry default, check if we find a preferences.ini to use
++						if (::PathFileExists(strLocalAppData + _T("eMule\\") CONFIGFOLDER PREFINIFILE))
++							m_nCurrentUserDirMode = 0;
++						else if (::PathFileExists(strProgramData + _T("eMule\\") CONFIGFOLDER PREFINIFILE))
++							m_nCurrentUserDirMode = 1;
++						else if (bConfigAvailableExecutable)
++							m_nCurrentUserDirMode = 2;
++						else
++							m_nCurrentUserDirMode = 0; // no preferences.ini found, use the default
+ 					} else
++						m_nCurrentUserDirMode = nRegistrySetting;
++
++					switch (m_nCurrentUserDirMode) {
++					case 0: //multiuser
++						strSelectedDataBaseDirectory = strPersonalDownloads + _T("eMule\\");
++						strSelectedConfigBaseDirectory = strLocalAppData + _T("eMule\\");
++						strSelectedExpansionBaseDirectory = strProgramData + _T("eMule\\");
++						break;
++					case 1: //public user
++						strSelectedDataBaseDirectory = strPublicDownloads + _T("eMule\\");
++						strSelectedConfigBaseDirectory = strProgramData + _T("eMule\\");
++						strSelectedExpansionBaseDirectory = strProgramData + _T("eMule\\");
++					case 2: //program directory
++						break;
++					default:
+ 						ASSERT(0);
+-				}
+-				::CoTaskMemFree(pszLocalAppData);
+-				::CoTaskMemFree(pszPersonalDownloads);
+-				::CoTaskMemFree(pszPublicDownloads);
+-				::CoTaskMemFree(pszProgramData);
+-			} else {
+-				DebugLogError(_T("Unable to retrieve system folders' location with shell32.dll; using fallbacks"));
+-				ASSERT(0);
++					}
++				} else
++					ASSERT(0);
+ 			}
++			::CoTaskMemFree(pszLocalAppData);
++			::CoTaskMemFree(pszPersonalDownloads);
++			::CoTaskMemFree(pszPublicDownloads);
++			::CoTaskMemFree(pszProgramData);
+ 		}
+ 
+ 		// All the directories (categories also) should have a trailing backslash
+diff --git a/srchybrid/VistaDefines.h b/srchybrid/VistaDefines.h
+deleted file mode 100644
+index 3b61b4c..0000000
+--- a/srchybrid/VistaDefines.h
++++ /dev/null
+@@ -1,26 +0,0 @@
+-// Vista defines from the Vista SDK, to make eMule compile without having the Vista SDK installed only for some #defines
+-
+-#pragma once
+-
+-#ifdef DEFINE_KNOWN_FOLDER
+-#undef DEFINE_KNOWN_FOLDER
+-#endif
+-
+-typedef GUID KNOWNFOLDERID;
+-#define REFKNOWNFOLDERID const KNOWNFOLDERID &
+-
+-#define DEFINE_KNOWN_FOLDER(name, l, w1, w2, b1, b2, b3, b4, b5, b6, b7, b8) \
+-		EXTERN_C const GUID DECLSPEC_SELECTANY name \
+-				= { l, w1, w2, { b1, b2,  b3,  b4,  b5,  b6,  b7,  b8 } }
+-
+-// {62AB5D82-FDC1-4DC3-A9DD-070D1D495D97}
+-DEFINE_KNOWN_FOLDER(FOLDERID_ProgramData,		0x62AB5D82, 0xFDC1, 0x4DC3, 0xA9, 0xDD, 0x07, 0x0D, 0x1D, 0x49, 0x5D, 0x97);
+-
+-// {F1B32785-6FBA-4FCF-9D55-7B8E7F157091}
+-DEFINE_KNOWN_FOLDER(FOLDERID_LocalAppData,		0xF1B32785, 0x6FBA, 0x4FCF, 0x9D, 0x55, 0x7B, 0x8E, 0x7F, 0x15, 0x70, 0x91);
+-
+-// {374DE290-123F-4565-9164-39C4925E467B}
+-DEFINE_KNOWN_FOLDER(FOLDERID_Downloads,			0x374de290, 0x123f, 0x4565, 0x91, 0x64, 0x39, 0xc4, 0x92, 0x5e, 0x46, 0x7b);
+-
+-// {3D644C9B-1FB8-4f30-9B45-F670235F79C0}
+-DEFINE_KNOWN_FOLDER(FOLDERID_PublicDownloads,	0x3d644c9b, 0x1fb8, 0x4f30, 0x9b, 0x45, 0xf6, 0x70, 0x23, 0x5f, 0x79, 0xc0);
+\ No newline at end of file
+diff --git a/srchybrid/emule.vcxproj b/srchybrid/emule.vcxproj
+index eabeb5e..405dc69 100644
+--- a/srchybrid/emule.vcxproj
++++ b/srchybrid/emule.vcxproj
+@@ -678,7 +678,6 @@
+     <ClInclude Include="URLClient.h" />
+     <ClInclude Include="UserMsgs.h" />
+     <ClInclude Include="Version.h" />
+-    <ClInclude Include="VistaDefines.h" />
+     <ClInclude Include="WebServer.h" />
+     <ClInclude Include="WebServices.h" />
+     <ClInclude Include="WebSocket.h" />

@@ -1,0 +1,149 @@
+diff --git a/srchybrid/ButtonsTabCtrl.cpp b/srchybrid/ButtonsTabCtrl.cpp
+index ca9f2f2..acbf5a6 100644
+--- a/srchybrid/ButtonsTabCtrl.cpp
++++ b/srchybrid/ButtonsTabCtrl.cpp
+@@ -26,14 +26,6 @@ static char THIS_FILE[] = __FILE__;
+ #endif
+ 
+ 
+-// _WIN32_WINNT >= 0x0501 (XP only)
+-#define _WM_THEMECHANGED                0x031A
+-#define _ON_WM_THEMECHANGED()													\
+-	{	_WM_THEMECHANGED, 0, 0, 0, AfxSig_l,									\
+-		(AFX_PMSG)(AFX_PMSGW)													\
+-		(static_cast<LRESULT (AFX_MSG_CALL CWnd::*)(void)>(_OnThemeChanged))	\
+-	},
+-
+ ///////////////////////////////////////////////////////////////////////////////
+ // CButtonsTabCtrl
+ 
+@@ -41,7 +33,7 @@ IMPLEMENT_DYNAMIC(CButtonsTabCtrl, CTabCtrl)
+ 
+ BEGIN_MESSAGE_MAP(CButtonsTabCtrl, CTabCtrl)
+ 	ON_WM_CREATE()
+-	_ON_WM_THEMECHANGED()
++	ON_WM_THEMECHANGED()
+ END_MESSAGE_MAP()
+ 
+ void CButtonsTabCtrl::DrawItem(LPDRAWITEMSTRUCT lpDIS)
+@@ -175,7 +167,7 @@ void CButtonsTabCtrl::InternalInit()
+ 	}
+ }
+ 
+-LRESULT CButtonsTabCtrl::_OnThemeChanged()
++LRESULT CButtonsTabCtrl::OnThemeChanged()
+ {
+ 	// Owner drawn tab control seems to have troubles with updating itself due to an XP theme change.
+ 	bool bIsOwnerDrawn = (GetStyle() & TCS_OWNERDRAWFIXED) != 0;
+diff --git a/srchybrid/ButtonsTabCtrl.h b/srchybrid/ButtonsTabCtrl.h
+index 246dbce..e475ff5 100644
+--- a/srchybrid/ButtonsTabCtrl.h
++++ b/srchybrid/ButtonsTabCtrl.h
+@@ -15,5 +15,5 @@ protected:
+ 
+ 	DECLARE_MESSAGE_MAP()
+ 	afx_msg int OnCreate(LPCREATESTRUCT lpCreateStruct);
+-	afx_msg LRESULT _OnThemeChanged();
++	afx_msg LRESULT OnThemeChanged();
+ };
+\ No newline at end of file
+diff --git a/srchybrid/ClosableTabCtrl.cpp b/srchybrid/ClosableTabCtrl.cpp
+index 3a9c1dc..bbee6fa 100644
+--- a/srchybrid/ClosableTabCtrl.cpp
++++ b/srchybrid/ClosableTabCtrl.cpp
+@@ -29,14 +29,6 @@ static char THIS_FILE[] = __FILE__;
+ #endif
+ 
+ 
+-// _WIN32_WINNT >= 0x0501 (XP only)
+-#define _WM_THEMECHANGED		0x031A
+-#define _ON_WM_THEMECHANGED()													\
+-	{	_WM_THEMECHANGED, 0, 0, 0, AfxSig_l,									\
+-		(AFX_PMSG)(AFX_PMSGW)													\
+-		(static_cast<LRESULT (AFX_MSG_CALL CWnd::*)(void)>(_OnThemeChanged))	\
+-	},
+-
+ ///////////////////////////////////////////////////////////////////////////////
+ // CClosableTabCtrl
+ 
+@@ -49,7 +41,7 @@ BEGIN_MESSAGE_MAP(CClosableTabCtrl, CTabCtrl)
+ 	ON_WM_CREATE()
+ 	ON_WM_SYSCOLORCHANGE()
+ 	ON_WM_CONTEXTMENU()
+-	_ON_WM_THEMECHANGED()
++	ON_WM_THEMECHANGED()
+ 	ON_WM_CTLCOLOR_REFLECT()
+ 	ON_WM_CTLCOLOR()
+ 	ON_WM_ERASEBKGND()
+@@ -459,7 +451,7 @@ BOOL CClosableTabCtrl::OnCommand(WPARAM wParam, LPARAM lParam)
+ 	return CTabCtrl::OnCommand(wParam, lParam);
+ }
+ 
+-LRESULT CClosableTabCtrl::_OnThemeChanged()
++LRESULT CClosableTabCtrl::OnThemeChanged()
+ {
+ 	// Owner drawn tab control seems to have troubles with updating itself due to an XP theme change.
+ 	ModifyStyle(TCS_OWNERDRAWFIXED, 0);	// Reset control style to not-owner drawn
+diff --git a/srchybrid/ClosableTabCtrl.h b/srchybrid/ClosableTabCtrl.h
+index 0962162..8d4a1f7 100644
+--- a/srchybrid/ClosableTabCtrl.h
++++ b/srchybrid/ClosableTabCtrl.h
+@@ -33,7 +33,7 @@ protected:
+ 	afx_msg void OnLButtonDblClk(UINT nFlags, CPoint point);
+ 	afx_msg void OnSysColorChange();
+ 	afx_msg void OnContextMenu(CWnd*, CPoint point);
+-	afx_msg LRESULT _OnThemeChanged();
++	afx_msg LRESULT OnThemeChanged();
+ 	afx_msg HBRUSH CtlColor(CDC*, UINT);
+ 	afx_msg HBRUSH OnCtlColor(CDC *pDC, CWnd *pWnd, UINT nCtlColor);
+ 	afx_msg BOOL OnEraseBkgnd(CDC *pDC);
+diff --git a/srchybrid/DialogMinTrayBtn.cpp b/srchybrid/DialogMinTrayBtn.cpp
+index 4ffd8f1..03d9b78 100644
+--- a/srchybrid/DialogMinTrayBtn.cpp
++++ b/srchybrid/DialogMinTrayBtn.cpp
+@@ -59,14 +59,6 @@ BEGIN_TM_PART_STATES(TRAYBUTTON)
+ 	TM_STATE(8, TRAYBS, IDISABLED)
+ END_TM_PART_STATES()
+ 
+-// _WIN32_WINNT >= 0x0501 (XP only)
+-#define _WM_THEMECHANGED                0x031A
+-
+-#define _ON_WM_THEMECHANGED() \
+-	{ _WM_THEMECHANGED, 0, 0, 0, AfxSig_l, \
+-		(AFX_PMSG)(AFX_PMSGW) \
+-		(static_cast<LRESULT (AFX_MSG_CALL CWnd::*)(void)>(&ThisClass::_OnThemeChanged)) },
+-
+ BEGIN_TEMPLATE_MESSAGE_MAP(CDialogMinTrayBtn, BASE, BASE)
+ 	ON_WM_NCPAINT()
+ 	ON_WM_NCACTIVATE()
+@@ -76,7 +68,7 @@ BEGIN_TEMPLATE_MESSAGE_MAP(CDialogMinTrayBtn, BASE, BASE)
+ 	ON_WM_LBUTTONUP()
+ 	ON_WM_MOUSEMOVE()
+ 	ON_WM_TIMER()
+-	_ON_WM_THEMECHANGED()
++	ON_WM_THEMECHANGED()
+ END_MESSAGE_MAP()
+ 
+ 
+@@ -206,7 +198,7 @@ TEMPLATE void CDialogMinTrayBtn<BASE>::OnTimer(UINT_PTR nIDEvent)
+ 	}
+ }
+ 
+-TEMPLATE LRESULT CDialogMinTrayBtn<BASE>::_OnThemeChanged()
++TEMPLATE LRESULT CDialogMinTrayBtn<BASE>::OnThemeChanged()
+ {
+ 	// BASE::OnThemeChanged();
+ 	MinTrayBtnInitTheme();
+diff --git a/srchybrid/DialogMinTrayBtn.h b/srchybrid/DialogMinTrayBtn.h
+index c875371..725d431 100644
+--- a/srchybrid/DialogMinTrayBtn.h
++++ b/srchybrid/DialogMinTrayBtn.h
+@@ -39,7 +39,7 @@ protected:
+ 	afx_msg void OnMouseMove(UINT nFlags, CPoint point);
+ 	afx_msg void OnLButtonUp(UINT nFlags, CPoint point);
+ 	afx_msg void OnTimer(UINT_PTR nIDEvent);
+-	afx_msg LRESULT _OnThemeChanged();
++	afx_msg LRESULT OnThemeChanged();
+ 	DECLARE_MESSAGE_MAP()
+ 
+ private:
