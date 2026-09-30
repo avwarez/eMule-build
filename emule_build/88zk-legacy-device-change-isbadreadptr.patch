@@ -1,0 +1,19 @@
+diff --git a/srchybrid/EmuleDlg.cpp b/srchybrid/EmuleDlg.cpp
+index 8a8fc6f..2c0f81e 100644
+--- a/srchybrid/EmuleDlg.cpp
++++ b/srchybrid/EmuleDlg.cpp
+@@ -3482,12 +3482,12 @@ BOOL CemuleDlg::OnDeviceChange(UINT nEventType, DWORD_PTR dwData)
+ 	//	ZIP disk drives (although Windows Explorer recognises a changed media, we do not get a message)
+ 	//	CD-ROM drives (although MSDN says different...)
+ 	//
+-	if ((nEventType == DBT_DEVICEARRIVAL || nEventType == DBT_DEVICEREMOVECOMPLETE) && !IsBadReadPtr((void*)dwData, sizeof(DEV_BROADCAST_HDR))) {
++	if ((nEventType == DBT_DEVICEARRIVAL || nEventType == DBT_DEVICEREMOVECOMPLETE) && dwData != 0) {
+ #ifdef _DEBUG
+ 		CString strMsg(nEventType == DBT_DEVICEARRIVAL ? _T("DBT_DEVICEARRIVAL") : _T("DBT_DEVICEREMOVECOMPLETE"));
+ #endif
+ 		const DEV_BROADCAST_HDR *pHdr = (DEV_BROADCAST_HDR*)dwData;
+-		if (pHdr->dbch_devicetype == DBT_DEVTYP_VOLUME && !IsBadReadPtr((void*)dwData, sizeof(DEV_BROADCAST_VOLUME))) {
++		if (pHdr->dbch_devicetype == DBT_DEVTYP_VOLUME && pHdr->dbch_size >= sizeof(DEV_BROADCAST_VOLUME)) {
+ 			const DEV_BROADCAST_VOLUME *pVol = (DEV_BROADCAST_VOLUME*)pHdr;
+ #ifdef _DEBUG
+ 			strMsg += _T(" Volume");

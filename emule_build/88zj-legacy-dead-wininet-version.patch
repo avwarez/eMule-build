@@ -1,0 +1,34 @@
+diff --git a/srchybrid/HttpDownloadDlg.cpp b/srchybrid/HttpDownloadDlg.cpp
+index a7e0d3b..be11c42 100644
+--- a/srchybrid/HttpDownloadDlg.cpp
++++ b/srchybrid/HttpDownloadDlg.cpp
+@@ -199,8 +199,6 @@ BEGIN_MESSAGE_MAP(CHttpDownloadDlg, CDialog)
+ 	ON_MESSAGE(WM_HTTPDOWNLOAD_THREAD_FINISHED, OnThreadFinished)
+ END_MESSAGE_MAP()
+ 
+-ULONGLONG CHttpDownloadDlg::sm_ullWinInetVer;
+-
+ CHttpDownloadDlg::CHttpDownloadDlg(CWnd *pParent /*=NULL*/)
+ 	: CDialog(CHttpDownloadDlg::IDD, pParent)
+ 	, m_hInternetSession()
+@@ -214,8 +212,6 @@ CHttpDownloadDlg::CHttpDownloadDlg(CWnd *pParent /*=NULL*/)
+ {
+ 	//{{AFX_DATA_INIT(CHttpDownloadDlg)
+ 	//}}AFX_DATA_INIT
+-	if (sm_ullWinInetVer == 0)
+-		sm_ullWinInetVer = GetModuleVersion(::GetModuleHandle(_T("wininet")));
+ }
+ 
+ void CHttpDownloadDlg::DoDataExchange(CDataExchange *pDX)
+diff --git a/srchybrid/HttpDownloadDlg.h b/srchybrid/HttpDownloadDlg.h
+index 4546c1c..0b9ad5a 100644
+--- a/srchybrid/HttpDownloadDlg.h
++++ b/srchybrid/HttpDownloadDlg.h
+@@ -90,7 +90,6 @@ protected:
+ 	HINTERNET		m_hHttpConnection;
+ 	HINTERNET		m_hHttpFile;
+ 	CWinThread		*m_pThread;
+-	static ULONGLONG sm_ullWinInetVer;
+ 	DWORD			m_dwServiceType;
+ 	INTERNET_PORT	m_nPort;
+ 	volatile bool	m_bAbort;

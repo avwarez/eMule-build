@@ -1,0 +1,51 @@
+diff --git a/srchybrid/FileInfoDialog.cpp b/srchybrid/FileInfoDialog.cpp
+index 1f3a015..c45f8a4 100644
+--- a/srchybrid/FileInfoDialog.cpp
++++ b/srchybrid/FileInfoDialog.cpp
+@@ -111,7 +111,7 @@ public:
+ 				}
+ 			}
+ 			if (m_hLib == NULL) {
+-				const CString &strProgramFiles(ShellGetFolderPath(CSIDL_PROGRAM_FILES));
++				const CString &strProgramFiles(ShellGetFolderPath(FOLDERID_ProgramFiles));
+ 				if (!strProgramFiles.IsEmpty()) {
+ 					LPTSTR pszResult = ::PathCombine(strPath.GetBuffer(MAX_PATH), strProgramFiles, _T("MediaInfo\\MEDIAINFO.DLL"));
+ 					strPath.ReleaseBuffer();
+diff --git a/srchybrid/OtherFunctions.cpp b/srchybrid/OtherFunctions.cpp
+index fc2a7ad..ded9483 100644
+--- a/srchybrid/OtherFunctions.cpp
++++ b/srchybrid/OtherFunctions.cpp
+@@ -359,12 +359,14 @@ bool ShellDeleteFile(LPCTSTR pszFilePath)
+ 	return ::DeleteFile(pszFilePath) != 0;
+ }
+ 
+-CString ShellGetFolderPath(int iCSIDL)
+-{
+-	TCHAR szPath[MAX_PATH];
+-	if (SUCCEEDED(::SHGetFolderPath(NULL, iCSIDL, NULL, SHGFP_TYPE_CURRENT, szPath)))
+-		return CString(szPath);
+-	return CString();
++CString ShellGetFolderPath(REFKNOWNFOLDERID rfid)
++{
++	CString strPath;
++	PWSTR pszPath = NULL;
++	if (SUCCEEDED(::SHGetKnownFolderPath(rfid, 0, NULL, &pszPath)))
++		strPath = pszPath;
++	::CoTaskMemFree(pszPath);
++	return strPath;
+ }
+ 
+ // Print the hash in a format which is similar to CertMgr's.
+diff --git a/srchybrid/OtherFunctions.h b/srchybrid/OtherFunctions.h
+index 4cc8d71..00bcf54 100644
+--- a/srchybrid/OtherFunctions.h
++++ b/srchybrid/OtherFunctions.h
+@@ -220,7 +220,7 @@ void ShellOpen(LPCTSTR lpName, LPCTSTR lpParameters);
+ void ShellOpenFile(LPCTSTR lpName);
+ void ShellDefaultVerb(LPCTSTR lpName);
+ bool ShellDeleteFile(LPCTSTR pszFilePath);
+-CString ShellGetFolderPath(int iCSIDL);
++CString ShellGetFolderPath(REFKNOWNFOLDERID rfid);
+ bool SelectDir(HWND hWnd, LPTSTR pszPath, LPCTSTR pszTitle = NULL, LPCTSTR pszDlgTitle = NULL);
+ BOOL DialogBrowseFile(CString &rstrPath, LPCTSTR pszFilters, LPCTSTR pszDefaultFileName = NULL, DWORD dwFlags = 0, bool openfilestyle = true);
+ void AddBuddyButton(HWND hwndEdit, HWND hwndButton);

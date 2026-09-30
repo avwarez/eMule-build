@@ -20,7 +20,7 @@ index e1b68f4..c8fbd2e 100644
  
  class CArchiveRecovery
 diff --git a/srchybrid/HttpDownloadDlg.h b/srchybrid/HttpDownloadDlg.h
-index 4546c1c..f854467 100644
+index 0b9ad5a..1f0396e 100644
 --- a/srchybrid/HttpDownloadDlg.h
 +++ b/srchybrid/HttpDownloadDlg.h
 @@ -11,6 +11,7 @@ All rights reserved.
@@ -31,8 +31,8 @@ index 4546c1c..f854467 100644
  #include <afxinet.h>
  
  
-@@ -93,6 +94,6 @@ protected:
- 	static ULONGLONG sm_ullWinInetVer;
+@@ -92,6 +93,6 @@ protected:
+ 	CWinThread		*m_pThread;
  	DWORD			m_dwServiceType;
  	INTERNET_PORT	m_nPort;
 -	volatile bool	m_bAbort;

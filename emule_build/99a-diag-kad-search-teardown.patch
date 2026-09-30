@@ -1,5 +1,5 @@
 diff --git a/srchybrid/Emule.cpp b/srchybrid/Emule.cpp
-index 4277501..0aa1376 100644
+index 6b5211c..a6792cd 100644
 --- a/srchybrid/Emule.cpp
 +++ b/srchybrid/Emule.cpp
 @@ -216,6 +216,126 @@ static void InitHeapCorruptionDetection()

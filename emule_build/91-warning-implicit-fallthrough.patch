@@ -79,7 +79,7 @@ index 749f251..cd8e44c 100644
  					// We are connected to the proxy but it failed to connect to the peer.
  					if (thePrefs.GetVerbose() && iter->str && iter->str[0] != '\0')
 diff --git a/srchybrid/EmuleDlg.cpp b/srchybrid/EmuleDlg.cpp
-index 8a8fc6f..de0c454 100644
+index 2c0f81e..0220e8d 100644
 --- a/srchybrid/EmuleDlg.cpp
 +++ b/srchybrid/EmuleDlg.cpp
 @@ -667,6 +667,7 @@ void CALLBACK CemuleDlg::StartupTimer(HWND /*hwnd*/, UINT /*uiMsg*/, UINT_PTR /*
@@ -107,7 +107,7 @@ index 8a8fc6f..de0c454 100644
  			break;
  		}
 diff --git a/srchybrid/FileInfoDialog.cpp b/srchybrid/FileInfoDialog.cpp
-index 1f3a015..45b1cad 100644
+index c45f8a4..469268f 100644
 --- a/srchybrid/FileInfoDialog.cpp
 +++ b/srchybrid/FileInfoDialog.cpp
 @@ -925,6 +925,7 @@ bool CGetMediaInfoThread::GetMediaInfo(HWND hWndOwner, const CShareableFile *pFi

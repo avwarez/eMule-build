@@ -1,0 +1,26 @@
+diff --git a/srchybrid/TrayDialog.cpp b/srchybrid/TrayDialog.cpp
+index 48bf556..4929797 100644
+--- a/srchybrid/TrayDialog.cpp
++++ b/srchybrid/TrayDialog.cpp
+@@ -49,6 +49,7 @@ CTrayDialog::CTrayDialog(UINT uIDD, CWnd *pParent /*=NULL*/)
+ 	: CTrayDialogBase(uIDD, pParent)
+ 	, m_pbMinimizeToTray()
+ 	, m_hPrevIconDelete()
++	, m_nidIconData()
+ 	, m_uSingleClickTimer()
+ 	, u_DblClickSpeed(::GetDoubleClickTime())
+ 	, m_uLButtonDown()
+@@ -56,12 +57,9 @@ CTrayDialog::CTrayDialog(UINT uIDD, CWnd *pParent /*=NULL*/)
+ 	, m_bTrayIconVisible()
+ 	//, m_nDefaultMenuItem()
+ {
+-	m_nidIconData.cbSize = NOTIFYICONDATA_V2_SIZE; //for Windows 2K and above
+-	m_nidIconData.hWnd = 0;
++	m_nidIconData.cbSize = sizeof m_nidIconData;
+ 	m_nidIconData.uID = 1;
+ 	m_nidIconData.uCallbackMessage = UM_TRAY_ICON_NOTIFY_MESSAGE;
+-	m_nidIconData.hIcon = 0;
+-	m_nidIconData.szTip[0] = _T('\0');
+ 	m_nidIconData.uFlags = NIF_MESSAGE;
+ }
+ 

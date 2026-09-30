@@ -1,5 +1,5 @@
 diff --git a/srchybrid/EmuleDlg.cpp b/srchybrid/EmuleDlg.cpp
-index de0c454..0dbcfa7 100644
+index 0220e8d..8094ce1 100644
 --- a/srchybrid/EmuleDlg.cpp
 +++ b/srchybrid/EmuleDlg.cpp
 @@ -1375,10 +1375,11 @@ LRESULT CemuleDlg::OnWMData(WPARAM, LPARAM lParam)

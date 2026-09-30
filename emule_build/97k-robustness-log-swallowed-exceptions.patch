@@ -347,7 +347,7 @@ index 9f7c445..be32c82 100644
  			ex->Delete();
  			break;
 diff --git a/srchybrid/EmuleDlg.cpp b/srchybrid/EmuleDlg.cpp
-index f0baa33..e339380 100644
+index 3f361f0..aba6343 100644
 --- a/srchybrid/EmuleDlg.cpp
 +++ b/srchybrid/EmuleDlg.cpp
 @@ -1805,6 +1805,7 @@ void CemuleDlg::OnTrayLButtonUp()
@@ -409,7 +409,7 @@ index f68fcb6..c517b3d 100644
  		ex->Delete();
  		ASSERT(0);
 diff --git a/srchybrid/FileInfoDialog.cpp b/srchybrid/FileInfoDialog.cpp
-index 45b1cad..58a0738 100644
+index 469268f..8d1714a 100644
 --- a/srchybrid/FileInfoDialog.cpp
 +++ b/srchybrid/FileInfoDialog.cpp
 @@ -26,6 +26,7 @@
@@ -509,10 +509,10 @@ index 8a27bc1..fe741c4 100644
  		ex->Delete();
  	}
 diff --git a/srchybrid/HttpDownloadDlg.cpp b/srchybrid/HttpDownloadDlg.cpp
-index a7e0d3b..56007e0 100644
+index be11c42..8b04141 100644
 --- a/srchybrid/HttpDownloadDlg.cpp
 +++ b/srchybrid/HttpDownloadDlg.cpp
-@@ -412,6 +412,7 @@ void CHttpDownloadDlg::HandleThreadErrorWithLastError(const CString &strIDError,
+@@ -408,6 +408,7 @@ void CHttpDownloadDlg::HandleThreadErrorWithLastError(const CString &strIDError,
  	try {
  		m_FileToWrite.Close();
  	} catch (CFileException *ex) {
@@ -795,10 +795,10 @@ index 3fef67d..f815222 100644
  		ex->Delete();
  	}
 diff --git a/srchybrid/OtherFunctions.cpp b/srchybrid/OtherFunctions.cpp
-index fc2a7ad..3d1c6f9 100644
+index f818323..c0792da 100644
 --- a/srchybrid/OtherFunctions.cpp
 +++ b/srchybrid/OtherFunctions.cpp
-@@ -2153,9 +2153,11 @@ void DebugHexDump(CFile &file)
+@@ -2151,9 +2151,11 @@ void DebugHexDump(CFile &file)
  			file.Read(data, iSize);
  			DebugHexDump(data, iSize);
  		} catch (CFileException *ex) {
@@ -810,7 +810,7 @@ index fc2a7ad..3d1c6f9 100644
  			TRACE("*** DebugHexDump(CFile&); CMemoryException\n");
  			ex->Delete();
  		}
-@@ -3370,7 +3372,8 @@ bool IsRegExpValid(const CString &regexpr)
+@@ -3368,7 +3370,8 @@ bool IsRegExpValid(const CString &regexpr)
  	try {
  		std::basic_regex<TCHAR> reFN(regexpr);
  		(void)reFN;
@@ -820,7 +820,7 @@ index fc2a7ad..3d1c6f9 100644
  		return false;
  	}
  	return true;
-@@ -3386,7 +3389,8 @@ bool RegularExpressionMatch(const CString &regexpr, const CString &teststring)
+@@ -3384,7 +3387,8 @@ bool RegularExpressionMatch(const CString &regexpr, const CString &teststring)
  		std::cmatch mcUrl;
  #endif
  		return std::regex_match((LPCTSTR)teststring, mcUrl, reFN);
@@ -830,7 +830,7 @@ index fc2a7ad..3d1c6f9 100644
  		return false;
  	}
  }
-@@ -3745,6 +3749,7 @@ EFileType GetFileTypeEx(CShareableFile *kfile, bool checkextention, bool checkfi
+@@ -3743,6 +3747,7 @@ EFileType GetFileTypeEx(CShareableFile *kfile, bool checkextention, bool checkfi
  				inFile.Close();
  			}
  		} catch (...) {
