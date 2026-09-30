@@ -1,0 +1,168 @@
+diff --git a/srchybrid/PartFile.cpp b/srchybrid/PartFile.cpp
+index bd13bcc..dc2dc95 100644
+--- a/srchybrid/PartFile.cpp
++++ b/srchybrid/PartFile.cpp
+@@ -53,9 +53,7 @@
+ #include "CollectionViewDialog.h"
+ #include "uploaddiskiothread.h"
+ #include "PartFileWriteThread.h"
+-#ifndef XP_BUILD
+ #include <urlmon.h>
+-#endif
+ 
+ #ifdef _DEBUG
+ #define new DEBUG_NEW
+@@ -2722,25 +2720,6 @@ static void UncompressFile(LPCTSTR pszFilePath, CPartFile *pPartFile)
+ 	::CloseHandle(hFile);
+ }
+ 
+-#ifdef XP_BUILD
+-#ifndef __IZoneIdentifier_INTERFACE_DEFINED__
+-MIDL_INTERFACE("cd45f185-1b21-48e2-967b-ead743a8914e")
+-IZoneIdentifier : public IUnknown
+-{
+-public:
+-	virtual HRESULT STDMETHODCALLTYPE GetId(DWORD *pdwZone) = 0;
+-	virtual HRESULT STDMETHODCALLTYPE SetId(DWORD dwZone) = 0;
+-	virtual HRESULT STDMETHODCALLTYPE Remove() = 0;
+-};
+-#endif //__IZoneIdentifier_INTERFACE_DEFINED__
+-
+-#ifdef CLSID_PersistentZoneIdentifier
+-EXTERN_C const IID CLSID_PersistentZoneIdentifier;
+-#elif _WIN32_WINNT<_WIN32_WINNT_VISTA
+-const GUID CLSID_PersistentZoneIdentifier = {0x0968E258, 0x16C7, 0x4DBA, { 0xAA, 0x86, 0x46, 0x2D, 0xD6, 0x1E, 0x31, 0xA3 }};
+-#endif
+-#endif
+-
+ static void SetZoneIdentifier(LPCWSTR pszFilePath)
+ {
+ 	if (!thePrefs.GetCheckFileOpen())
+diff --git a/srchybrid/Pinger.cpp b/srchybrid/Pinger.cpp
+index 2eebd5e..2bb55c3 100644
+--- a/srchybrid/Pinger.cpp
++++ b/srchybrid/Pinger.cpp
+@@ -374,39 +374,6 @@ PingStatus Pinger::PingICMP(uint32 lAddr, DWORD ttl, bool doLog)
+ 
+ void Pinger::PIcmpErr(LPCTSTR pszMsg, DWORD nICMPErr)
+ {
+-#ifdef XP_BUILD
+-	static LPCTSTR const aszSendEchoErr[] =
+-	{
+-		_T("IP_STATUS_BASE (11000)"),
+-		_T("IP_BUF_TOO_SMALL (11001)"),
+-		_T("IP_DEST_NET_UNREACHABLE (11002)"),
+-		_T("IP_DEST_HOST_UNREACHABLE (11003)"),
+-		_T("IP_DEST_PROT_UNREACHABLE (11004)"),
+-		_T("IP_DEST_PORT_UNREACHABLE (11005)"),
+-		_T("IP_NO_RESOURCES (11006)"),
+-		_T("IP_BAD_OPTION (11007)"),
+-		_T("IP_HW_ERROR (11008)"),
+-		_T("IP_PACKET_TOO_BIG (11009)"),
+-		_T("IP_REQ_TIMED_OUT (11010)"),
+-		_T("IP_BAD_REQ (11011)"),
+-		_T("IP_BAD_ROUTE (11012)"),
+-		_T("IP_TTL_EXPIRED_TRANSIT (11013)"),
+-		_T("IP_TTL_EXPIRED_REASSEM (11014)"),
+-		_T("IP_PARAM_PROBLEM (11015)"),
+-		_T("IP_SOURCE_QUENCH (11016)"),
+-		_T("IP_OPTION_TOO_BIG (11017)"),
+-		_T("IP_BAD_DESTINATION (11018)"),
+-		_T("IP_ADDR_DELETED (11019)"),
+-		_T("IP_SPEC_MTU_CHANGE (11020)"),
+-		_T("IP_MTU_CHANGE (11021)"),
+-		_T("IP_UNLOAD (11022)")
+-	};
+-
+-	bool b = (nICMPErr >= IP_STATUS_BASE && nICMPErr < IP_STATUS_BASE + _countof(aszSendEchoErr));
+-	theApp.QueueDebugLogLine(false, _T("%sPinger: %s")
+-		, pszMsg ? pszMsg : _T("")
+-		, (LPCTSTR)(b ? aszSendEchoErr[nICMPErr - IP_STATUS_BASE] : GetErrorMessage(nICMPErr, 1)));
+-#else
+ 	DWORD dwSize = 511;
+ 	CStringW sErr;
+ 	bool b = (GetIpErrorString(nICMPErr, sErr.GetBuffer(dwSize), &dwSize) == NO_ERROR);
+@@ -414,5 +381,4 @@ void Pinger::PIcmpErr(LPCTSTR pszMsg, DWORD nICMPErr)
+ 	theApp.QueueDebugLogLine(false, _T("%sPinger: %s")
+ 		, pszMsg ? pszMsg : _T("")
+ 		, (LPCTSTR)(b ? (CString)sErr.Trim() : GetErrorMessage(nICMPErr, 1)));
+-#endif
+ }
+\ No newline at end of file
+diff --git a/srchybrid/Stdafx.h b/srchybrid/Stdafx.h
+index 1d4fa8f..85e960e 100644
+--- a/srchybrid/Stdafx.h
++++ b/srchybrid/Stdafx.h
+@@ -141,10 +141,6 @@
+ #endif
+ #endif//!defined(_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES) || (_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES==0)
+ 
+-#if defined(XP_BUILD) && !defined(_WIN64) && !defined(_USE_32BIT_TIME_T)
+-#define _USE_32BIT_TIME_T
+-#endif
+-
+ //Windows XP compatibility requires 'inet_addr' and 'WSAAsyncGetHostByName' (warning C4996)
+ #ifndef _WINSOCK_DEPRECATED_NO_WARNINGS
+ #define _WINSOCK_DEPRECATED_NO_WARNINGS
+diff --git a/srchybrid/emule.vcxproj b/srchybrid/emule.vcxproj
+index 8b6526e..eabeb5e 100644
+--- a/srchybrid/emule.vcxproj
++++ b/srchybrid/emule.vcxproj
+@@ -46,8 +46,7 @@
+   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+   <PropertyGroup Label="Configuration">
+     <CharacterSet>Unicode</CharacterSet>
+-    <PlatformToolset Condition="'$(Platform)'!='ARM64'">v141_xp</PlatformToolset>
+-    <PlatformToolset Condition="'$(Platform)'=='ARM64'">v145</PlatformToolset>
++    <PlatformToolset>v145</PlatformToolset>
+     <UseOfMfc>Static</UseOfMfc>
+   </PropertyGroup>
+   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+@@ -80,7 +79,6 @@
+       <Optimization>Disabled</Optimization>
+       <PrecompiledHeader>Use</PrecompiledHeader>
+       <PreprocessorDefinitions>ID3LIB_LINKOPTION=1;MINIUPNP_STATICLIB;SUPPORT_LARGE_FILES;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+-      <PreprocessorDefinitions Condition="'$(Platform)'!='ARM64'">XP_BUILD;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+       <WarningLevel>EnableAllWarnings</WarningLevel>
+     </ClCompile>
+@@ -110,7 +108,6 @@
+       <OmitFramePointers>true</OmitFramePointers>
+       <PrecompiledHeader>Use</PrecompiledHeader>
+       <PreprocessorDefinitions>ID3LIB_LINKOPTION=1;MINIUPNP_STATICLIB;SUPPORT_LARGE_FILES;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+-      <PreprocessorDefinitions Condition="'$(Platform)'!='ARM64'">XP_BUILD;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+       <WarningLevel>EnableAllWarnings</WarningLevel>
+     </ClCompile>
+     <Link>
+@@ -137,7 +134,6 @@
+       <Optimization>Disabled</Optimization>
+       <PrecompiledHeader>Use</PrecompiledHeader>
+       <PreprocessorDefinitions>ID3LIB_LINKOPTION=1;MINIUPNP_STATICLIB;SUPPORT_LARGE_FILES;_BOOTSTRAPNODESDAT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+-      <PreprocessorDefinitions Condition="'$(Platform)'!='ARM64'">XP_BUILD;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+       <WarningLevel>EnableAllWarnings</WarningLevel>
+     </ClCompile>
+@@ -333,7 +329,7 @@
+     <ClCompile Include="RichEditStream.cpp" />
+     <ClCompile Include="SafeFile.cpp" />
+     <ClCompile Include="Scanner.cpp">
+-      <PreprocessorDefinitions Condition="'$(Platform)'=='Win32'">_CRT_SECURE_NO_DEPRECATE;_USE_32BIT_TIME_T;%(PreprocessorDefinitions)</PreprocessorDefinitions>
++      <PreprocessorDefinitions Condition="'$(Platform)'=='Win32'">_CRT_SECURE_NO_DEPRECATE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+       <PreprocessorDefinitions Condition="'$(Platform)'=='x64'">_CRT_SECURE_NO_DEPRECATE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+       <PrecompiledHeader />
+     </ClCompile>
+diff --git a/srchybrid/emule_site_config.h b/srchybrid/emule_site_config.h
+index e5b7a1c..e509d4d 100644
+--- a/srchybrid/emule_site_config.h
++++ b/srchybrid/emule_site_config.h
+@@ -10,10 +10,6 @@
+ #define HAVE_QEDIT_H
+ #define HAVE_WMSDK_H
+ 
+-#ifdef XP_BUILD
+-#define _WIN32_WINNT _WIN32_WINNT_WINXP
+-#define NTDDI_VERSION NTDDI_WINXP
+-#endif //XP_BUILD
+ #if _MSC_VER<1937 //before VS2022 17.7
+ #define NOEXCEPT noexcept
+ #else

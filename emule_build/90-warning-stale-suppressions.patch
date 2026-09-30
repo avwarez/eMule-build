@@ -47,10 +47,10 @@ index 2d830e5..c7c389d 100644
 -#pragma warning(pop)
  #endif
 diff --git a/srchybrid/Stdafx.h b/srchybrid/Stdafx.h
-index 1d4fa8f..6c7fd4e 100644
+index 861e11a..1407db5 100644
 --- a/srchybrid/Stdafx.h
 +++ b/srchybrid/Stdafx.h
-@@ -69,47 +69,20 @@
+@@ -31,47 +31,20 @@
  #pragma warning(disable:4061) // enumerate in switch of enum is not explicitly handled by a case label
  #pragma warning(disable:4062) // enumerate in switch of enum is not handled
  #pragma warning(disable:4191) // 'type cast' : unsafe conversion from <this> to <that>

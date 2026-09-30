@@ -104,16 +104,11 @@ set_target_properties(emule PROPERTIES
 # ---------------------------------------------------------------------------
 target_compile_features(emule PRIVATE cxx_std_23)
 
-# KNOWN LIMITATION: emule.vcxproj targets PlatformToolset v141_xp for Win32/x64
-# (a Windows-XP-compatible VS2017 toolset) and v145 for ARM64; id3lib.vcxproj
-# wants v141, ResizableLib.vcxproj wants v140_xp. None of those toolsets are
-# installed here - every target in this build instead uses whatever toolset
-# ships with the installed VS generator (confirmed: only MSVC 14.50/14.51 are
-# present, no v14x_xp/v141/v140_xp component). Accepted as-is for now; install
-# the matching "Windows XP support for C++" / VS2017/VS2015 toolset components
-# via the Visual Studio Installer and set PlatformToolset (top-level
-# CMakeLists.txt, before add_subdirectory(emule_build)/(id3lib_build)/
-# (resizablelib_build)) if XP-compatible code generation is ever required.
+# KNOWN LIMITATION: id3lib.vcxproj wants PlatformToolset v141 and
+# ResizableLib.vcxproj wants v140_xp (emule.vcxproj uses v145 on every platform
+# since 88zc). Those toolsets are not installed here - every target in this
+# build uses whatever toolset ships with the installed VS generator (confirmed:
+# only MSVC 14.50/14.51 are present). Accepted as-is.
 
 # Stdafx.h directly #includes <afximpl.h>, an MFC *implementation* header
 # under ATLMFC\src\mfc - not part of the public ATLMFC\include tree that
@@ -159,8 +154,8 @@ target_compile_definitions(emule PRIVATE
     _UNICODE
     $<$<CONFIG:Release>:NDEBUG>
 )
-# XP_BUILD, which emule.vcxproj sets for Win32 and x64, is deliberately left out
-# on every platform, as it already was on ARM64. The binaries cannot run on XP
+# XP_BUILD, which emule.vcxproj set for Win32 and x64 until 88zc removed it, was
+# left out here on every platform, as it already was on ARM64. The binaries cannot run on XP
 # anyway (mbedTLS 4 imports bcrypt.dll), so all it did was pin the SDK headers
 # to XP and, on Win32, force a 32-bit time_t that mbedTLS does not share - its
 # mbedtls_ssl_ticket_context came out smaller in eMule than in the library.
@@ -200,9 +195,9 @@ set_source_files_properties("${EMULE_SRC_DIR}/Parser.cpp" "${EMULE_SRC_DIR}/Scan
 # Scanner.cpp per-file PreprocessorDefinitions from the vcxproj: both Win32 and
 # x64 get _CRT_SECURE_NO_DEPRECATE; ARM64 does not - the vcxproj has no ARM64
 # condition for this file at all (never updated when the ARM64 platform was
-# added), replicated as-is. The vcxproj also gives Win32 _USE_32BIT_TIME_T here,
-# the per-file twin of the one XP_BUILD sets in Stdafx.h; with XP_BUILD gone it
-# is dropped too, so this file keeps the same time_t as the rest of eMule.
+# added), replicated as-is. The vcxproj also gave Win32 _USE_32BIT_TIME_T here,
+# the per-file twin of the one XP_BUILD set in Stdafx.h; 88zc drops both, so this
+# file keeps the same time_t as the rest of eMule.
 set_source_files_properties("${EMULE_SRC_DIR}/Scanner.cpp" PROPERTIES
     COMPILE_DEFINITIONS "$<$<OR:$<STREQUAL:${EMULE_PLATFORM_DIR},Win32>,$<STREQUAL:${EMULE_PLATFORM_DIR},x64>>:_CRT_SECURE_NO_DEPRECATE>"
 )

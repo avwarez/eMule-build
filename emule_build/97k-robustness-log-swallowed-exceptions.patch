@@ -839,10 +839,10 @@ index fc2a7ad..3d1c6f9 100644
  			return FILETYPE_UNKNOWN;
  		}
 diff --git a/srchybrid/PartFile.cpp b/srchybrid/PartFile.cpp
-index 0f78ee9..bc4d8a5 100644
+index c9a889a..15a6712 100644
 --- a/srchybrid/PartFile.cpp
 +++ b/srchybrid/PartFile.cpp
-@@ -1114,6 +1114,7 @@ EPartFileLoadResult CPartFile::LoadPartFile(LPCTSTR in_directory, LPCTSTR in_fil
+@@ -1112,6 +1112,7 @@ EPartFileLoadResult CPartFile::LoadPartFile(LPCTSTR in_directory, LPCTSTR in_fil
  			try {
  				b = m_hpartfile.GetStatus(filestatus);
  			} catch (CException *ex) {
@@ -850,7 +850,7 @@ index 0f78ee9..bc4d8a5 100644
  				ex->Delete();
  			}
  			time_t fdate;
-@@ -4946,8 +4947,10 @@ bool CPartFile::CopyPartFile(CArray<Gap_Struct> &raFilled, const CString &tempFi
+@@ -4925,8 +4926,10 @@ bool CPartFile::CopyPartFile(CArray<Gap_Struct> &raFilled, const CString &tempFi
  		m_bPreviewing = false;
  		return true;
  	} catch (CFileException *ex) {
@@ -861,7 +861,7 @@ index 0f78ee9..bc4d8a5 100644
  		ASSERT(0);
  	}
  	m_bPreviewing = false;
-@@ -5235,6 +5238,7 @@ void CPartFile::AICHRecoveryDataAvailable(UINT nPart)
+@@ -5214,6 +5217,7 @@ void CPartFile::AICHRecoveryDataAvailable(UINT nPart)
  		m_hpartfile.Seek((LONGLONG)uStart, CFile::begin);
  		CreateHash(&m_hpartfile, length, NULL, &htOurHash);
  	} catch (...) {

@@ -1,8 +1,8 @@
 diff --git a/srchybrid/PartFile.cpp b/srchybrid/PartFile.cpp
-index f839317..0f78ee9 100644
+index 7c5dfe0..c9a889a 100644
 --- a/srchybrid/PartFile.cpp
 +++ b/srchybrid/PartFile.cpp
-@@ -2789,12 +2789,15 @@ BOOL CPartFile::PerformFileComplete()
+@@ -2768,12 +2768,15 @@ BOOL CPartFile::PerformFileComplete()
  	// If that function is invoked from within the file completion thread, it's OK if we wait (and block) the thread.
  	CSingleLock sLock(&m_FileCompleteMutex, TRUE);
  
