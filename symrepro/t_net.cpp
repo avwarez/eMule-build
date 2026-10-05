@@ -258,8 +258,8 @@ TEST(net_resolve)
 	int r = ::gethostname(name, sizeof name);
 	out("gethostname", "ok", "r=%d nonempty=%d", r, name[0] != 0);
 	out("gethostname", "~value", "%s", QA(name).c_str());
-	char small[2];
-	r = ::gethostname(small, sizeof small);
+	char sbuf[2];
+	r = ::gethostname(sbuf, sizeof sbuf);
 	out("gethostname", "small", "%s", WsaErr(r).c_str());
 	r = ::gethostname(NULL, 10);
 	out("gethostname", "null", "%s", WsaErr(r).c_str());

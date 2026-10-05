@@ -411,14 +411,14 @@ TEST(ole_ExtractIconEx)
 		if (ii.hbmColor) ::DeleteObject(ii.hbmColor);
 		if (ii.hbmMask) ::DeleteObject(ii.hbmMask);
 	}
-	out("ExtractIconExW", "self.0", "n=%u large=%d small=%d large_w=%ld", n, lg != NULL, sm != NULL, bm.bmWidth);
+	out("ExtractIconExW", "self.0", "n=%u large=%d sbuf=%d large_w=%ld", n, lg != NULL, sm != NULL, bm.bmWidth);
 	if (lg) ::DestroyIcon(lg);
 	if (sm) ::DestroyIcon(sm);
 	n = ::ExtractIconExW(self.c_str(), -1, NULL, NULL, 0);
 	out("ExtractIconExW", "self.count", "%u", n);
 	lg = sm = NULL;
 	n = ::ExtractIconExW(self.c_str(), 5, &lg, &sm, 1);
-	out("ExtractIconExW", "self.outofrange", "n=%u large=%d small=%d", n, lg != NULL, sm != NULL);
+	out("ExtractIconExW", "self.outofrange", "n=%u large=%d sbuf=%d", n, lg != NULL, sm != NULL);
 	lg = NULL;
 	n = ::ExtractIconExW(self.c_str(), 0, &lg, NULL, 1);
 	out("ExtractIconExW", "self.largeonly", "n=%u large=%d", n, lg != NULL);
@@ -430,7 +430,7 @@ TEST(ole_ExtractIconEx)
 	WriteWholeFile(TDir() + L"plain.txt", "x", 1);
 	lg = sm = NULL;
 	n = ::ExtractIconExW((TDir() + L"plain.txt").c_str(), 0, &lg, &sm, 1);
-	out("ExtractIconExW", "notanicon", "n=%u large=%d small=%d", n, lg != NULL, sm != NULL);
+	out("ExtractIconExW", "notanicon", "n=%u large=%d sbuf=%d", n, lg != NULL, sm != NULL);
 	n = ::ExtractIconExW((TDir() + L"missing.ico").c_str(), 0, &lg, &sm, 1);
 	out("ExtractIconExW", "missing", "n=%u", n);
 }
@@ -461,9 +461,9 @@ TEST(ole_DragQueryFile)
 		UINT got = ::DragQueryFileW(hd, i, buf, MAX_PATH);
 		out("DragQueryFileW", Fmt("item%u", i).c_str(), "len=%u got=%u %s", len, got, Q(buf).c_str());
 	}
-	wchar_t small[5] = L"####";
-	UINT got = ::DragQueryFileW(hd, 1, small, 5);
-	out("DragQueryFileW", "small", "got=%u %s", got, Q(small).c_str());
+	wchar_t sbuf[5] = L"####";
+	UINT got = ::DragQueryFileW(hd, 1, sbuf, 5);
+	out("DragQueryFileW", "small", "got=%u %s", got, Q(sbuf).c_str());
 	// ANSI drop list read through the W function.
 	HGLOBAL ha = ::GlobalAlloc(GHND, sizeof(DROPFILES) + 32);
 	DROPFILES *da = (DROPFILES*)::GlobalLock(ha);

@@ -1,4 +1,4 @@
-// WinINet as CHttpDownloadDlg and the URL parsers use it, against a small
+// WinINet as CHttpDownloadDlg and the URL parsers use it, against a sbuf
 // HTTP server running in this process on loopback - no Internet involved.
 #include "harness.h"
 #include <wininet.h>
@@ -314,10 +314,10 @@ TEST(inet_HandlesAndErrors)
 	out("HttpSendRequestW", "unresolvable", "%s", s ? "ok" : Fmt("fail err=%lu", ::GetLastError()).c_str());
 	// Header buffer semantics.
 	DWORD n = 0;
-	wchar_t small[2];
-	DWORD sz = sizeof small;
+	wchar_t sbuf[2];
+	DWORD sz = sizeof sbuf;
 	::SetLastError(0);
-	BOOL q = ::HttpQueryInfoW(req, HTTP_QUERY_STATUS_CODE, small, &sz, NULL);
+	BOOL q = ::HttpQueryInfoW(req, HTTP_QUERY_STATUS_CODE, sbuf, &sz, NULL);
 	out("HttpQueryInfoW", "unsent", "r=%d err=%lu", q, ::GetLastError());
 	::InternetCloseHandle(req);
 	::InternetCloseHandle(con);
@@ -335,7 +335,7 @@ TEST(inet_HandlesAndErrors)
 TEST(inet_QueryInfoBuffer)
 {
 	// eMule passes _countof() (characters) where HttpQueryInfo wants bytes;
-	// what happens with a too-small buffer, and what size comes back.
+	// what happens with a too-sbuf buffer, and what size comes back.
 	Server *srv = StartServer();
 	HINTERNET ses = ::InternetOpenW(L"symrepro", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
 	HINTERNET con = ::InternetConnectW(ses, L"127.0.0.1", srv->port, NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
@@ -454,9 +454,9 @@ TEST(inet_CanonicalizeUrl)
 			DWORD e = ::GetLastError();
 			out("InternetCanonicalizeUrlW", (std::string(f.n) + Q(u)).c_str(), "%s", r ? Fmt("ok len=%lu %s", sz, Q(buf).c_str()).c_str() : Fmt("fail err=%lu", e).c_str());
 		}
-	wchar_t small[5];
-	DWORD sz = _countof(small);
+	wchar_t sbuf[5];
+	DWORD sz = _countof(sbuf);
 	::SetLastError(0);
-	BOOL r = ::InternetCanonicalizeUrlW(L"http://host/abcdef", small, &sz, 0);
+	BOOL r = ::InternetCanonicalizeUrlW(L"http://host/abcdef", sbuf, &sz, 0);
 	out("InternetCanonicalizeUrlW", "small", "r=%d err=%lu need=%lu", r, ::GetLastError(), sz);
 }

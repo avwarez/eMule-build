@@ -814,8 +814,8 @@ TEST(file_Volume)
 	for (wchar_t *p = buf; *p; p += wcslen(p) + 1)
 		all += Narrow(p) + " ";
 	out("GetLogicalDriveStringsW", "~drives", "%s", all.c_str());
-	wchar_t small[4];
-	DWORD need = ::GetLogicalDriveStringsW(3, small);
+	wchar_t sbuf[4];
+	DWORD need = ::GetLogicalDriveStringsW(3, sbuf);
 	out("GetLogicalDriveStringsW", "small", "need=n+1:%d", need == n + 1);
 	DWORD maxlen = 0, flags = 0, serial = 0;
 	wchar_t fs[MAX_PATH + 1] = L"", label[MAX_PATH + 1] = L"";

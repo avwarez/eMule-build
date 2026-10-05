@@ -126,7 +126,7 @@ TEST(string_WideCharToMultiByte)
 				"size=%d conv=%d def=%d %s", n, m, usedDef, Hex(buf, m > 0 ? m : 0).c_str());
 		}
 	}
-	// Buffer too small, explicit length without terminator, invalid-chars flag.
+	// Buffer too sbuf, explicit length without terminator, invalid-chars flag.
 	char b[4];
 	::SetLastError(0);
 	int r = ::WideCharToMultiByte(CP_UTF8, 0, L"abcdef", -1, b, sizeof b, NULL, NULL);
@@ -198,9 +198,9 @@ TEST(string_GetLocaleInfoW)
 		out("GetLocaleInfoW", Fmt("%04x", lang).c_str(), "acp=%d:%s slang=%d:%s eng=%d:%s",
 			r1, Q(cp).c_str(), r2, Q(name).c_str(), r3, Q(eng).c_str());
 	}
-	WCHAR small[2];
+	WCHAR sbuf[2];
 	::SetLastError(0);
-	int r = ::GetLocaleInfoW(kEnUS, LOCALE_SLANGUAGE, small, 2);
+	int r = ::GetLocaleInfoW(kEnUS, LOCALE_SLANGUAGE, sbuf, 2);
 	out("GetLocaleInfoW", "tooshort", "r=%d err=%lu", r, ::GetLastError());
 	r = ::GetLocaleInfoW(kEnUS, LOCALE_SLANGUAGE, NULL, 0);
 	out("GetLocaleInfoW", "sizequery", "r=%d", r);

@@ -449,8 +449,8 @@ TEST(sys_Version)
 	r = ::VerQueryValueW(blk.data(), L"\\StringFileInfo\\040904b0\\NoSuchValue", (LPVOID*)&s, &len);
 	out("VerQueryValueW", "missing", "%s len=%u", B(r).c_str(), len);
 	// Small buffer to GetFileVersionInfo: truncated but usable?
-	std::vector<BYTE> small(64);
-	r = ::GetFileVersionInfoW(self.c_str(), 0, (DWORD)small.size(), small.data());
+	std::vector<BYTE> sbuf(64);
+	r = ::GetFileVersionInfoW(self.c_str(), 0, (DWORD)sbuf.size(), sbuf.data());
 	out("GetFileVersionInfoW", "small", "%s", B(r).c_str());
 	// A DLL from the system: present on both, contents differ (~).
 	wchar_t sys[MAX_PATH];
@@ -808,9 +808,8 @@ TEST(sys_wmvcore)
 	HMODULE h = ::LoadLibraryW(L"wmvcore.dll");
 	out("LoadLibraryW", "~wmvcore", "%s", h ? "ok" : Fmt("NULL err=%lu", ::GetLastError()).c_str());
 	if (h) {
-		typedef HRESULT (STDMETHODCALLTYPE *Create)(IUnknown*, DWORD, IUnknown**);
-		Create sr = (Create)::GetProcAddress(h, "WMCreateSyncReader");
-		Create ed = (Create)::GetProcAddress(h, "WMCreateEditor");
+		FARPROC sr = ::GetProcAddress(h, "WMCreateSyncReader");
+		FARPROC ed = ::GetProcAddress(h, "WMCreateEditor");
 		out("GetProcAddress", "~wmvcore.procs", "sync=%d editor=%d", sr != NULL, ed != NULL);
 		::FreeLibrary(h);
 	}

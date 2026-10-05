@@ -42,7 +42,7 @@ target_compile_definitions(symrepro PRIVATE
 
 # /EHa: the harness catches SEH exceptions around every test, and some tests
 # raise them on purpose.
-target_compile_options(symrepro PRIVATE /W3 /EHa /utf-8 /permissive-)
+target_compile_options(symrepro PRIVATE /W3 /EHa /utf-8 /permissive- /std:c++17)
 
 target_link_libraries(symrepro PRIVATE
     ws2_32 wsock32 iphlpapi kernel32 user32 gdi32 advapi32 shell32 shlwapi

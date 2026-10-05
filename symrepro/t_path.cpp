@@ -205,8 +205,8 @@ TEST(path_GetFullPathNameW)
 		out("GetFullPathNameW", Q(p).c_str(), "n=%lu err=%lu %s part=%s", n, n ? 0 : e, QN(buf).c_str(),
 			filePart ? Fmt("+%d", (int)(filePart - buf)).c_str() : "NULL");
 	}
-	wchar_t small[4];
-	DWORD n = ::GetFullPathNameW(L"abcdef", 4, small, NULL);
+	wchar_t sbuf[4];
+	DWORD n = ::GetFullPathNameW(L"abcdef", 4, sbuf, NULL);
 	out("GetFullPathNameW", "small", "n=%lu", n - (DWORD)TDir().size());	// required size relative to cwd length
 	n = ::GetFullPathNameW(L"abcdef", 0, NULL, NULL);
 	out("GetFullPathNameW", "query", "n=%lu", n - (DWORD)TDir().size());
@@ -224,10 +224,10 @@ TEST(path_ExpandEnvironmentStringsW)
 		DWORD n = ::ExpandEnvironmentStringsW(p, buf, 256);
 		out("ExpandEnvironmentStringsW", Q(p).c_str(), "need=%lu n=%lu %s", need, n, Q(buf).c_str());
 	}
-	wchar_t small[4] = L"###";
+	wchar_t sbuf[4] = L"###";
 	::SetLastError(0);
-	DWORD n = ::ExpandEnvironmentStringsW(L"%SR_A%%SR_A%", small, 4);
-	out("ExpandEnvironmentStringsW", "small", "n=%lu err=%lu buf=%s", n, ::GetLastError(), Q(small, 3).c_str());
+	DWORD n = ::ExpandEnvironmentStringsW(L"%SR_A%%SR_A%", sbuf, 4);
+	out("ExpandEnvironmentStringsW", "small", "n=%lu err=%lu buf=%s", n, ::GetLastError(), Q(sbuf, 3).c_str());
 	// The real ones eMule may see in a preview command line: present or not.
 	for (const wchar_t *v : {L"%ProgramFiles%", L"%SystemRoot%", L"%windir%", L"%APPDATA%", L"%LOCALAPPDATA%", L"%TEMP%",
 			L"%USERPROFILE%", L"%ProgramFiles(x86)%", L"%ProgramW6432%", L"%PUBLIC%", L"%ComSpec%", L"%SystemDrive%"}) {
@@ -247,9 +247,9 @@ TEST(path_CurrentDirectory)
 	out("GetCurrentDirectoryW", "tdir", "n-len=%ld %s", (long)n - (long)wcslen(buf), QN(buf).c_str());
 	DWORD need = ::GetCurrentDirectoryW(0, NULL);
 	out("GetCurrentDirectoryW", "query", "need-len=%ld", (long)need - (long)wcslen(buf));
-	wchar_t small[3] = L"##";
-	n = ::GetCurrentDirectoryW(3, small);
-	out("GetCurrentDirectoryW", "small", "n-len=%ld buf=%s", (long)n - (long)wcslen(buf), Q(small, 2).c_str());
+	wchar_t sbuf[3] = L"##";
+	n = ::GetCurrentDirectoryW(3, sbuf);
+	out("GetCurrentDirectoryW", "small", "n-len=%ld buf=%s", (long)n - (long)wcslen(buf), Q(sbuf, 2).c_str());
 	::CreateDirectoryW((TDir() + L"sub").c_str(), NULL);
 	struct { const char *n; std::wstring p; } c[] = {
 		{"sub", L"sub"}, {"dotdot", L".."}, {"missing", TDir() + L"nope"}, {"file", L"C:\\srt\\x.none"}, {"slash", TDir() + L"sub\\"},
@@ -271,11 +271,11 @@ TEST(path_GetModuleFileNameW)
 	out("GetModuleFileNameW", "self", "n=len:%d abs=%d name=%s", n == wcslen(buf), !::PathIsRelativeW(buf), Q(::PathFindFileNameW(buf)).c_str());
 	n = ::GetModuleFileNameW(::GetModuleHandleW(NULL), buf, MAX_PATH);
 	out("GetModuleFileNameW", "selfhandle", "same=%d", s == std::wstring(buf, n));
-	wchar_t small[5] = L"####";
+	wchar_t sbuf[5] = L"####";
 	::SetLastError(0);
-	n = ::GetModuleFileNameW(NULL, small, 5);
+	n = ::GetModuleFileNameW(NULL, sbuf, 5);
 	DWORD e = ::GetLastError();
-	out("GetModuleFileNameW", "small", "n=%lu err=%lu last=%d", n, e, (int)small[4]);
+	out("GetModuleFileNameW", "small", "n=%lu err=%lu last=%d", n, e, (int)sbuf[4]);
 	n = ::GetModuleFileNameW(::GetModuleHandleW(L"kernel32.dll"), buf, MAX_PATH);
 	out("GetModuleFileNameW", "~kernel32", "%s", Q(buf).c_str());
 	out("GetModuleFileNameW", "kernel32.name", "%s", Q(_wcslwr(::PathFindFileNameW(buf))).c_str());
