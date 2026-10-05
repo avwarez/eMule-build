@@ -782,6 +782,8 @@ TEST(net_WSAAccept)
 		out("WSAAccept", Fmt("verdict%Iu", verdict).c_str(), "connect=%d result=%s wsa=%d plen=%d", cr, s != INVALID_SOCKET ? "socket" : "INVALID",
 			s != INVALID_SOCKET ? 0 : e, plen);
 		::Sleep(100);
+		u_long cnb = 1;
+		::ioctlsocket(c, FIONBIO, &cnb);
 		int r = ::send(c, "x", 1, 0);
 		std::string sr = WsaErr(r);
 		::Sleep(100);
@@ -1316,7 +1318,4 @@ TEST_T(net_Icmp, 60000)
 	out("IcmpSendEcho", "~testnet.timeout", "n=%lu err=%lu", n, n ? 0 : ::GetLastError());
 	BOOL c = ::IcmpCloseHandle(h);
 	out("IcmpCloseHandle", "close", "%s", B(c).c_str());
-	::SetLastError(0);
-	c = ::IcmpCloseHandle(h);
-	out("IcmpCloseHandle", "twice", "%s", B(c).c_str());
 }

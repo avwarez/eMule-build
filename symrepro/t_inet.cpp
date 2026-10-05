@@ -252,23 +252,37 @@ TEST_T(inet_Auth, 90000)
 		::InternetReadFile(req, d, 50, &n);
 	} while (n != 0 && ++loops < 100);
 	out("InternetReadFile", "auth.drain", "loops=%d", loops);
+	// Each call runs on its own thread: a call that never returns is a
+	// result, not a reason to lose the rest of the test.
+	struct Call { HINTERNET req; HWND owner; DWORD err, flags; DWORD result; };
+	auto runCall = [](Call &k, const char *cas, bool withCloser) {
+		HANDLE th = ::CreateThread(NULL, 0, [](LPVOID p) -> DWORD {
+			Call *k = (Call*)p;
+			k->result = ::InternetErrorDlg(k->owner, k->req, k->err, k->flags, NULL);
+			return 0;
+		}, &k, 0, NULL);
+		std::string seen = "none";
+		DWORD w;
+		{
+			DialogCloser dc(500);
+			w = ::WaitForSingleObject(th, 15000);
+			seen = dc.Seen();
+		}
+		out("InternetErrorDlg", cas, "%s dialog=%s", w == WAIT_OBJECT_0 ? Fmt("r=%lu", k.result).c_str() : "blocked(15s)", seen != "none" ? "shown" : "none");
+		out("InternetErrorDlg", (std::string("~") + cas + ".classes").c_str(), "%s", seen.c_str());
+		::CloseHandle(th);
+		(void)withCloser;
+	};
 	HWND owner = ::CreateWindowW(L"STATIC", L"owner", WS_OVERLAPPEDWINDOW, 0, 0, 100, 100, NULL, NULL, NULL, NULL);
-	{
-		DialogCloser dc(500);
-		DWORD r = ::InternetErrorDlg(owner, req, ERROR_INTERNET_INCORRECT_PASSWORD,
-			FLAGS_ERROR_UI_FILTER_FOR_ERRORS | FLAGS_ERROR_UI_FLAGS_GENERATE_DATA | FLAGS_ERROR_UI_FLAGS_CHANGE_OPTIONS, NULL);
-		out("InternetErrorDlg", "incorrect_password", "r=%lu dialog=%s", r, dc.Seen() != "none" ? "shown" : "none");
-		out("InternetErrorDlg", "~incorrect_password.classes", "%s", dc.Seen().c_str());
-	}
-	{
-		DialogCloser dc(500);
-		DWORD r = ::InternetErrorDlg(owner, req, ERROR_INTERNET_INCORRECT_PASSWORD, FLAGS_ERROR_UI_FLAGS_NO_UI, NULL);
-		out("InternetErrorDlg", "noui", "r=%lu dialog=%s", r, dc.Seen() != "none" ? "shown" : "none");
-	}
-	DWORD r = ::InternetErrorDlg(NULL, req, ERROR_INTERNET_INCORRECT_PASSWORD, FLAGS_ERROR_UI_FILTER_FOR_ERRORS, NULL);
-	out("InternetErrorDlg", "nullwindow", "r=%lu", r);
-	r = ::InternetErrorDlg(owner, NULL, 12345, 0, NULL);
-	out("InternetErrorDlg", "unknownerror", "r=%lu", r);
+	Call k1 = {req, owner, ERROR_INTERNET_INCORRECT_PASSWORD,
+		FLAGS_ERROR_UI_FILTER_FOR_ERRORS | FLAGS_ERROR_UI_FLAGS_GENERATE_DATA | FLAGS_ERROR_UI_FLAGS_CHANGE_OPTIONS, 0};
+	runCall(k1, "incorrect_password", true);
+	Call k2 = {req, owner, ERROR_INTERNET_INCORRECT_PASSWORD, FLAGS_ERROR_UI_FLAGS_NO_UI, 0};
+	runCall(k2, "noui", true);
+	Call k3 = {req, NULL, ERROR_INTERNET_INCORRECT_PASSWORD, FLAGS_ERROR_UI_FILTER_FOR_ERRORS, 0};
+	runCall(k3, "nullwindow", true);
+	Call k4 = {NULL, owner, 12345, 0, 0};
+	runCall(k4, "unknownerror", true);
 	::DestroyWindow(owner);
 	::InternetCloseHandle(req);
 	::InternetCloseHandle(con);
@@ -417,6 +431,9 @@ TEST(inet_CrackUrl)
 	out("InternetCrackUrlW", "pointers", "r=%d host=+%d/%lu path=+%d/%lu extra=+%d/%lu port=%u", r, c.lpszHostName ? (int)(c.lpszHostName - u) : -1,
 		c.dwHostNameLength, c.lpszUrlPath ? (int)(c.lpszUrlPath - u) : -1, c.dwUrlPathLength,
 		c.lpszExtraInfo ? (int)(c.lpszExtraInfo - u) : -1, c.dwExtraInfoLength, c.nPort);
+	c = {};
+	c.dwStructSize = sizeof c;
+	c.dwSchemeLength = c.dwHostNameLength = c.dwUrlPathLength = c.dwExtraInfoLength = 1;
 	r = ::InternetCrackUrlW(u, 10, 0, &c);
 	out("InternetCrackUrlW", "truncatedlength", "r=%d err=%lu", r, r ? 0 : ::GetLastError());
 	wchar_t tiny[3];

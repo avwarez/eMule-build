@@ -262,26 +262,34 @@ static BOOL CALLBACK EnumTop(HWND h, LPARAM lp)
 DWORD WINAPI DialogCloser::Thread(LPVOID p)
 {
 	DialogCloser *self = (DialogCloser*)p;
-	std::vector<HWND> handled;
+	std::vector<HWND> seen;
+	std::vector<DWORD> firstSeen;
 	while (!self->m_bStop) {
 		EnumCtx c{self, ::GetCurrentProcessId(), {}};
 		::EnumWindows(EnumTop, (LPARAM)&c);
 		for (HWND h : c.found) {
-			if (std::find(handled.begin(), handled.end(), h) != handled.end())
+			auto it = std::find(seen.begin(), seen.end(), h);
+			if (it == seen.end()) {
+				wchar_t cls[128] = L"";
+				::GetClassNameW(h, cls, _countof(cls));
+				::EnterCriticalSection(&self->m_cs);
+				if (!self->m_seen.empty())
+					self->m_seen += ",";
+				self->m_seen += Narrow(cls);
+				::LeaveCriticalSection(&self->m_cs);
+				seen.push_back(h);
+				firstSeen.push_back(::GetTickCount());
 				continue;
-			::Sleep(self->m_delay);
-			wchar_t cls[128] = L"";
-			::GetClassNameW(h, cls, _countof(cls));
-			::EnterCriticalSection(&self->m_cs);
-			if (!self->m_seen.empty())
-				self->m_seen += ",";
-			self->m_seen += Narrow(cls);
-			::LeaveCriticalSection(&self->m_cs);
-			handled.push_back(h);
+			}
+			// Give the window m_delay ms to settle, then keep asking it to
+			// go away until it does.
+			if (::GetTickCount() - firstSeen[it - seen.begin()] < self->m_delay)
+				continue;
+			::PostMessageW(h, WM_KEYDOWN, VK_ESCAPE, 0);
 			::PostMessageW(h, WM_COMMAND, IDCANCEL, 0);
 			::PostMessageW(h, WM_CLOSE, 0, 0);
 		}
-		::Sleep(50);
+		::Sleep(250);
 	}
 	return 0;
 }

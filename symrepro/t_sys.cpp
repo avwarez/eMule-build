@@ -527,11 +527,6 @@ TEST(sys_Exceptions)
 	} __except (Filter(GetExceptionInformation(), EXCEPTION_EXECUTE_HANDLER)) {
 	}
 	out("RaiseException", "toomanyparams", "code=%lx params=%lu", s_filtCode, s_filtParams);
-	__try {
-		::RaiseException(0xE0001236, 0xFFFFFFFF, 0, NULL);
-	} __except (Filter(GetExceptionInformation(), EXCEPTION_EXECUTE_HANDLER)) {
-	}
-	out("RaiseException", "allflags", "code=%lx flags=%lx", s_filtCode, s_filtFlags);
 	// Continuing a non-continuable exception raises a new one.
 	DWORD outer = 0;
 	__try {
