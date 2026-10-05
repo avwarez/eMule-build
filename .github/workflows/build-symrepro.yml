@@ -1,0 +1,166 @@
+name: Build symrepro (per-symbol Windows/Wine comparison)
+
+# Builds symrepro/ - one behavioural probe for every Win32 symbol eMule
+# imports outside the GUI DLLs - runs the same exe on Windows and under Wine,
+# and diffs the two outputs. Results stay in this run: run artifacts and the
+# job summary. Nothing is published and the eMule build is not touched.
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'symrepro/**'
+      - '.github/workflows/build-symrepro.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Windows ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: x64
+            runner: windows-latest
+          - platform: Win32
+            runner: windows-latest
+          # Native ARM64 Windows: the counterpart of the aarch64 Wine on the
+          # machine eMule actually runs on.
+          - platform: ARM64
+            runner: windows-11-arm
+    continue-on-error: ${{ matrix.platform == 'ARM64' }}
+    steps:
+      - name: Pin deterministic line endings before checkout
+        run: git config --global core.autocrlf false
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S symrepro -B build-symrepro -A ${{ matrix.platform }}
+
+      - name: Build
+        run: cmake --build build-symrepro --config Release
+
+      - name: Run on Windows
+        shell: bash
+        run: |
+          cd build-symrepro/Release
+          ./symrepro.exe --list | wc -l
+          ./symrepro.exe --all > "$GITHUB_WORKSPACE/windows-${{ matrix.platform }}.txt" 2>&1 || true
+          grep -c '' "$GITHUB_WORKSPACE/windows-${{ matrix.platform }}.txt"
+          grep -E '\|#(harness|exception)\|' "$GITHUB_WORKSPACE/windows-${{ matrix.platform }}.txt" || true
+
+      - name: Upload exe and output
+        uses: actions/upload-artifact@v4
+        with:
+          name: symrepro-${{ matrix.platform }}
+          path: |
+            build-symrepro/Release/symrepro.exe
+            build-symrepro/Release/srlang.dll
+            windows-${{ matrix.platform }}.txt
+          if-no-files-found: error
+          retention-days: 30
+
+  wine:
+    name: Wine ${{ matrix.platform }}
+    needs: windows
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [x64, Win32]
+    steps:
+      - name: Download the Windows build
+        uses: actions/download-artifact@v4
+        with:
+          name: symrepro-${{ matrix.platform }}
+          path: bin
+
+      - name: Install Wine from WineHQ
+        # The machine under study runs Wine 11.0; take the 11.0 build from
+        # WineHQ when it is there, the current stable otherwise. The version
+        # actually used is printed on the first line of the output.
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo mkdir -pm755 /etc/apt/keyrings
+          sudo wget -qO /etc/apt/keyrings/winehq-archive.key https://dl.winehq.org/wine-builds/winehq.key
+          sudo wget -qNP /etc/apt/sources.list.d/ https://dl.winehq.org/wine-builds/ubuntu/dists/noble/winehq-noble.sources
+          sudo apt-get update -qq
+          apt-cache madison winehq-stable | head -5
+          V=$(apt-cache madison winehq-stable | awk '{print $3}' | grep -E '^11\.0' | head -1)
+          if [ -n "$V" ]; then
+            sudo apt-get install -y --install-recommends winehq-stable=$V wine-stable=$V wine-stable-amd64=$V wine-stable-i386=$V
+          else
+            sudo apt-get install -y --install-recommends winehq-stable
+          fi
+          sudo apt-get install -y xvfb locales
+          sudo locale-gen en_US.UTF-8
+          wine --version
+
+      - name: Create the prefix
+        env:
+          WINEDEBUG: -all
+          WINEDLLOVERRIDES: "mscoree,mshtml="
+          LANG: en_US.UTF-8
+          TZ: UTC
+        run: xvfb-run -a wineboot -i > /dev/null 2>&1 || true
+
+      - name: Run under Wine
+        env:
+          WINEDEBUG: -all
+          WINEDLLOVERRIDES: "mscoree,mshtml="
+          LANG: en_US.UTF-8
+          TZ: UTC
+        run: |
+          cd bin
+          xvfb-run -a wine symrepro.exe --all > "$GITHUB_WORKSPACE/wine-${{ matrix.platform }}.txt" 2>/dev/null || true
+          grep -c '' "$GITHUB_WORKSPACE/wine-${{ matrix.platform }}.txt"
+          grep -E '\|#(harness|exception)\|' "$GITHUB_WORKSPACE/wine-${{ matrix.platform }}.txt" || true
+
+      - name: Upload output
+        uses: actions/upload-artifact@v4
+        with:
+          name: wine-${{ matrix.platform }}
+          path: wine-${{ matrix.platform }}.txt
+          retention-days: 30
+
+  compare:
+    name: Compare
+    needs: [windows, wine]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download outputs
+        uses: actions/download-artifact@v4
+        with:
+          path: out
+
+      - name: Diff Windows against Wine
+        run: |
+          ls -R out | head -40
+          for p in x64 Win32; do
+            w=out/symrepro-$p/windows-$p.txt
+            v=out/wine-$p/wine-$p.txt
+            if [ -f "$w" ] && [ -f "$v" ]; then
+              python3 symrepro/compare.py "$w" "$v" --md "report-$p.md" > /dev/null
+              cat "report-$p.md" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done
+          if [ -f out/symrepro-x64/windows-x64.txt ] && [ -f out/symrepro-ARM64/windows-ARM64.txt ]; then
+            python3 symrepro/compare.py out/symrepro-x64/windows-x64.txt out/symrepro-ARM64/windows-ARM64.txt --md report-win-x64-vs-arm64.md > /dev/null
+          fi
+
+      - name: Upload reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports
+          path: report-*.md
+          retention-days: 30

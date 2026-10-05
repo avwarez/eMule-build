@@ -1,0 +1,9 @@
+// A resource-only DLL, like eMule's lang\*.dll.
+#include <windows.h>
+
+STRINGTABLE
+BEGIN
+    1 "Ciao da una DLL di lingua"
+END
+
+1 RCDATA { "langdata\0" }

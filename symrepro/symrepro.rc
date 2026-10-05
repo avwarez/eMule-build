@@ -1,0 +1,38 @@
+// Fixtures for the resource, version and icon tests.
+#include <windows.h>
+#include "resource.h"
+
+IDR_MAP WIDECHARMAP "res\\map.bin"
+IDR_GIF GIF "res\\one.gif"
+IDI_SR ICON "res\\sr.ico"
+NAMED_ITEM RCDATA { "named\0" }
+
+STRINGTABLE
+BEGIN
+    IDS_HELLO "Hello from symrepro"
+    IDS_UNICODE L"\x6587\x4ef6 \x00e9"
+END
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 1,2,3,4
+ PRODUCTVERSION 5,6,7,8
+ FILEFLAGSMASK 0x3fL
+ FILEFLAGS 0x0L
+ FILEOS VOS_NT_WINDOWS32
+ FILETYPE VFT_APP
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"
+        BEGIN
+            VALUE "FileDescription", "symrepro probe"
+            VALUE "FileVersion", "1.2.3.4"
+            VALUE "ProductName", "symrepro"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END
