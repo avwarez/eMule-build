@@ -70,6 +70,15 @@ DWORD SpawnCapture(const std::wstring &cmdline, DWORD timeoutMs, std::string *ou
 // SpawnCapture of this exe with "--helper <args>".
 DWORD RunHelper(const std::wstring &args, std::string *output, DWORD timeoutMs = 20000);
 
+// Run f() and turn an SEH exception into a value: returns 0, or the
+// exception code. A crash inside an API under test is a result too.
+DWORD SehCall(void (*fn)(void*), void *ctx);
+template <class F> DWORD Guard(F &&f)
+{
+	return SehCall([](void *p) { (*(F*)p)(); }, &f);
+}
+std::string GuardStr(DWORD code);	// "" or " EXCEPTION=xxxxxxxx"
+
 // Small helpers used across the tests.
 bool WriteWholeFile(const std::wstring &path, const void *data, DWORD n);
 std::wstring Widen(const char *s);

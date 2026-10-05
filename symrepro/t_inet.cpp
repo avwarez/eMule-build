@@ -139,9 +139,14 @@ static void CALLBACK StatusCb(HINTERNET, DWORD_PTR ctx, DWORD status, LPVOID inf
 {
 	if (ctx != 0x5150)
 		return;
-	if (!s_status.empty() && s_status.back() != ' ')
-		s_status += ' ';
-	s_status += Fmt("%lu", status);
+	// The set of statuses, in order of first appearance: how many times a
+	// read is reported depends on buffering, not on behaviour.
+	std::string tok = Fmt(" %lu ", status);
+	if ((" " + s_status + " ").find(tok) == std::string::npos) {
+		if (!s_status.empty())
+			s_status += ' ';
+		s_status += Fmt("%lu", status);
+	}
 	if (status == INTERNET_STATUS_RESOLVING_NAME || status == INTERNET_STATUS_NAME_RESOLVED ||
 		status == INTERNET_STATUS_CONNECTING_TO_SERVER || status == INTERNET_STATUS_CONNECTED_TO_SERVER) {
 		INT f = IS_TEXT_UNICODE_UNICODE_MASK;
@@ -476,4 +481,46 @@ TEST(inet_CanonicalizeUrl)
 	::SetLastError(0);
 	BOOL r = ::InternetCanonicalizeUrlW(L"http://host/abcdef", sbuf, &sz, 0);
 	out("InternetCanonicalizeUrlW", "small", "r=%d err=%lu need=%lu", r, ::GetLastError(), sz);
+}
+
+TEST(inet_UrlClientChain)
+{
+	// CUrlClient::SetUrl (URLClient.cpp:55-121) in full: canonicalize with
+	// ICU_NO_ENCODE, canonicalize again with ICU_DECODE | ICU_NO_ENCODE |
+	// ICU_BROWSER_MODE, crack, then ICU_ENCODE_PERCENT for the request path.
+	// What eMule ends up sending as the URL of an HTTP source.
+	static const wchar_t *const urls[] = {
+		L"http://host/file.part", L"http://host:8080/dir/a b.mp3", L"http://host/a%20b.mp3", L"http://host/été.mp3",
+		L"http://host/%C3%A9t%C3%A9.mp3", L"http://1.2.3.4:4662/x?y=z", L"http://host/a%2Fb", L"http://host/a+b&c",
+		L"http://host/dir/../x", L"http://host:/x", L"http://user:pw@host/x", L"https://host/x", L"http://host/%25",
+	};
+	for (const wchar_t *u : urls) {
+		wchar_t c1[INTERNET_MAX_URL_LENGTH], c2[INTERNET_MAX_URL_LENGTH], enc[INTERNET_MAX_URL_LENGTH];
+		DWORD s1 = _countof(c1), s2 = _countof(c2), s3 = _countof(enc);
+		std::string res;
+		if (!::InternetCanonicalizeUrlW(u, c1, &s1, ICU_NO_ENCODE))
+			res = Fmt("step1 fail %lu", ::GetLastError());
+		else if (!::InternetCanonicalizeUrlW(c1, c2, &s2, ICU_DECODE | ICU_NO_ENCODE | ICU_BROWSER_MODE))
+			res = Fmt("step2 fail %lu", ::GetLastError());
+		else {
+			wchar_t scheme[32], host[256], user[64], pass[64], path[1024], extra[1024];
+			URL_COMPONENTSW c = {};
+			c.dwStructSize = sizeof c;
+			c.lpszScheme = scheme; c.dwSchemeLength = _countof(scheme);
+			c.lpszHostName = host; c.dwHostNameLength = _countof(host);
+			c.lpszUserName = user; c.dwUserNameLength = _countof(user);
+			c.lpszPassword = pass; c.dwPasswordLength = _countof(pass);
+			c.lpszUrlPath = path; c.dwUrlPathLength = _countof(path);
+			c.lpszExtraInfo = extra; c.dwExtraInfoLength = _countof(extra);
+			bool ok = ::InternetCrackUrlW(c2, 0, 0, &c) && c.dwSchemeLength && c.nScheme == INTERNET_SCHEME_HTTP && c.dwHostNameLength &&
+				!c.dwUserNameLength && !c.dwPasswordLength && c.dwUrlPathLength;
+			if (!ok)
+				res = "rejected";
+			else if (!::InternetCanonicalizeUrlW(c2, enc, &s3, ICU_ENCODE_PERCENT))
+				res = Fmt("step3 fail %lu", ::GetLastError());
+			else
+				res = Fmt("host=%s port=%u sent=%s", Q(host).c_str(), c.nPort, Q(enc).c_str());
+		}
+		out("InternetCanonicalizeUrlW", Fmt("seturl%s", Q(u).c_str()).c_str(), "%s", res.c_str());
+	}
 }

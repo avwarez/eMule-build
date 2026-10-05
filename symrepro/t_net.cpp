@@ -53,6 +53,10 @@ static Pair MakePair()
 	sockaddr_in a = Loop(Port(p.l));
 	::connect(p.c, (sockaddr*)&a, sizeof a);
 	p.s = ::accept(p.l, NULL, NULL);
+	// No test may wait forever on a recv that the other platform answers.
+	DWORD to = 2000;
+	::setsockopt(p.c, SOL_SOCKET, SO_RCVTIMEO, (const char*)&to, sizeof to);
+	::setsockopt(p.s, SOL_SOCKET, SO_RCVTIMEO, (const char*)&to, sizeof to);
 	return p;
 }
 
@@ -1271,15 +1275,19 @@ TEST(net_IpHelperTables)
 	for (DWORD code : {11010ul, 11013ul, 11003ul, 11050ul, 0ul, 99999ul}) {
 		WCHAR s[512];
 		DWORD n = 511;
-		r = ::GetIpErrorString(code, s, &n);
-		out("GetIpErrorString", Fmt("%lu", code).c_str(), "r=%lu", r);
+		r = 0xFFFFFFFF;
+		DWORD ex = Guard([&] { r = ::GetIpErrorString(code, s, &n); });
+		out("GetIpErrorString", Fmt("%lu", code).c_str(), "r=%lu%s", r, GuardStr(ex).c_str());
+		if (ex)
+			continue;
 		if (r == NO_ERROR)
 			out("GetIpErrorString", Fmt("~%lu.text", code).c_str(), "%s", Q(s).c_str());
 	}
 	WCHAR s2[4];
 	DWORD n = 3;
-	r = ::GetIpErrorString(11010, s2, &n);
-	out("GetIpErrorString", "small", "r=%lu n=%lu", r, n);
+	r = 0xFFFFFFFF;
+	DWORD ex = Guard([&] { r = ::GetIpErrorString(11010, s2, &n); });
+	out("GetIpErrorString", "small", "r=%lu n=%lu%s", r, n, GuardStr(ex).c_str());
 	::closesocket(u);
 	Close(p);
 }

@@ -153,6 +153,21 @@ std::string Hex(const void *p, size_t n)
 	return r;
 }
 
+DWORD SehCall(void (*fn)(void*), void *ctx)
+{
+	__try {
+		fn(ctx);
+	} __except (EXCEPTION_EXECUTE_HANDLER) {
+		return GetExceptionCode();
+	}
+	return 0;
+}
+
+std::string GuardStr(DWORD code)
+{
+	return code ? Fmt("EXCEPTION=%08lx", code) : std::string();
+}
+
 std::string B(BOOL r)
 {
 	DWORD e = ::GetLastError();

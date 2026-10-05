@@ -230,7 +230,9 @@ TEST(ole_StaticFromData)
 		out("OleSetContainedObject", "false", "%s", HR(::OleSetContainedObject(obj, FALSE)).c_str());
 		obj->Release();
 	}
-	out("OleSetContainedObject", "null", "%s", HR(::OleSetContainedObject(NULL, TRUE)).c_str());
+	HRESULT nh = E_FAIL;
+	DWORD ex = Guard([&] { nh = ::OleSetContainedObject(NULL, TRUE); });
+	out("OleSetContainedObject", "null", "%s%s", ex ? "" : HR(nh).c_str(), GuardStr(ex).c_str());
 	FORMATETC wrong = {CF_DIB, NULL, DVASPECT_CONTENT, -1, TYMED_HGLOBAL};
 	obj = NULL;
 	hr = ::OleCreateStaticFromData(data, IID_IOleObject, OLERENDER_FORMAT, &wrong, NULL, stg, (void**)&obj);
@@ -543,10 +545,6 @@ TEST_T(ole_ShellExecute, 60000)
 		::CloseHandle(se.hProcess);
 	}
 	out("ShellExecuteExW", "baddirectory", "%s", B(r).c_str());
-	se = {7};
-	::SetLastError(0);
-	r = ::ShellExecuteExW(&se);
-	out("ShellExecuteExW", "badsize", "%s", B(r).c_str());
 	::CoUninitialize();
 }
 

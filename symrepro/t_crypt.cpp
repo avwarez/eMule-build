@@ -157,8 +157,10 @@ TEST(crypt_CertStoreAndEncrypt)
 		for (const char *oid : {szOID_RSA_RC2CBC, szOID_RSA_RC4, szOID_NIST_AES256_CBC, "1.2.3.4.5"}) {
 			ep.ContentEncryptionAlgorithm.pszObjId = const_cast<LPSTR>(oid);
 			sz = 0;
-			r = ::CryptEncryptMessage(&ep, 1, &c, (const BYTE*)msg, sizeof msg - 1, NULL, &sz);
-			out("CryptEncryptMessage", Fmt("oid.%s", oid).c_str(), "%s", r ? "ok" : Fmt("fail err=%08lx", ::GetLastError()).c_str());
+			r = FALSE;
+			DWORD e = 0;
+			DWORD ex = Guard([&] { r = ::CryptEncryptMessage(&ep, 1, &c, (const BYTE*)msg, sizeof msg - 1, NULL, &sz); e = ::GetLastError(); });
+			out("CryptEncryptMessage", Fmt("oid.%s", oid).c_str(), "%s%s", r ? "ok" : Fmt("fail err=%08lx", e).c_str(), GuardStr(ex).c_str());
 		}
 		out("CertFreeCertificateContext", "found", "%s", B(::CertFreeCertificateContext(c)).c_str());
 	}
