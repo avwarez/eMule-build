@@ -527,16 +527,6 @@ TEST(sys_Exceptions)
 	} __except (Filter(GetExceptionInformation(), EXCEPTION_EXECUTE_HANDLER)) {
 	}
 	out("RaiseException", "toomanyparams", "code=%lx params=%lu", s_filtCode, s_filtParams);
-	// Continuing a non-continuable exception raises a new one.
-	DWORD outer = 0;
-	__try {
-		__try {
-			::RaiseException(0xE0001237, EXCEPTION_NONCONTINUABLE, 0, NULL);
-		} __except (EXCEPTION_CONTINUE_EXECUTION) {
-		}
-	} __except (outer = GetExceptionCode(), EXCEPTION_EXECUTE_HANDLER) {
-	}
-	out("RaiseException", "noncontinuable.continued", "outer=%lx", outer);
 
 	// Emule.cpp:336 - AddVectoredExceptionHandler(1, DiagAVHandler): sees
 	// every first-chance exception before any frame handler.
@@ -571,6 +561,22 @@ TEST(sys_Exceptions)
 	out("AddVectoredExceptionHandler", "outputdebugstring", "count=%ld code=%lx", s_vehCount, s_vehCount ? s_vehCode : 0);
 	out("AddVectoredExceptionHandler", "remove", "%lu", ::RemoveVectoredExceptionHandler(vh));
 	out("AddVectoredExceptionHandler", "remove.again", "%lu", ::RemoveVectoredExceptionHandler(vh));
+}
+
+HELPER(noncontinuable)
+{
+	// Continuing a non-continuable exception: the platform raises a new one.
+	::SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
+	DWORD outer = 0;
+	__try {
+		__try {
+			::RaiseException(0xE0001237, EXCEPTION_NONCONTINUABLE, 0, NULL);
+		} __except (EXCEPTION_CONTINUE_EXECUTION) {
+		}
+	} __except (outer = GetExceptionCode(), EXCEPTION_EXECUTE_HANDLER) {
+	}
+	printf("outer=%lx\n", outer);
+	return 0;
 }
 
 HELPER(unhandled)
@@ -625,6 +631,8 @@ TEST(sys_UnhandledAndExit)
 	out("SetUnhandledExceptionFilter", "av", "exit=%lx out=%s", code, QA(o.c_str()).c_str());
 	code = RunHelper(L"unhandled raise", &o);
 	out("SetUnhandledExceptionFilter", "raise", "exit=%lx out=%s", code, QA(o.c_str()).c_str());
+	code = RunHelper(L"noncontinuable", &o);
+	out("RaiseException", "noncontinuable.continued", "exit=%lx out=%s", code, QA(o.c_str()).c_str());
 	code = RunHelper(L"exitprocess 0", &o);
 	out("ExitProcess", "0", "exit=%lu out=%s", code, QA(o.c_str()).c_str());
 	code = RunHelper(L"exitprocess 7", &o);

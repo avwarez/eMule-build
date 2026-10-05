@@ -117,7 +117,10 @@ jobs:
           LANG: en_US.UTF-8
           TZ: UTC
         run: |
-          cd bin
+          # upload-artifact keeps the build-symrepro/Release/ path; srlang.dll
+          # must sit next to the exe.
+          cd "$(dirname "$(find bin -name symrepro.exe | head -1)")"
+          ls
           xvfb-run -a wine symrepro.exe --all > "$GITHUB_WORKSPACE/wine-${{ matrix.platform }}.txt" 2>/dev/null || true
           grep -c '' "$GITHUB_WORKSPACE/wine-${{ matrix.platform }}.txt"
           grep -E '\|#(harness|exception)\|' "$GITHUB_WORKSPACE/wine-${{ matrix.platform }}.txt" || true
