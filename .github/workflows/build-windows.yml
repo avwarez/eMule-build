@@ -191,7 +191,7 @@ jobs:
         run: git submodule foreach --recursive 'git fetch --tags --force origin || true'
 
       - name: Resolve submodule versions
-        # Prefer an exact tag match (cryptopp/mbedtls/miniupnp/resizablelib/
+        # Prefer an exact tag match (cryptopp/mbedtls/resizablelib/
         # zlib/emule are all pinned to real tags). avwarez/id3lib pins to a
         # *branch* named v3.9.1 instead of a tag (confirmed locally - no tag
         # object exists there at all, `git tag -l` is empty for that repo) -

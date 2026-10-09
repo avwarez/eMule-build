@@ -8,9 +8,6 @@
 [submodule "mbedtls"]
 	path = mbedtls
 	url = https://github.com/Mbed-TLS/mbedtls.git
-[submodule "miniupnp"]
-	path = miniupnp
-	url = https://github.com/miniupnp/miniupnp.git
 [submodule "resizablelib"]
 	path = resizablelib
 	url = https://github.com/avwarez/resizablelib.git

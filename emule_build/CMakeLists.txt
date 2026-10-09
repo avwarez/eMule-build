@@ -133,18 +133,12 @@ endif()
 # Several source files include their dependency by submodule-relative path -
 # e.g. EncryptedStreamSocket.h does #include "cryptopp/integer.h", WebServer.h
 # does #include "zlib/zlib.h" - so CMAKE_SOURCE_DIR (this repo's root, where
-# cryptopp/, zlib/, id3lib/, mbedtls/, miniupnp/, resizablelib/ all live as
+# cryptopp/, zlib/, id3lib/, mbedtls/, resizablelib/ all live as
 # sibling submodules) has to be on the include path, not emule/ (the eMule
 # submodule's own root, which holds none of them).
-# UPnPImplMiniLib.cpp does #include "miniupnpc\include\miniupnpc.h" - the
-# miniupnpc submodule lives at eMule-build/miniupnp/miniupnpc (miniupnp/miniupnp
-# is the upstream monorepo; "miniupnpc" is one of its subdirectories, not the
-# submodule's own directory name), so eMule-build/miniupnp is on the include
-# path here too, to make that one "miniupnpc/..." segment in the #include resolve.
 target_include_directories(emule PRIVATE
     ${EMULE_SRC_DIR}
     ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/miniupnp
     ${ATLMFC_SRC_MFC}
 )
 
@@ -216,7 +210,6 @@ target_link_libraries(emule PRIVATE
     cryptopp
     id3lib
     zlibstatic
-    miniupnpc::miniupnpc
     resizablelib
 )
 

@@ -5,7 +5,7 @@ project(eMule VERSION 0.72 LANGUAGES CXX RC)
 # This build targets the original MFC/Windows application, as built today by
 # srchybrid/emule.vcxproj (MSVC + static MFC/ATL). It is Windows-only.
 #
-# All third-party dependencies (mbedtls, cryptopp, id3lib, zlib, miniupnpc,
+# All third-party dependencies (mbedtls, cryptopp, id3lib, zlib,
 # resizablelib) are vendored as vanilla git submodules - see each
 # add_subdirectory() below and the corresponding *_build/CMakeLists.txt for
 # the ones with no CMake support of their own.
@@ -19,7 +19,7 @@ endif()
 # Every dependency here is meant to link statically against the MSVC CRT
 # (matching emule.vcxproj's own UseOfMfc=Static philosophy - MSVC_RUNTIME_LIBRARY
 # is set to "MultiThreaded$<$<CONFIG:Debug>:Debug>" on every *_build target
-# below). zlib, miniupnpc and mbedtls/tf-psa-crypto have their own upstream
+# below). zlib and mbedtls/tf-psa-crypto have their own upstream
 # CMakeLists.txt that we don't edit, and none of them set this explicitly, so
 # without this they fall back to CMake's own default (dynamic CRT, /MD) -
 # confirmed by an actual build attempt: LNK2001 on __imp_close/__imp_read/
@@ -70,6 +70,7 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          or one branch no supported Windows ever takes, or one run-time
 #          lookup of an API every supported Windows has - small on purpose,
 #          so each can be judged on its own.
+#   89     port mapping. 89a takes miniupnpc out.
 #   90-94  the code compiles but /Wall flags it; these bring the warning
 #          count back to zero.
 #   95-96  the code compiles and is warning-clean but is not correct on
@@ -173,13 +174,10 @@ endfunction()
 # eMule is the only target that compiles at C++23 (see emule_build/
 # CMakeLists.txt), but cryptopp/id3lib/resizablelib headers get pulled into
 # its translation units and are therefore parsed under that same standard.
-# miniupnp is plain C and is otherwise built vanilla (see further down); it is
-# listed here only so its one warning fix has somewhere to live.
 emule_apply_patches(emule emule_build)
 emule_apply_patches(cryptopp cryptopp_build)
 emule_apply_patches(id3lib id3lib_build)
 emule_apply_patches(resizablelib resizablelib_build)
-emule_apply_patches(miniupnp miniupnpc_build)
 
 # ---------------------------------------------------------------------------
 # mbedtls - vanilla git submodule (mbedtls/, with nested tf-psa-crypto/ and
@@ -258,22 +256,6 @@ target_compile_options(zlibstatic PRIVATE $<$<C_COMPILER_ID:MSVC>:/W3>)
 # no CMake support of its own (see that file for why).
 # ---------------------------------------------------------------------------
 add_subdirectory(id3lib_build)
-
-# ---------------------------------------------------------------------------
-# miniupnpc - near-vanilla git submodule (miniupnp/, miniupnp/miniupnp pinned
-# to tag miniupnpc_2_3_3), carrying one warning patch from miniupnpc_build/.
-# That's the upstream monorepo (also contains
-# miniupnpd, minissdpd, ...) - only its miniupnpc/ subdirectory is built,
-# which has its own CMakeLists.txt (add_subdirectory() alone is enough).
-# Static lib only, no samples/tests/install, matching every other dependency
-# here.
-# ---------------------------------------------------------------------------
-set(UPNPC_BUILD_STATIC ON CACHE BOOL "eMule only needs the static miniupnpc lib" FORCE)
-set(UPNPC_BUILD_SHARED OFF CACHE BOOL "eMule only needs the static miniupnpc lib" FORCE)
-set(UPNPC_BUILD_TESTS OFF CACHE BOOL "Don't build miniupnpc's own test executables" FORCE)
-set(UPNPC_BUILD_SAMPLE OFF CACHE BOOL "Don't build miniupnpc's own sample executables" FORCE)
-set(UPNPC_NO_INSTALL ON CACHE BOOL "Don't add install() rules for a vendored submodule" FORCE)
-add_subdirectory(miniupnp/miniupnpc)
 
 # ---------------------------------------------------------------------------
 # ResizableLib - git submodule (resizablelib/, avwarez/resizablelib pinned to

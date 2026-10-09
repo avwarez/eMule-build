@@ -290,9 +290,6 @@ within our distribution. You need the following libs:
 *) Mbed TLS 4.2.0
         https://www.trustedfirmware.org/projects/mbed-tls/
 
-*) miniupnpc 2.3.3
-        http://miniupnp.free.fr
-
 *) ResizableLib 1.5.3
         https://github.com/ppescher/resizablelib
 

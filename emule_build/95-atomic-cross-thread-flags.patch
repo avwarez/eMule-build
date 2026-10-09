@@ -220,26 +220,6 @@ index 16cec42..bf802f4 100644
  	uint16 m_nOldTCPPort;
  	uint16 m_nOldTCPWebPort;
  	uint16 m_nOldUDPPort;
-diff --git a/srchybrid/UPnPImplMiniLib.h b/srchybrid/UPnPImplMiniLib.h
-index a556108..8479edd 100644
---- a/srchybrid/UPnPImplMiniLib.h
-+++ b/srchybrid/UPnPImplMiniLib.h
-@@ -15,6 +15,7 @@
- //along with this program; if not, write to the Free Software
- //Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
- #pragma once
-+#include <atomic>
- #include "UPnPImpl.h"
- 
- struct UPNPUrls;
-@@ -67,5 +68,5 @@ private:
- 	char m_achWanIP[40];
- 
- 	bool m_bSucceededOnce;
--	volatile bool m_bAbortDiscovery;
-+	std::atomic<bool> m_bAbortDiscovery;
- };
-\ No newline at end of file
 diff --git a/srchybrid/UploadBandwidthThrottler.h b/srchybrid/UploadBandwidthThrottler.h
 index 4a59467..1bd1d4a 100644
 --- a/srchybrid/UploadBandwidthThrottler.h
