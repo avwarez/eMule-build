@@ -6,7 +6,7 @@ project(eMule VERSION 0.72 LANGUAGES CXX RC)
 # srchybrid/emule.vcxproj (MSVC + static MFC/ATL). It is Windows-only.
 #
 # All third-party dependencies (mbedtls, cryptopp, id3lib, zlib, miniupnpc,
-# libnatpmp, resizablelib) are vendored as vanilla git submodules - see each
+# resizablelib) are vendored as vanilla git submodules - see each
 # add_subdirectory() below and the corresponding *_build/CMakeLists.txt for
 # the ones with no CMake support of their own.
 # ---------------------------------------------------------------------------
@@ -70,9 +70,6 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          or one branch no supported Windows ever takes, or one run-time
 #          lookup of an API every supported Windows has - small on purpose,
 #          so each can be judged on its own.
-#   89     new features: something eMule could not do before, added without
-#          changing what it already does. 89a: port mapping through NAT-PMP
-#          (libnatpmp), tried only when UPnP fails.
 #   90-94  the code compiles but /Wall flags it; these bring the warning
 #          count back to zero.
 #   95-96  the code compiles and is warning-clean but is not correct on
@@ -277,16 +274,6 @@ set(UPNPC_BUILD_TESTS OFF CACHE BOOL "Don't build miniupnpc's own test executabl
 set(UPNPC_BUILD_SAMPLE OFF CACHE BOOL "Don't build miniupnpc's own sample executables" FORCE)
 set(UPNPC_NO_INSTALL ON CACHE BOOL "Don't add install() rules for a vendored submodule" FORCE)
 add_subdirectory(miniupnp/miniupnpc)
-
-# ---------------------------------------------------------------------------
-# libnatpmp - vanilla git submodule (libnatpmp/, miniupnp/libnatpmp pinned to
-# commit 134fc89, April 2025 - the project has no release tags), for the
-# NAT-PMP port mapping that emule_build/89a adds next to miniupnpc. Its own
-# CMakeLists.txt always builds the natpmpc and testgetgateway executables and
-# adds install() rules; EXCLUDE_FROM_ALL keeps all of that out of the build,
-# and the natpmp static library is still built because emule links it.
-# ---------------------------------------------------------------------------
-add_subdirectory(libnatpmp EXCLUDE_FROM_ALL)
 
 # ---------------------------------------------------------------------------
 # ResizableLib - git submodule (resizablelib/, avwarez/resizablelib pinned to
