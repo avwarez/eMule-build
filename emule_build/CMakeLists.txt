@@ -141,6 +141,8 @@ endif()
 # is the upstream monorepo; "miniupnpc" is one of its subdirectories, not the
 # submodule's own directory name), so eMule-build/miniupnp is on the include
 # path here too, to make that one "miniupnpc/..." segment in the #include resolve.
+# UPnPImplNatPmp.cpp (added by 89a) does #include "libnatpmp\natpmp.h", which
+# CMAKE_SOURCE_DIR already resolves.
 target_include_directories(emule PRIVATE
     ${EMULE_SRC_DIR}
     ${CMAKE_SOURCE_DIR}
@@ -217,6 +219,7 @@ target_link_libraries(emule PRIVATE
     id3lib
     zlibstatic
     miniupnpc::miniupnpc
+    natpmp
     resizablelib
 )
 

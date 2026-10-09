@@ -22,3 +22,6 @@
 	path = emule
 	url = git@github.com:avwarez/eMule.git
 	branch = v0.72a
+[submodule "libnatpmp"]
+	path = libnatpmp
+	url = https://github.com/miniupnp/libnatpmp.git
