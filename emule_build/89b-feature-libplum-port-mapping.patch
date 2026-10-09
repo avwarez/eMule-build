@@ -25,7 +25,7 @@ index 597ea49..8f2cbb3 100644
  
 diff --git a/srchybrid/UPnPImplLibPlum.cpp b/srchybrid/UPnPImplLibPlum.cpp
 new file mode 100644
-index 0000000..f6ee7e9
+index 0000000..80682f1
 --- /dev/null
 +++ b/srchybrid/UPnPImplLibPlum.cpp
 @@ -0,0 +1,316 @@
@@ -282,7 +282,7 @@ index 0000000..f6ee7e9
 +	SendResultMessage();
 +}
 +
-+void CUPnPImplLibPlum::MappingCallback(int nId, plum_state_t eState, const plum_mapping_t *pMapping)
++void CUPnPImplLibPlum::MappingCallback(int nId, plum_state_t eState, const plum_mapping_t *pMapping) noexcept
 +{
 +	// Called on libplum's thread, with libplum's lock held. DESTROYED only confirms what
 +	// DestroyMappings() already let go of. Nothing may be thrown back into C code.
@@ -331,7 +331,7 @@ index 0000000..f6ee7e9
 +		plum_destroy_mapping(nId);
 +}
 +
-+void CUPnPImplLibPlum::LogCallback(plum_log_level_t eLevel, const char *pszMessage)
++void CUPnPImplLibPlum::LogCallback(plum_log_level_t eLevel, const char *pszMessage) noexcept
 +{
 +	try {
 +		if (eLevel >= PLUM_LOG_LEVEL_ERROR)
@@ -347,7 +347,7 @@ index 0000000..f6ee7e9
 +}
 diff --git a/srchybrid/UPnPImplLibPlum.h b/srchybrid/UPnPImplLibPlum.h
 new file mode 100644
-index 0000000..27e3801
+index 0000000..7456006
 --- /dev/null
 +++ b/srchybrid/UPnPImplLibPlum.h
 @@ -0,0 +1,74 @@
@@ -411,8 +411,8 @@ index 0000000..27e3801
 +		EMapState eState;
 +	};
 +
-+	static void MappingCallback(int nId, plum_state_t eState, const plum_mapping_t *pMapping);
-+	static void LogCallback(plum_log_level_t eLevel, const char *pszMessage);
++	static void MappingCallback(int nId, plum_state_t eState, const plum_mapping_t *pMapping) noexcept;
++	static void LogCallback(plum_log_level_t eLevel, const char *pszMessage) noexcept;
 +	void OnMapping(int nId, plum_state_t eState, const plum_mapping_t &mapping);
 +	bool Init();
 +	void SetMapping(EMapping eMapping, uint16 nPort);
