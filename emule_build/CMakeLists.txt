@@ -133,9 +133,11 @@ endif()
 # Several source files include their dependency by submodule-relative path -
 # e.g. EncryptedStreamSocket.h does #include "cryptopp/integer.h", WebServer.h
 # does #include "zlib/zlib.h" - so CMAKE_SOURCE_DIR (this repo's root, where
-# cryptopp/, zlib/, id3lib/, mbedtls/, resizablelib/ all live as
+# cryptopp/, zlib/, id3lib/, mbedtls/, libplum/, resizablelib/ all live as
 # sibling submodules) has to be on the include path, not emule/ (the eMule
 # submodule's own root, which holds none of them).
+# UPnPImplLibPlum.h (added by 89b) does #include "libplum\include\plum\plum.h",
+# which CMAKE_SOURCE_DIR already resolves.
 target_include_directories(emule PRIVATE
     ${EMULE_SRC_DIR}
     ${CMAKE_SOURCE_DIR}
@@ -210,6 +212,7 @@ target_link_libraries(emule PRIVATE
     cryptopp
     id3lib
     zlibstatic
+    LibPlum::LibPlumStatic
     resizablelib
 )
 

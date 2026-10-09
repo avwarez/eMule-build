@@ -19,3 +19,6 @@
 	path = emule
 	url = git@github.com:avwarez/eMule.git
 	branch = v0.72a
+[submodule "libplum"]
+	path = libplum
+	url = https://github.com/paullouisageneau/libplum.git

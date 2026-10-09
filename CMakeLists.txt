@@ -5,7 +5,7 @@ project(eMule VERSION 0.72 LANGUAGES CXX RC)
 # This build targets the original MFC/Windows application, as built today by
 # srchybrid/emule.vcxproj (MSVC + static MFC/ATL). It is Windows-only.
 #
-# All third-party dependencies (mbedtls, cryptopp, id3lib, zlib,
+# All third-party dependencies (mbedtls, cryptopp, id3lib, zlib, libplum,
 # resizablelib) are vendored as vanilla git submodules - see each
 # add_subdirectory() below and the corresponding *_build/CMakeLists.txt for
 # the ones with no CMake support of their own.
@@ -19,7 +19,7 @@ endif()
 # Every dependency here is meant to link statically against the MSVC CRT
 # (matching emule.vcxproj's own UseOfMfc=Static philosophy - MSVC_RUNTIME_LIBRARY
 # is set to "MultiThreaded$<$<CONFIG:Debug>:Debug>" on every *_build target
-# below). zlib and mbedtls/tf-psa-crypto have their own upstream
+# below). zlib, libplum and mbedtls/tf-psa-crypto have their own upstream
 # CMakeLists.txt that we don't edit, and none of them set this explicitly, so
 # without this they fall back to CMake's own default (dynamic CRT, /MD) -
 # confirmed by an actual build attempt: LNK2001 on __imp_close/__imp_read/
@@ -70,7 +70,9 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          or one branch no supported Windows ever takes, or one run-time
 #          lookup of an API every supported Windows has - small on purpose,
 #          so each can be judged on its own.
-#   89     port mapping. 89a takes miniupnpc out.
+#   89     port mapping. 89a takes miniupnpc out, 89b puts libplum in its
+#          place: one library that tries PCP, NAT-PMP and UPnP-IGD in turn
+#          and keeps the mappings alive on its own.
 #   90-94  the code compiles but /Wall flags it; these bring the warning
 #          count back to zero.
 #   95-96  the code compiles and is warning-clean but is not correct on
@@ -256,6 +258,26 @@ target_compile_options(zlibstatic PRIVATE $<$<C_COMPILER_ID:MSVC>:/W3>)
 # no CMake support of its own (see that file for why).
 # ---------------------------------------------------------------------------
 add_subdirectory(id3lib_build)
+
+# ---------------------------------------------------------------------------
+# libplum - vanilla git submodule (libplum/, paullouisageneau/libplum pinned to
+# tag v0.6.0), for the port mapping emule_build/89b adds (PCP, NAT-PMP and
+# UPnP-IGD). Has its own CMakeLists.txt. Two things in it must not reach the
+# rest of this build:
+# - option(BUILD_SHARED_LIBS ... ON) would put ON in the cache, and every
+#   add_library() without STATIC/SHARED added after it would become a DLL.
+#   Set OFF first, which is what an unset BUILD_SHARED_LIBS already means.
+# - the shared plum target and the example program are built by default;
+#   EXCLUDE_FROM_ALL keeps them out, and plum-static (already EXCLUDE_FROM_ALL
+#   upstream) is still built because emule links it. It declares PLUM_STATIC
+#   PUBLIC, so eMule's #include of plum.h does not ask for __declspec(dllimport).
+# Upstream builds it on MSVC with no warning level of its own (CMP0092 NEW):
+# stated as /W3 here, as for zlib.
+# ---------------------------------------------------------------------------
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "Every vendored library is built static" FORCE)
+set(PLUM_NO_EXAMPLE ON CACHE BOOL "Don't build libplum's own example program" FORCE)
+add_subdirectory(libplum EXCLUDE_FROM_ALL)
+target_compile_options(plum-static PRIVATE $<$<C_COMPILER_ID:MSVC>:/W3>)
 
 # ---------------------------------------------------------------------------
 # ResizableLib - git submodule (resizablelib/, avwarez/resizablelib pinned to

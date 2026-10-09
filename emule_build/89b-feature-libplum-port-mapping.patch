@@ -1,0 +1,494 @@
+diff --git a/srchybrid/Preferences.cpp b/srchybrid/Preferences.cpp
+index 346cc12..b843ed7 100644
+--- a/srchybrid/Preferences.cpp
++++ b/srchybrid/Preferences.cpp
+@@ -2385,7 +2385,7 @@ void CPreferences::LoadPreferences()
+ 	//
+ 	m_bEnableUPnP = ini.GetBool(_T("EnableUPnP"), false, _T("UPnP"));
+ 	m_bCloseUPnPOnExit = ini.GetBool(_T("CloseUPnPOnExit"), true);
+-	m_nLastWorkingImpl = ini.GetInt(_T("LastWorkingImplementation"), 1 /*UPNP_IMPL_NONE*/);
++	m_nLastWorkingImpl = ini.GetInt(_T("LastWorkingImplementation"), 1 /*UPNP_IMPL_LIBPLUM*/);
+ 
+ 	LoadCats();
+ 	SetLanguage();
+diff --git a/srchybrid/UPnPImpl.h b/srchybrid/UPnPImpl.h
+index 597ea49..8f2cbb3 100644
+--- a/srchybrid/UPnPImpl.h
++++ b/srchybrid/UPnPImpl.h
+@@ -27,6 +27,7 @@ enum TRISTATE
+ enum UPNP_IMPLEMENTATION
+ {
+ 	UPNP_IMPL_WINDOWSERVICE = 0,
++	UPNP_IMPL_LIBPLUM,
+ 	UPNP_IMPL_NONE	/*last*/
+ };
+ 
+diff --git a/srchybrid/UPnPImplLibPlum.cpp b/srchybrid/UPnPImplLibPlum.cpp
+new file mode 100644
+index 0000000..f6ee7e9
+--- /dev/null
++++ b/srchybrid/UPnPImplLibPlum.cpp
+@@ -0,0 +1,316 @@
++//this file is part of eMule
++//Copyright (C)2002-2026 Merkur ( strEmail.Format("%s@%s", "devteam", "emule-project.net") / https://www.emule-project.net )
++//
++//This program is free software; you can redistribute it and/or
++//modify it under the terms of the GNU General Public License
++//as published by the Free Software Foundation; either
++//version 2 of the License, or (at your option) any later version.
++//
++//This program is distributed in the hope that it will be useful,
++//but WITHOUT ANY WARRANTY; without even the implied warranty of
++//MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	See the
++//GNU General Public License for more details.
++//
++//You should have received a copy of the GNU General Public License
++//along with this program; if not, write to the Free Software
++//Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
++#include "StdAfx.h"
++#include "UPnPImplLibPlum.h"
++#include "Log.h"
++
++#ifdef _DEBUG
++#define new DEBUG_NEW
++#undef THIS_FILE
++static char THIS_FILE[] = __FILE__;
++#endif
++
++static LPCTSTR const sTCP = _T("TCP");
++static LPCTSTR const sUDP = _T("UDP");
++
++// libplum spends up to the first on each protocol it tries (PCP and NAT-PMP, then UPnP-IGD)
++// and up to the second on each port, so a discovery stays well within the 40 seconds eMule
++// waits for it. The second also bounds how long a shutdown waits for the ports to be removed.
++static const int PLUM_DISCOVER_TIMEOUT = 5000;	// ms
++static const int PLUM_MAPPING_TIMEOUT = 5000;	// ms
++
++static LPCTSTR MappingProtocolName(plum_mapping_protocol_t eProtocol)
++{
++	switch (eProtocol) {
++	case PLUM_MAPPING_PROTOCOL_PCP:
++		return _T("PCP");
++	case PLUM_MAPPING_PROTOCOL_NATPMP:
++		return _T("NAT-PMP");
++	case PLUM_MAPPING_PROTOCOL_UPNP:
++		return _T("UPnP-IGD");
++	case PLUM_MAPPING_PROTOCOL_DIRECT:
++		return _T("no mapping, the local address is public");
++	case PLUM_MAPPING_PROTOCOL_UNKNOWN:
++	default:
++		return _T("unknown protocol");
++	}
++}
++
++CUPnPImplLibPlum::CUPnPImplLibPlum()
++	: m_aMappings()
++	, m_bDiscovering()
++	, m_bInitialized()
++{
++	for (int i = 0; i < MAP_COUNT; ++i)
++		m_aMappings[i].nId = -1;
++}
++
++CUPnPImplLibPlum::~CUPnPImplLibPlum()
++{
++	// Stops libplum's thread. It first removes the mappings DeletePorts() destroyed; the ones
++	// still alive are only forgotten, and the gateway drops them when their lease runs out.
++	if (m_bInitialized)
++		plum_cleanup();
++}
++
++bool CUPnPImplLibPlum::Init()
++{
++	if (!m_bInitialized) {
++		plum_config_t config = {};
++		config.log_level = PLUM_LOG_LEVEL_INFO;
++		config.log_callback = LogCallback;
++		config.discover_timeout = PLUM_DISCOVER_TIMEOUT;
++		config.mapping_timeout = PLUM_MAPPING_TIMEOUT;
++		int nResult = plum_init(&config);
++		if (nResult != PLUM_ERR_SUCCESS) {
++			DebugLogError(_T("libplum: initialisation failed (%d)"), nResult);
++			return false;
++		}
++		m_bInitialized = true;
++	}
++	return true;
++}
++
++bool CUPnPImplLibPlum::IsReady()
++{
++	return !m_bDiscovering;
++}
++
++void CUPnPImplLibPlum::StopAsyncFind()
++{
++	// Nothing to abort: what libplum has mapped stays, until DeletePorts() or the destructor.
++	// A discovery given up on must not report later, though.
++	CSingleLock lock(&m_csMappings, TRUE);
++	m_bDiscovering = false;
++	SetMessageOnResult(NULL, 0);
++}
++
++void CUPnPImplLibPlum::DeletePorts()
++{
++	DestroyMappings();
++	CSingleLock lock(&m_csMappings, TRUE);
++	m_nUDPPort = 0;
++	m_nTCPPort = 0;
++	m_nTCPWebPort = 0;
++	m_nOldUDPPort = 0;
++	m_nOldTCPPort = 0;
++	m_nOldTCPWebPort = 0;
++	m_bUPnPPortsForwarded = TRIS_FALSE;
++	m_bDiscovering = false;
++}
++
++void CUPnPImplLibPlum::StartDiscovery(uint16 nTCPPort, uint16 nUDPPort, uint16 nTCPWebPort)
++{
++	DebugLog(_T("Using libplum based implementation (PCP, NAT-PMP, UPnP-IGD)"));
++	DebugLog(_T("libplum (c) 2021-2026 Paul-Louis Ageneau - https://github.com/paullouisageneau/libplum"));
++	// the old ports, if any, are removed before the new ones are mapped
++	DestroyMappings();
++	m_bCheckAndRefresh = false;
++	if (!Init()) {
++		m_bUPnPPortsForwarded = TRIS_FALSE;
++		SendResultMessage();
++		return;
++	}
++	{
++		CSingleLock lock(&m_csMappings, TRUE);
++		m_nUDPPort = nUDPPort;
++		m_nTCPPort = nTCPPort;
++		m_nTCPWebPort = nTCPWebPort;
++		m_nOldUDPPort = 0;
++		m_nOldTCPPort = 0;
++		m_nOldTCPWebPort = 0;
++		m_bUPnPPortsForwarded = TRIS_UNKNOWN;
++		m_bDiscovering = true;
++		SetMapping(MAP_TCP, nTCPPort);
++		SetMapping(MAP_UDP, nUDPPort);
++		SetMapping(MAP_WEB, nTCPWebPort);
++	}
++	for (int i = 0; i < MAP_COUNT; ++i)
++		CreateMapping(static_cast<EMapping>(i));
++	CSingleLock lock(&m_csMappings, TRUE);
++	UpdateResult();
++}
++
++bool CUPnPImplLibPlum::CheckAndRefresh()
++{
++	if (m_bDiscovering || ArePortsForwarded() != TRIS_TRUE) {
++		DebugLog(_T("Not refreshing libplum ports because they don't seem to be forwarded in the first place"));
++		return false;
++	}
++
++	// the Web Interface port may have been switched on, off or moved (LateEnableWebServerPort)
++	int nOldWebId = -1;
++	bool bNewWeb = false;
++	{
++		CSingleLock lock(&m_csMappings, TRUE);
++		if (m_aMappings[MAP_WEB].nPort != m_nTCPWebPort) {
++			nOldWebId = m_aMappings[MAP_WEB].nId;
++			SetMapping(MAP_WEB, m_nTCPWebPort);
++			bNewWeb = (m_nTCPWebPort != 0);
++		}
++	}
++	if (nOldWebId >= 0)
++		plum_destroy_mapping(nOldWebId);
++	if (bNewWeb)
++		CreateMapping(MAP_WEB);
++
++	// libplum checks and renews the mappings by itself: report what it found last
++	DebugLog(_T("Checking libplum ports: they are kept mapped"));
++	CSingleLock lock(&m_csMappings, TRUE);
++	m_bCheckAndRefresh = true;
++	SendResultMessage();
++	return true;
++}
++
++void CUPnPImplLibPlum::SetMapping(EMapping eMapping, uint16 nPort)
++{
++	// m_csMappings must be held
++	SMapping &mapping = m_aMappings[eMapping];
++	mapping.nId = -1;
++	mapping.nPort = nPort;
++	mapping.eState = (nPort != 0) ? MAPSTATE_PENDING : MAPSTATE_NONE;
++}
++
++void CUPnPImplLibPlum::CreateMapping(EMapping eMapping)
++{
++	plum_mapping_t mapping = {};
++	{
++		CSingleLock lock(&m_csMappings, TRUE);
++		if (m_aMappings[eMapping].eState != MAPSTATE_PENDING)
++			return;
++		mapping.internal_port = m_aMappings[eMapping].nPort;
++	}
++	mapping.protocol = (eMapping == MAP_UDP) ? PLUM_IP_PROTOCOL_UDP : PLUM_IP_PROTOCOL_TCP;
++	mapping.external_port = mapping.internal_port;	// eMule announces its own ports: the public ones must be the same
++	mapping.user_ptr = this;
++	const int nId = plum_create_mapping(&mapping, MappingCallback);
++
++	CSingleLock lock(&m_csMappings, TRUE);
++	SMapping &slot = m_aMappings[eMapping];
++	if (nId < 0) {
++		DebugLogError(_T("libplum: cannot map %s port %hu (%d)"), (eMapping == MAP_UDP) ? sUDP : sTCP, mapping.internal_port, nId);
++		slot.eState = MAPSTATE_FAILED;
++		UpdateResult();
++	} else if (slot.eState == MAPSTATE_PENDING)
++		slot.nId = nId;	// otherwise the callback already came, and set it
++}
++
++void CUPnPImplLibPlum::DestroyMappings()
++{
++	int aIds[MAP_COUNT];
++	int nCount = 0;
++	{
++		CSingleLock lock(&m_csMappings, TRUE);
++		for (int i = 0; i < MAP_COUNT; ++i) {
++			if (m_aMappings[i].nId >= 0)
++				aIds[nCount++] = m_aMappings[i].nId;
++			SetMapping(static_cast<EMapping>(i), 0);
++		}
++	}
++	// libplum's thread removes them from the gateway, before any mapping created after this
++	for (int i = 0; i < nCount; ++i)
++		plum_destroy_mapping(aIds[i]);
++}
++
++void CUPnPImplLibPlum::UpdateResult()
++{
++	// m_csMappings must be held
++	for (int i = 0; i < MAP_COUNT; ++i)
++		if (m_aMappings[i].eState == MAPSTATE_PENDING)
++			return;
++
++	// don't fail if only the Web Interface port fails for some reason
++	const bool bSucceeded = m_aMappings[MAP_TCP].eState == MAPSTATE_OK
++		&& (m_aMappings[MAP_UDP].eState == MAPSTATE_NONE || m_aMappings[MAP_UDP].eState == MAPSTATE_OK);
++	const TRISTATE eForwarded = bSucceeded ? TRIS_TRUE : TRIS_FALSE;
++	if (!m_bDiscovering) {
++		if (eForwarded == m_bUPnPPortsForwarded)
++			return;
++		// libplum lost the mappings at a renewal, or made them again on a later attempt
++		if (bSucceeded)
++			DebugLog(_T("libplum: the ports are mapped again"));
++		else
++			DebugLogWarning(_T("libplum: the ports are no longer mapped"));
++	}
++	m_bDiscovering = false;
++	m_bUPnPPortsForwarded = eForwarded;
++	SendResultMessage();
++}
++
++void CUPnPImplLibPlum::MappingCallback(int nId, plum_state_t eState, const plum_mapping_t *pMapping)
++{
++	// Called on libplum's thread, with libplum's lock held. DESTROYED only confirms what
++	// DestroyMappings() already let go of. Nothing may be thrown back into C code.
++	if ((eState != PLUM_STATE_SUCCESS && eState != PLUM_STATE_FAILURE) || pMapping == NULL || pMapping->user_ptr == NULL)
++		return;
++	try {
++		static_cast<CUPnPImplLibPlum*>(pMapping->user_ptr)->OnMapping(nId, eState, *pMapping);
++	} catch (CException *ex) {
++		ex->Delete();
++	} catch (...) {
++	}
++}
++
++void CUPnPImplLibPlum::OnMapping(int nId, plum_state_t eState, const plum_mapping_t &mapping)
++{
++	const bool bTCP = (mapping.protocol == PLUM_IP_PROTOCOL_TCP);
++	LPCTSTR pszProt = bTCP ? sTCP : sUDP;
++	bool bDrop = false;
++	{
++		CSingleLock lock(&m_csMappings, TRUE);
++		SMapping *pSlot = NULL;
++		for (int i = 0; i < MAP_COUNT && pSlot == NULL; ++i)
++			if (m_aMappings[i].eState != MAPSTATE_NONE && m_aMappings[i].nPort == mapping.internal_port && (i == MAP_UDP) != bTCP)
++				pSlot = &m_aMappings[i];
++		if (pSlot == NULL)
++			return;	// a mapping let go of meanwhile
++
++		pSlot->nId = nId;
++		if (eState != PLUM_STATE_SUCCESS) {
++			// libplum keeps trying, and calls again if it succeeds later
++			DebugLogWarning(_T("libplum: mapping %s port %hu failed"), pszProt, mapping.internal_port);
++			pSlot->eState = MAPSTATE_FAILED;
++		} else if (mapping.external_port != mapping.internal_port) {
++			// UPnP-IGD picks another public port when ours is taken on the gateway
++			DebugLogWarning(_T("libplum: the gateway mapped %s port %hu to public port %hu - considering as failed"), pszProt, mapping.internal_port, mapping.external_port);
++			pSlot->nId = -1;
++			pSlot->eState = MAPSTATE_FAILED;
++			bDrop = true;
++		} else {
++			DebugLog(_T("libplum: mapped %s port %hu through %s, public address %hs"), pszProt, mapping.internal_port, MappingProtocolName(mapping.mapping_protocol), mapping.external_host);
++			pSlot->eState = MAPSTATE_OK;
++		}
++		UpdateResult();
++	}
++	if (bDrop)
++		plum_destroy_mapping(nId);
++}
++
++void CUPnPImplLibPlum::LogCallback(plum_log_level_t eLevel, const char *pszMessage)
++{
++	try {
++		if (eLevel >= PLUM_LOG_LEVEL_ERROR)
++			DebugLogError(_T("libplum: %hs"), pszMessage);
++		else if (eLevel == PLUM_LOG_LEVEL_WARN)
++			DebugLogWarning(_T("libplum: %hs"), pszMessage);
++		else
++			DebugLog(_T("libplum: %hs"), pszMessage);
++	} catch (CException *ex) {
++		ex->Delete();
++	} catch (...) {
++	}
++}
+diff --git a/srchybrid/UPnPImplLibPlum.h b/srchybrid/UPnPImplLibPlum.h
+new file mode 100644
+index 0000000..27e3801
+--- /dev/null
++++ b/srchybrid/UPnPImplLibPlum.h
+@@ -0,0 +1,74 @@
++//this file is part of eMule
++//Copyright (C)2002-2026 Merkur ( strEmail.Format("%s@%s", "devteam", "emule-project.net") / https://www.emule-project.net )
++//
++//This program is free software; you can redistribute it and/or
++//modify it under the terms of the GNU General Public License
++//as published by the Free Software Foundation; either
++//version 2 of the License, or (at your option) any later version.
++//
++//This program is distributed in the hope that it will be useful,
++//but WITHOUT ANY WARRANTY; without even the implied warranty of
++//MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	See the
++//GNU General Public License for more details.
++//
++//You should have received a copy of the GNU General Public License
++//along with this program; if not, write to the Free Software
++//Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
++#pragma once
++#include <atomic>
++#include "UPnPImpl.h"
++#include "libplum\include\plum\plum.h"
++
++// Port mapping through libplum, which tries PCP, then NAT-PMP, then UPnP-IGD by itself.
++// Its own thread keeps the mappings alive once made - renewing the leases, and making them
++// again after a gateway restart or an address change - until DeletePorts() destroys them.
++// The result of a discovery is in when every port has either been mapped or has failed.
++class CUPnPImplLibPlum : public CUPnPImpl
++{
++public:
++	CUPnPImplLibPlum();
++	virtual	~CUPnPImplLibPlum();
++
++	virtual void StartDiscovery(uint16 nTCPPort, uint16 nUDPPort, uint16 nTCPWebPort);
++	virtual bool CheckAndRefresh();
++	virtual void StopAsyncFind();
++	virtual void DeletePorts();
++	virtual bool IsReady();
++	virtual int GetImplementationID()				{ return UPNP_IMPL_LIBPLUM; }
++
++private:
++	enum EMapping
++	{
++		MAP_TCP,
++		MAP_UDP,
++		MAP_WEB,
++		MAP_COUNT
++	};
++	enum EMapState
++	{
++		MAPSTATE_NONE,		// no port to map
++		MAPSTATE_PENDING,
++		MAPSTATE_OK,
++		MAPSTATE_FAILED
++	};
++	struct SMapping
++	{
++		int nId;			// libplum's id, -1 when libplum no longer has the mapping
++		uint16 nPort;
++		EMapState eState;
++	};
++
++	static void MappingCallback(int nId, plum_state_t eState, const plum_mapping_t *pMapping);
++	static void LogCallback(plum_log_level_t eLevel, const char *pszMessage);
++	void OnMapping(int nId, plum_state_t eState, const plum_mapping_t &mapping);
++	bool Init();
++	void SetMapping(EMapping eMapping, uint16 nPort);
++	void CreateMapping(EMapping eMapping);
++	void DestroyMappings();
++	void UpdateResult();
++
++	CCriticalSection m_csMappings;	// never held while calling into libplum: its thread calls back holding its own lock
++	SMapping m_aMappings[MAP_COUNT];
++	std::atomic<bool> m_bDiscovering;
++	bool m_bInitialized;
++};
+diff --git a/srchybrid/UPnPImplWrapper.cpp b/srchybrid/UPnPImplWrapper.cpp
+index 1c6cb49..b8f8390 100644
+--- a/srchybrid/UPnPImplWrapper.cpp
++++ b/srchybrid/UPnPImplWrapper.cpp
+@@ -17,6 +17,7 @@
+ #include "StdAfx.h"
+ #include "UPnPImplWrapper.h"
+ #include "UPnPImpl.h"
++#include "UPnPImplLibPlum.h"
+ #include "Preferences.h"
+ 
+ #ifdef _DEBUG
+@@ -27,6 +28,7 @@ static char THIS_FILE[] = __FILE__;
+ 
+ CUPnPImplWrapper::CUPnPImplWrapper()
+ {
++	m_liAvailable.AddTail(new CUPnPImplLibPlum());
+ 	if (m_liAvailable.IsEmpty())
+ 		m_liAvailable.AddTail(new CUPnPImplNone());
+ 	Init();
+diff --git a/srchybrid/emule.vcxproj b/srchybrid/emule.vcxproj
+index 2f5b7e0..b8930e4 100644
+--- a/srchybrid/emule.vcxproj
++++ b/srchybrid/emule.vcxproj
+@@ -78,7 +78,7 @@
+       <IntrinsicFunctions>true</IntrinsicFunctions>
+       <Optimization>Disabled</Optimization>
+       <PrecompiledHeader>Use</PrecompiledHeader>
+-      <PreprocessorDefinitions>ID3LIB_LINKOPTION=1;SUPPORT_LARGE_FILES;%(PreprocessorDefinitions)</PreprocessorDefinitions>
++      <PreprocessorDefinitions>ID3LIB_LINKOPTION=1;PLUM_STATIC;SUPPORT_LARGE_FILES;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+       <WarningLevel>EnableAllWarnings</WarningLevel>
+     </ClCompile>
+@@ -107,7 +107,7 @@
+       <IntrinsicFunctions>true</IntrinsicFunctions>
+       <OmitFramePointers>true</OmitFramePointers>
+       <PrecompiledHeader>Use</PrecompiledHeader>
+-      <PreprocessorDefinitions>ID3LIB_LINKOPTION=1;SUPPORT_LARGE_FILES;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
++      <PreprocessorDefinitions>ID3LIB_LINKOPTION=1;PLUM_STATIC;SUPPORT_LARGE_FILES;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+       <WarningLevel>EnableAllWarnings</WarningLevel>
+     </ClCompile>
+     <Link>
+@@ -133,7 +133,7 @@
+       <IntrinsicFunctions>true</IntrinsicFunctions>
+       <Optimization>Disabled</Optimization>
+       <PrecompiledHeader>Use</PrecompiledHeader>
+-      <PreprocessorDefinitions>ID3LIB_LINKOPTION=1;SUPPORT_LARGE_FILES;_BOOTSTRAPNODESDAT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
++      <PreprocessorDefinitions>ID3LIB_LINKOPTION=1;PLUM_STATIC;SUPPORT_LARGE_FILES;_BOOTSTRAPNODESDAT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+       <WarningLevel>EnableAllWarnings</WarningLevel>
+     </ClCompile>
+@@ -392,6 +392,7 @@
+     <ClCompile Include="UploadListCtrl.cpp" />
+     <ClCompile Include="UploadQueue.cpp" />
+     <ClCompile Include="UPnPImpl.cpp" />
++    <ClCompile Include="UPnPImplLibPlum.cpp" />
+     <ClCompile Include="UPnPImplWrapper.cpp" />
+     <ClCompile Include="URLClient.cpp" />
+     <ClCompile Include="Version.cpp" />
+@@ -672,6 +673,7 @@
+     <ClInclude Include="UploadListCtrl.h" />
+     <ClInclude Include="UploadQueue.h" />
+     <ClInclude Include="UPnPImpl.h" />
++    <ClInclude Include="UPnPImplLibPlum.h" />
+     <ClInclude Include="UPnPImplWrapper.h" />
+     <ClInclude Include="URLClient.h" />
+     <ClInclude Include="UserMsgs.h" />
