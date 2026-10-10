@@ -25,10 +25,10 @@ index 597ea49..8f2cbb3 100644
  
 diff --git a/srchybrid/UPnPImplLibPlum.cpp b/srchybrid/UPnPImplLibPlum.cpp
 new file mode 100644
-index 0000000..80682f1
+index 0000000..9eb16a7
 --- /dev/null
 +++ b/srchybrid/UPnPImplLibPlum.cpp
-@@ -0,0 +1,316 @@
+@@ -0,0 +1,393 @@
 +//this file is part of eMule
 +//Copyright (C)2002-2026 Merkur ( strEmail.Format("%s@%s", "devteam", "emule-project.net") / https://www.emule-project.net )
 +//
@@ -84,6 +84,7 @@ index 0000000..80682f1
 +CUPnPImplLibPlum::CUPnPImplLibPlum()
 +	: m_aMappings()
 +	, m_bDiscovering()
++	, m_bRestart()
 +	, m_bInitialized()
 +{
 +	for (int i = 0; i < MAP_COUNT; ++i)
@@ -94,12 +95,26 @@ index 0000000..80682f1
 +{
 +	// Stops libplum's thread. It first removes the mappings DeletePorts() destroyed; the ones
 +	// still alive are only forgotten, and the gateway drops them when their lease runs out.
++	// What the thread reports while it stops is of no interest any more.
++	{
++		CSingleLock lock(&m_csMappings, TRUE);
++		for (int i = 0; i < MAP_COUNT; ++i)
++			SetMapping(static_cast<EMapping>(i), 0);
++		SetMessageOnResult(NULL, 0);
++	}
 +	if (m_bInitialized)
 +		plum_cleanup();
 +}
 +
 +bool CUPnPImplLibPlum::Init()
 +{
++	if (m_bInitialized && m_bRestart) {
++		// libplum never starts its thread again by itself. Should it be running after all,
++		// this waits for it to remove the mappings destroyed meanwhile.
++		DebugLog(_T("libplum: restarting"));
++		plum_cleanup();
++		m_bInitialized = false;
++	}
 +	if (!m_bInitialized) {
 +		plum_config_t config = {};
 +		config.log_level = PLUM_LOG_LEVEL_INFO;
@@ -112,6 +127,7 @@ index 0000000..80682f1
 +			return false;
 +		}
 +		m_bInitialized = true;
++		m_bRestart = false;
 +	}
 +	return true;
 +}
@@ -124,8 +140,11 @@ index 0000000..80682f1
 +void CUPnPImplLibPlum::StopAsyncFind()
 +{
 +	// Nothing to abort: what libplum has mapped stays, until DeletePorts() or the destructor.
-+	// A discovery given up on must not report later, though.
++	// A discovery given up on must not report later, though. It may have been made on a libplum
++	// thread already stopped while there was no mapping to tell it by: the next one restarts it.
 +	CSingleLock lock(&m_csMappings, TRUE);
++	if (m_bDiscovering)
++		m_bRestart = true;
 +	m_bDiscovering = false;
 +	SetMessageOnResult(NULL, 0);
 +}
@@ -166,42 +185,60 @@ index 0000000..80682f1
 +		m_nOldTCPWebPort = 0;
 +		m_bUPnPPortsForwarded = TRIS_UNKNOWN;
 +		m_bDiscovering = true;
-+		SetMapping(MAP_TCP, nTCPPort);
-+		SetMapping(MAP_UDP, nUDPPort);
-+		SetMapping(MAP_WEB, nTCPWebPort);
 +	}
-+	for (int i = 0; i < MAP_COUNT; ++i)
-+		CreateMapping(static_cast<EMapping>(i));
++	CreateMappings();
 +	CSingleLock lock(&m_csMappings, TRUE);
 +	UpdateResult();
 +}
 +
 +bool CUPnPImplLibPlum::CheckAndRefresh()
 +{
-+	if (m_bDiscovering || ArePortsForwarded() != TRIS_TRUE) {
-+		DebugLog(_T("Not refreshing libplum ports because they don't seem to be forwarded in the first place"));
++	if (m_bDiscovering || m_nTCPPort == 0) {
++		DebugLog(_T("Not refreshing libplum ports because no discovery was started, or one is still running"));
 +		return false;
 +	}
 +
-+	// the Web Interface port may have been switched on, off or moved (LateEnableWebServerPort)
-+	int nOldWebId = -1;
-+	bool bNewWeb = false;
-+	{
-+		CSingleLock lock(&m_csMappings, TRUE);
-+		if (m_aMappings[MAP_WEB].nPort != m_nTCPWebPort) {
-+			nOldWebId = m_aMappings[MAP_WEB].nId;
-+			SetMapping(MAP_WEB, m_nTCPWebPort);
-+			bNewWeb = (m_nTCPWebPort != 0);
++	DebugLog(_T("Checking and refreshing libplum ports"));
++	bool bInit = true;
++	if (m_bRestart) {
++		// libplum's thread has stopped, and took the mappings with it: they are made anew
++		DestroyMappings();
++		bInit = Init();
++		if (bInit)
++			CreateMappings();
++	} else {
++		// the Web Interface port may have been switched on, off or moved (LateEnableWebServerPort)
++		int nOldWebId = -1;
++		bool bNewWeb = false;
++		int aIds[MAP_COUNT];
++		int nCount = 0;
++		{
++			CSingleLock lock(&m_csMappings, TRUE);
++			if (m_aMappings[MAP_WEB].nPort != m_nTCPWebPort) {
++				nOldWebId = m_aMappings[MAP_WEB].nId;
++				SetMapping(MAP_WEB, m_nTCPWebPort);
++				bNewWeb = (m_nTCPWebPort != 0);
++			}
++			for (int i = 0; i < MAP_COUNT; ++i)
++				if (m_aMappings[i].nId >= 0)
++					aIds[nCount++] = m_aMappings[i].nId;
 +		}
-+	}
-+	if (nOldWebId >= 0)
-+		plum_destroy_mapping(nOldWebId);
-+	if (bNewWeb)
-+		CreateMapping(MAP_WEB);
++		if (nOldWebId >= 0)
++			plum_destroy_mapping(nOldWebId);
++		if (bNewWeb)
++			CreateMapping(MAP_WEB);
 +
-+	// libplum checks and renews the mappings by itself: report what it found last
-+	DebugLog(_T("Checking libplum ports: they are kept mapped"));
++		// libplum checks the mappings with the gateway every 5 minutes; this checks them now, and
++		// makes again those a restarted gateway lost, without removing any that is still in place
++		for (int i = 0; i < nCount; ++i)
++			plum_refresh_mapping(aIds[i]);
++	}
++
++	// The answer is what libplum found last, and comes at once: eMule gives a refresh 10 seconds,
++	// then takes it for a failed discovery and deletes the ports. What libplum finds now goes to the log.
 +	CSingleLock lock(&m_csMappings, TRUE);
++	if (!bInit)
++		m_bUPnPPortsForwarded = TRIS_FALSE;
 +	m_bCheckAndRefresh = true;
 +	SendResultMessage();
 +	return true;
@@ -229,15 +266,34 @@ index 0000000..80682f1
 +	mapping.external_port = mapping.internal_port;	// eMule announces its own ports: the public ones must be the same
 +	mapping.user_ptr = this;
 +	const int nId = plum_create_mapping(&mapping, MappingCallback);
++	{
++		CSingleLock lock(&m_csMappings, TRUE);
++		SMapping &slot = m_aMappings[eMapping];
++		if (nId < 0) {
++			DebugLogError(_T("libplum: cannot map %s port %hu (%d)"), (eMapping == MAP_UDP) ? sUDP : sTCP, mapping.internal_port, nId);
++			slot.eState = MAPSTATE_FAILED;
++			UpdateResult();
++			return;
++		}
++		if (slot.eState != MAPSTATE_PENDING)
++			return;	// the callback already came, and set it
++		slot.nId = nId;
++	}
++	// libplum's thread may have stopped before the id was known here
++	if (plum_query_mapping(nId, NULL, NULL) != PLUM_ERR_SUCCESS)
++		OnMappingLost(nId);
++}
 +
-+	CSingleLock lock(&m_csMappings, TRUE);
-+	SMapping &slot = m_aMappings[eMapping];
-+	if (nId < 0) {
-+		DebugLogError(_T("libplum: cannot map %s port %hu (%d)"), (eMapping == MAP_UDP) ? sUDP : sTCP, mapping.internal_port, nId);
-+		slot.eState = MAPSTATE_FAILED;
-+		UpdateResult();
-+	} else if (slot.eState == MAPSTATE_PENDING)
-+		slot.nId = nId;	// otherwise the callback already came, and set it
++void CUPnPImplLibPlum::CreateMappings()
++{
++	{
++		CSingleLock lock(&m_csMappings, TRUE);
++		SetMapping(MAP_TCP, m_nTCPPort);
++		SetMapping(MAP_UDP, m_nUDPPort);
++		SetMapping(MAP_WEB, m_nTCPWebPort);
++	}
++	for (int i = 0; i < MAP_COUNT; ++i)
++		CreateMapping(static_cast<EMapping>(i));
 +}
 +
 +void CUPnPImplLibPlum::DestroyMappings()
@@ -284,9 +340,8 @@ index 0000000..80682f1
 +
 +void CUPnPImplLibPlum::MappingCallback(int nId, plum_state_t eState, const plum_mapping_t *pMapping) noexcept
 +{
-+	// Called on libplum's thread, with libplum's lock held. DESTROYED only confirms what
-+	// DestroyMappings() already let go of. Nothing may be thrown back into C code.
-+	if ((eState != PLUM_STATE_SUCCESS && eState != PLUM_STATE_FAILURE) || pMapping == NULL || pMapping->user_ptr == NULL)
++	// Called on libplum's thread, with libplum's lock held. Nothing may be thrown back into C code.
++	if ((eState != PLUM_STATE_SUCCESS && eState != PLUM_STATE_FAILURE && eState != PLUM_STATE_DESTROYED) || pMapping == NULL || pMapping->user_ptr == NULL)
 +		return;
 +	try {
 +		static_cast<CUPnPImplLibPlum*>(pMapping->user_ptr)->OnMapping(nId, eState, *pMapping);
@@ -298,6 +353,10 @@ index 0000000..80682f1
 +
 +void CUPnPImplLibPlum::OnMapping(int nId, plum_state_t eState, const plum_mapping_t &mapping)
 +{
++	if (eState == PLUM_STATE_DESTROYED) {
++		OnMappingLost(nId);
++		return;
++	}
 +	const bool bTCP = (mapping.protocol == PLUM_IP_PROTOCOL_TCP);
 +	LPCTSTR pszProt = bTCP ? sTCP : sUDP;
 +	bool bDrop = false;
@@ -331,6 +390,24 @@ index 0000000..80682f1
 +		plum_destroy_mapping(nId);
 +}
 +
++void CUPnPImplLibPlum::OnMappingLost(int nId)
++{
++	// Every mapping destroyed here has let go of its id first. One still known went with libplum's
++	// thread, which stops for good when it finds no default route: no network yet, or for a moment.
++	CSingleLock lock(&m_csMappings, TRUE);
++	for (int i = 0; i < MAP_COUNT; ++i) {
++		SMapping &slot = m_aMappings[i];
++		if (slot.nId == nId && slot.eState != MAPSTATE_NONE) {
++			if (!m_bRestart.exchange(true))
++				DebugLogWarning(_T("libplum: its thread has stopped, and starts again at the next discovery or refresh"));
++			slot.nId = -1;
++			slot.eState = MAPSTATE_FAILED;
++			UpdateResult();
++			return;
++		}
++	}
++}
++
 +void CUPnPImplLibPlum::LogCallback(plum_log_level_t eLevel, const char *pszMessage) noexcept
 +{
 +	try {
@@ -347,10 +424,10 @@ index 0000000..80682f1
 +}
 diff --git a/srchybrid/UPnPImplLibPlum.h b/srchybrid/UPnPImplLibPlum.h
 new file mode 100644
-index 0000000..7456006
+index 0000000..6d2fc14
 --- /dev/null
 +++ b/srchybrid/UPnPImplLibPlum.h
-@@ -0,0 +1,74 @@
+@@ -0,0 +1,78 @@
 +//this file is part of eMule
 +//Copyright (C)2002-2026 Merkur ( strEmail.Format("%s@%s", "devteam", "emule-project.net") / https://www.emule-project.net )
 +//
@@ -373,8 +450,9 @@ index 0000000..7456006
 +#include "libplum\include\plum\plum.h"
 +
 +// Port mapping through libplum, which tries PCP, then NAT-PMP, then UPnP-IGD by itself.
-+// Its own thread keeps the mappings alive once made - renewing the leases, and making them
-+// again after a gateway restart or an address change - until DeletePorts() destroys them.
++// Its own thread keeps the mappings alive once made - renewing the leases, checking them with
++// the gateway every 5 minutes, and making again those a gateway restart or an address change
++// lost - until DeletePorts() destroys them. CheckAndRefresh() has them checked at once.
 +// The result of a discovery is in when every port has either been mapped or has failed.
 +class CUPnPImplLibPlum : public CUPnPImpl
 +{
@@ -414,15 +492,18 @@ index 0000000..7456006
 +	static void MappingCallback(int nId, plum_state_t eState, const plum_mapping_t *pMapping) noexcept;
 +	static void LogCallback(plum_log_level_t eLevel, const char *pszMessage) noexcept;
 +	void OnMapping(int nId, plum_state_t eState, const plum_mapping_t &mapping);
++	void OnMappingLost(int nId);
 +	bool Init();
 +	void SetMapping(EMapping eMapping, uint16 nPort);
 +	void CreateMapping(EMapping eMapping);
++	void CreateMappings();
 +	void DestroyMappings();
 +	void UpdateResult();
 +
 +	CCriticalSection m_csMappings;	// never held while calling into libplum: its thread calls back holding its own lock
 +	SMapping m_aMappings[MAP_COUNT];
 +	std::atomic<bool> m_bDiscovering;
++	std::atomic<bool> m_bRestart;	// libplum's thread has stopped, or may have: Init() starts it again
 +	bool m_bInitialized;
 +};
 diff --git a/srchybrid/UPnPImplWrapper.cpp b/srchybrid/UPnPImplWrapper.cpp
