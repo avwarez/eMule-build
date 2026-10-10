@@ -290,8 +290,9 @@ within our distribution. You need the following libs:
 *) Mbed TLS 4.2.0
         https://www.trustedfirmware.org/projects/mbed-tls/
 
-*) libplum 0.6.0
+*) libplum 0.6.0, with changes for eMule
         https://github.com/paullouisageneau/libplum
+        https://github.com/avwarez/libplum/tree/v0.6.0-emule
 
 *) ResizableLib 1.5.3
         https://github.com/ppescher/resizablelib

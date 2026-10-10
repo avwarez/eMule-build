@@ -260,10 +260,13 @@ target_compile_options(zlibstatic PRIVATE $<$<C_COMPILER_ID:MSVC>:/W3>)
 add_subdirectory(id3lib_build)
 
 # ---------------------------------------------------------------------------
-# libplum - vanilla git submodule (libplum/, paullouisageneau/libplum pinned to
-# tag v0.6.0), for the port mapping emule_build/89b adds (PCP, NAT-PMP and
-# UPnP-IGD). Has its own CMakeLists.txt. Two things in it must not reach the
-# rest of this build:
+# libplum - git submodule (libplum/, avwarez/libplum pinned to v0.6.0-emule:
+# tag v0.6.0 plus four commits - UPnP error 725 falls back to a permanent
+# lease, error 714 on unmapping is a success, UPnP mappings are checked with
+# GetSpecificPortMappingEntry every recheck period and made again only when
+# gone, and plum_refresh_mapping() checks one at once), for the port mapping
+# emule_build/89b adds (PCP, NAT-PMP and UPnP-IGD). Has its own CMakeLists.txt.
+# Two things in it must not reach the rest of this build:
 # - option(BUILD_SHARED_LIBS ... ON) would put ON in the cache, and every
 #   add_library() without STATIC/SHARED added after it would become a DLL.
 #   Set OFF first, which is what an unset BUILD_SHARED_LIBS already means.

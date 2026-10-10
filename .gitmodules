@@ -21,4 +21,5 @@
 	branch = v0.72a
 [submodule "libplum"]
 	path = libplum
-	url = https://github.com/paullouisageneau/libplum.git
+	url = https://github.com/avwarez/libplum.git
+	branch = v0.6.0-emule
