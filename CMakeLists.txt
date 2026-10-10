@@ -70,9 +70,11 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          or one branch no supported Windows ever takes, or one run-time
 #          lookup of an API every supported Windows has - small on purpose,
 #          so each can be judged on its own.
-#   89     port mapping. 89a takes miniupnpc out, 89b puts libplum in its
+#   89     reachable ports. 89a takes miniupnpc out, 89b puts libplum in its
 #          place: one library that tries PCP, NAT-PMP and UPnP-IGD in turn
-#          and keeps the mappings alive on its own.
+#          and keeps the mappings alive on its own. 89c reads the Windows
+#          Firewall policy at startup and logs whether it lets inbound
+#          connections reach the TCP and UDP ports, and what stops them.
 #   90-94  the code compiles but /Wall flags it; these bring the warning
 #          count back to zero.
 #   95-96  the code compiles and is warning-clean but is not correct on
