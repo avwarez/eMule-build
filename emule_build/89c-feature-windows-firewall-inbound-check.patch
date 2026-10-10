@@ -63,7 +63,7 @@ index aba6343..4a6f676 100644
  
 diff --git a/srchybrid/FirewallCheck.cpp b/srchybrid/FirewallCheck.cpp
 new file mode 100644
-index 0000000..fa435e3
+index 0000000..b75fce5
 --- /dev/null
 +++ b/srchybrid/FirewallCheck.cpp
 @@ -0,0 +1,327 @@
@@ -376,8 +376,8 @@ index 0000000..fa435e3
 +
 +	// Rules from group policy, or the policy forbidding local rules, are not in what the
 +	// rule collection returns.
-+	FW_MODIFY_STATE eModifyState = FW_MODIFY_STATE_OK;
-+	if (SUCCEEDED(pPolicy->get_LocalPolicyModifyState(&eModifyState)) && eModifyState != FW_MODIFY_STATE_OK)
++	NET_FW_MODIFY_STATE eModifyState = NET_FW_MODIFY_STATE_OK;
++	if (SUCCEEDED(pPolicy->get_LocalPolicyModifyState(&eModifyState)) && eModifyState != NET_FW_MODIFY_STATE_OK)
 +		theApp.QueueLogLineEx(LOG_WARNING, _T("Windows Firewall is managed by group policy (state %d): the check below sees only the local rules"), static_cast<int>(eModifyState));
 +
 +	static const long s_alProfiles[] = {NET_FW_PROFILE2_DOMAIN, NET_FW_PROFILE2_PRIVATE, NET_FW_PROFILE2_PUBLIC};
