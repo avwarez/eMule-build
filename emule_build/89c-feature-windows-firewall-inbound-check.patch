@@ -1,5 +1,5 @@
 diff --git a/srchybrid/Emule.cpp b/srchybrid/Emule.cpp
-index a6792cd..39a470c 100644
+index 4a08b81..ade93d9 100644
 --- a/srchybrid/Emule.cpp
 +++ b/srchybrid/Emule.cpp
 @@ -62,6 +62,7 @@
@@ -10,13 +10,13 @@ index a6792cd..39a470c 100644
  #include "UploadDiskIOThread.h"
  #include "PartFileWriteThread.h"
  
-@@ -612,6 +613,10 @@ BOOL CemuleApp::InitInstance()
+@@ -486,6 +487,10 @@ BOOL CemuleApp::InitInstance()
  	// UPnP Port forwarding
  	m_pUPnPFinder = new CUPnPImplWrapper();
  
 +	// Whether Windows Firewall lets the peers reach our ports - logged, nothing changed
 +	m_pFirewallCheck = new CFirewallCheck();
-+	m_pFirewallCheck->Start(thePrefs.GetPort(), thePrefs.GetUDPPort());
++	m_pFirewallCheck->Start();
 +
  	// Highres scheduling gives better resolution for Sleep(...) and timeGetTime() calls
  	m_wTimerRes = 0;
@@ -42,7 +42,7 @@ index 92f25cc..6243994 100644
  	CPartFileWriteThread *m_pPartFileWriteThread;
  
 diff --git a/srchybrid/EmuleDlg.cpp b/srchybrid/EmuleDlg.cpp
-index aba6343..4a6f676 100644
+index 2c0f81e..88ba87c 100644
 --- a/srchybrid/EmuleDlg.cpp
 +++ b/srchybrid/EmuleDlg.cpp
 @@ -94,6 +94,7 @@
@@ -53,7 +53,7 @@ index aba6343..4a6f676 100644
  #include "ExitBox.h"
  #include "UploadDiskIOThread.h"
  #include "PartFileWriteThread.h"
-@@ -1754,6 +1755,7 @@ void CemuleDlg::OnClose()
+@@ -1747,6 +1748,7 @@ void CemuleDlg::OnClose()
  	delete theApp.uploadBandwidthThrottler;	theApp.uploadBandwidthThrottler = NULL;
  	delete theApp.lastCommonRouteFinder;	theApp.lastCommonRouteFinder = NULL;
  	delete theApp.m_pUPnPFinder;			theApp.m_pUPnPFinder = NULL;
@@ -63,10 +63,10 @@ index aba6343..4a6f676 100644
  
 diff --git a/srchybrid/FirewallCheck.cpp b/srchybrid/FirewallCheck.cpp
 new file mode 100644
-index 0000000..b75fce5
+index 0000000..2cabca2
 --- /dev/null
 +++ b/srchybrid/FirewallCheck.cpp
-@@ -0,0 +1,327 @@
+@@ -0,0 +1,374 @@
 +//this file is part of eMule
 +//Copyright (C)2002-2026 Merkur ( strEmail.Format("%s@%s", "devteam", "emule-project.net") / https://www.emule-project.net )
 +//
@@ -89,6 +89,8 @@ index 0000000..b75fce5
 +#include "FirewallCheck.h"
 +#include "emule.h"
 +#include "OtherFunctions.h"
++#include "Preferences.h"
++#include "Opcodes.h"
 +#include "Log.h"
 +
 +#ifdef _DEBUG
@@ -284,55 +286,55 @@ index 0000000..b75fce5
 +		return FWV_NO_RULE;
 +	}
 +
-+	void LogVerdict(EFwVerdict eVerdict, const SFwRule *pRule, long lProfile, LPCTSTR pszProtocol, uint16 nPort)
++	// Returns the log line for a verdict, and whether it is a warning.
++	bool FormatVerdict(EFwVerdict eVerdict, const SFwRule *pRule, long lProfile, LPCTSTR pszProtocol, uint16 nPort, CString &sLine)
 +	{
 +		LPCTSTR pszProfile = ProfileName(lProfile);
 +		switch (eVerdict) {
 +		case FWV_OFF:
-+			theApp.QueueLogLine(false, _T("Windows Firewall is off on the %s network profile: it does not filter inbound %s port %u"), pszProfile, pszProtocol, nPort);
-+			break;
++			sLine.Format(_T("Windows Firewall is off on the %s network profile: it does not filter inbound %s port %u"), pszProfile, pszProtocol, nPort);
++			return false;
 +		case FWV_BLOCK_ALL:
-+			theApp.QueueLogLineEx(LOG_WARNING, _T("Windows Firewall blocks inbound %s port %u: the %s network profile blocks all incoming connections, whatever its rules say"), pszProtocol, nPort, pszProfile);
-+			break;
++			sLine.Format(_T("Windows Firewall blocks inbound %s port %u: the %s network profile blocks all incoming connections, whatever its rules say"), pszProtocol, nPort, pszProfile);
++			return true;
 +		case FWV_BLOCK_RULE:
-+			theApp.QueueLogLineEx(LOG_WARNING, _T("Windows Firewall blocks inbound %s port %u on the %s network profile, by rule \"%s\""), pszProtocol, nPort, pszProfile, (LPCTSTR)pRule->sName);
-+			break;
++			sLine.Format(_T("Windows Firewall blocks inbound %s port %u on the %s network profile, by rule \"%s\""), pszProtocol, nPort, pszProfile, (LPCTSTR)pRule->sName);
++			return true;
 +		case FWV_ALLOW_RULE:
-+			theApp.QueueLogLine(false, _T("Windows Firewall allows inbound %s port %u on the %s network profile, by rule \"%s\""), pszProtocol, nPort, pszProfile, (LPCTSTR)pRule->sName);
-+			break;
++			sLine.Format(_T("Windows Firewall allows inbound %s port %u on the %s network profile, by rule \"%s\""), pszProtocol, nPort, pszProfile, (LPCTSTR)pRule->sName);
++			return false;
 +		case FWV_ALLOW_LIMITED:
-+			theApp.QueueLogLineEx(LOG_WARNING, _T("Windows Firewall allows inbound %s port %u on the %s network profile only from %s, by rule \"%s\""), pszProtocol, nPort, pszProfile, (LPCTSTR)pRule->sRemoteAddresses, (LPCTSTR)pRule->sName);
-+			break;
++			sLine.Format(_T("Windows Firewall allows inbound %s port %u on the %s network profile only from %s, by rule \"%s\""), pszProtocol, nPort, pszProfile, (LPCTSTR)pRule->sRemoteAddresses, (LPCTSTR)pRule->sName);
++			return true;
 +		case FWV_DEFAULT_ALLOW:
-+			theApp.QueueLogLine(false, _T("Windows Firewall allows inbound %s port %u on the %s network profile: no rule matches it, and the profile lets in what no rule blocks"), pszProtocol, nPort, pszProfile);
-+			break;
-+		case FWV_NO_RULE:
-+			theApp.QueueLogLineEx(LOG_WARNING, _T("Windows Firewall blocks inbound %s port %u on the %s network profile: no rule allows it, and the profile blocks what no rule allows"), pszProtocol, nPort, pszProfile);
++			sLine.Format(_T("Windows Firewall allows inbound %s port %u on the %s network profile: no rule matches it, and the profile lets in what no rule blocks"), pszProtocol, nPort, pszProfile);
++			return false;
++		default:
++			sLine.Format(_T("Windows Firewall blocks inbound %s port %u on the %s network profile: no rule allows it, and the profile blocks what no rule allows"), pszProtocol, nPort, pszProfile);
++			return true;
 +		}
 +	}
 +}
 +
 +CFirewallCheck::CFirewallCheck()
 +	: m_pThread()
-+	, m_nTCPPort()
-+	, m_nUDPPort()
++	, m_evStop(FALSE, TRUE)
 +{
 +}
 +
 +CFirewallCheck::~CFirewallCheck()
 +{
 +	if (m_pThread != NULL) {
++		m_evStop.SetEvent();
 +		::WaitForSingleObject(m_pThread->m_hThread, INFINITE);
 +		delete m_pThread;
 +	}
 +}
 +
-+void CFirewallCheck::Start(uint16 nTCPPort, uint16 nUDPPort)
++void CFirewallCheck::Start()
 +{
 +	if (m_pThread != NULL)
 +		return;
-+	m_nTCPPort = nTCPPort;
-+	m_nUDPPort = nUDPPort;
 +	m_pThread = AfxBeginThread(RunProc, this, THREAD_PRIORITY_BELOW_NORMAL, 0, CREATE_SUSPENDED);
 +	if (m_pThread != NULL) {
 +		m_pThread->m_bAutoDelete = FALSE;
@@ -350,7 +352,18 @@ index 0000000..b75fce5
 +	return 0;
 +}
 +
++// Windows may change the rules after the first check - a cancelled "allow access" prompt, for
++// one - so the check runs again every minute, and the log gets the result only when it changes.
 +void CFirewallCheck::Run()
++{
++	// A policy that cannot be read at all (Wine, for one) will not be readable a minute later.
++	if (!Check(true))
++		return;
++	while (::WaitForSingleObject(m_evStop, MIN2MS(1)) == WAIT_TIMEOUT)
++		Check(false);
++}
++
++bool CFirewallCheck::Check(bool bFirst)
 +{
 +	CComPtr<INetFwPolicy2> pPolicy;
 +	HRESULT hr = pPolicy.CoCreateInstance(__uuidof(NetFwPolicy2), NULL, CLSCTX_INPROC_SERVER);
@@ -358,27 +371,42 @@ index 0000000..b75fce5
 +	if (SUCCEEDED(hr))
 +		hr = pPolicy->get_CurrentProfileTypes(&lProfiles);
 +	if (FAILED(hr)) {
-+		theApp.QueueDebugLogLine(false, _T("Windows Firewall: its policy cannot be read (0x%08lx), inbound ports not checked"), hr);
-+		return;
++		if (bFirst)
++			theApp.QueueDebugLogLine(false, _T("Windows Firewall: its policy cannot be read (0x%08lx), inbound ports not checked"), hr);
++		return false;
 +	}
 +
 +	TCHAR szOwnPath[MAX_PATH];
 +	DWORD dwLen = ::GetModuleFileName(NULL, szOwnPath, _countof(szOwnPath));
 +	if (dwLen == 0 || dwLen >= _countof(szOwnPath)) {
-+		theApp.QueueDebugLogLine(false, _T("Windows Firewall: the program path cannot be read, inbound ports not checked"));
-+		return;
++		if (bFirst)
++			theApp.QueueDebugLogLine(false, _T("Windows Firewall: the program path cannot be read, inbound ports not checked"));
++		return false;
 +	}
 +	CArray<SFwRule> aRules;
 +	if (!ReadRules(pPolicy, szOwnPath, aRules)) {
-+		theApp.QueueDebugLogLine(false, _T("Windows Firewall: its rules cannot be read, inbound ports not checked"));
-+		return;
++		if (bFirst)
++			theApp.QueueDebugLogLine(false, _T("Windows Firewall: its rules cannot be read, inbound ports not checked"));
++		return false;
 +	}
++
++	// The ports are read on every check: they can be changed in the options while eMule runs.
++	const uint16 nTCPPort = thePrefs.GetPort();
++	const uint16 nUDPPort = thePrefs.GetUDPPort();
++
++	// Every line of the result is built first, so that it can be compared with the last one.
++	CStringArray asLines;
++	CArray<bool> abWarnings;
++	CString sLine;
 +
 +	// Rules from group policy, or the policy forbidding local rules, are not in what the
 +	// rule collection returns.
 +	NET_FW_MODIFY_STATE eModifyState = NET_FW_MODIFY_STATE_OK;
-+	if (SUCCEEDED(pPolicy->get_LocalPolicyModifyState(&eModifyState)) && eModifyState != NET_FW_MODIFY_STATE_OK)
-+		theApp.QueueLogLineEx(LOG_WARNING, _T("Windows Firewall is managed by group policy (state %d): the check below sees only the local rules"), static_cast<int>(eModifyState));
++	if (SUCCEEDED(pPolicy->get_LocalPolicyModifyState(&eModifyState)) && eModifyState != NET_FW_MODIFY_STATE_OK) {
++		sLine.Format(_T("Windows Firewall is managed by group policy (state %d): the check below sees only the local rules"), static_cast<int>(eModifyState));
++		asLines.Add(sLine);
++		abWarnings.Add(true);
++	}
 +
 +	static const long s_alProfiles[] = {NET_FW_PROFILE2_DOMAIN, NET_FW_PROFILE2_PRIVATE, NET_FW_PROFILE2_PUBLIC};
 +	for (unsigned i = 0; i < _countof(s_alProfiles); ++i) {
@@ -386,20 +414,39 @@ index 0000000..b75fce5
 +		if ((lProfiles & lProfile) == 0)
 +			continue;
 +		const SFwRule *pRule;
-+		EFwVerdict eVerdict = Evaluate(pPolicy, aRules, lProfile, NET_FW_IP_PROTOCOL_TCP, m_nTCPPort, pRule);
-+		LogVerdict(eVerdict, pRule, lProfile, _T("TCP"), m_nTCPPort);
-+		if (m_nUDPPort != 0) {
-+			eVerdict = Evaluate(pPolicy, aRules, lProfile, NET_FW_IP_PROTOCOL_UDP, m_nUDPPort, pRule);
-+			LogVerdict(eVerdict, pRule, lProfile, _T("UDP"), m_nUDPPort);
++		EFwVerdict eVerdict = Evaluate(pPolicy, aRules, lProfile, NET_FW_IP_PROTOCOL_TCP, nTCPPort, pRule);
++		abWarnings.Add(FormatVerdict(eVerdict, pRule, lProfile, _T("TCP"), nTCPPort, sLine));
++		asLines.Add(sLine);
++		if (nUDPPort != 0) {
++			eVerdict = Evaluate(pPolicy, aRules, lProfile, NET_FW_IP_PROTOCOL_UDP, nUDPPort, pRule);
++			abWarnings.Add(FormatVerdict(eVerdict, pRule, lProfile, _T("UDP"), nUDPPort, sLine));
++			asLines.Add(sLine);
 +		}
 +	}
++
++	CString sResult;
++	for (INT_PTR i = 0; i < asLines.GetCount(); ++i)
++		sResult += asLines[i] + _T('\n');
++	if (sResult == m_sLastResult)
++		return true;
++	m_sLastResult = sResult;
++
++	if (!bFirst)
++		theApp.QueueLogLine(false, _T("Windows Firewall: the inbound check gives a different result from the last one"));
++	for (INT_PTR i = 0; i < asLines.GetCount(); ++i) {
++		if (abWarnings[i])
++			theApp.QueueLogLineEx(LOG_WARNING, _T("%s"), (LPCTSTR)asLines[i]);
++		else
++			theApp.QueueLogLine(false, _T("%s"), (LPCTSTR)asLines[i]);
++	}
++	return true;
 +}
 diff --git a/srchybrid/FirewallCheck.h b/srchybrid/FirewallCheck.h
 new file mode 100644
-index 0000000..bf5776a
+index 0000000..f8e10e2
 --- /dev/null
 +++ b/srchybrid/FirewallCheck.h
-@@ -0,0 +1,39 @@
+@@ -0,0 +1,41 @@
 +//this file is part of eMule
 +//Copyright (C)2002-2026 Merkur ( strEmail.Format("%s@%s", "devteam", "emule-project.net") / https://www.emule-project.net )
 +//
@@ -422,22 +469,24 @@ index 0000000..bf5776a
 +// and for each network profile in use, whether inbound connections reach this program - and if
 +// not, what stops them: the firewall blocking everything, a block rule (the one Windows makes when
 +// its "allow access" prompt is cancelled), an allow rule limited to some remote addresses, or no
-+// rule at all. Only reads; changes nothing.
++// rule at all. The check runs again every minute and logs the result again only when it changes.
++// Only reads; changes nothing.
 +class CFirewallCheck
 +{
 +public:
 +	CFirewallCheck();
 +	~CFirewallCheck();
 +
-+	void Start(uint16 nTCPPort, uint16 nUDPPort);
++	void Start();
 +
 +private:
 +	static UINT AFX_CDECL RunProc(LPVOID pParam);
 +	void Run();
++	bool Check(bool bFirst);
 +
 +	CWinThread	*m_pThread;
-+	uint16		m_nTCPPort;
-+	uint16		m_nUDPPort;
++	CEvent		m_evStop;
++	CString		m_sLastResult;
 +};
 diff --git a/srchybrid/emule.vcxproj b/srchybrid/emule.vcxproj
 index b8930e4..0ca3c62 100644
