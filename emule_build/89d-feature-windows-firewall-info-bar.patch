@@ -1,0 +1,695 @@
+diff --git a/srchybrid/EmuleDlg.cpp b/srchybrid/EmuleDlg.cpp
+index 4a6f676..3aaf075 100644
+--- a/srchybrid/EmuleDlg.cpp
++++ b/srchybrid/EmuleDlg.cpp
+@@ -95,6 +95,7 @@
+ #include "UPnPImpl.h"
+ #include "UPnPImplWrapper.h"
+ #include "FirewallCheck.h"
++#include "FirewallBar.h"
+ #include "ExitBox.h"
+ #include "UploadDiskIOThread.h"
+ #include "PartFileWriteThread.h"
+@@ -187,6 +188,7 @@ BEGIN_MESSAGE_MAP(CemuleDlg, CTrayDialog)
+ 
+ 	// UPnP
+ 	ON_MESSAGE(UM_UPNP_RESULT, OnUPnPResult)
++	ON_MESSAGE(UM_FIREWALL_STATE, OnFirewallState)
+ 
+ 	///////////////////////////////////////////////////////////////////////////
+ 	// WM_APP messages
+@@ -244,6 +246,8 @@ CemuleDlg::CemuleDlg(CWnd *pParent /*=NULL*/)
+ 	, m_hTimer()
+ 	, m_hUPnPTimeOutTimer()
+ 	, notifierenabled()
++	, m_pFirewallBar()
++	, m_bFirewallBarWanted()
+ {
+ 	g_uMainThreadId = GetCurrentThreadId();
+ 	SetClientIconList();
+@@ -328,6 +332,7 @@ CemuleDlg::~CemuleDlg()
+ 	//VERIFY(m_SysMenuOptions.DestroyMenu());
+ 
+ 	delete m_pDropTarget;
++	delete m_pFirewallBar;
+ 	delete statusbar;
+ 	delete toolbar;
+ 	delete statisticswnd;
+@@ -547,6 +552,9 @@ BOOL CemuleDlg::OnInitDialog()
+ 	ShowPing();
+ 	searchwnd->UpdateCatTabs();
+ 
++	// the firewall check may have finished before this window existed
++	PostMessage(UM_FIREWALL_STATE);
++
+ 	///////////////////////////////////////////////////////////////////////////
+ 	// Restore saved window placement
+ 	//
+@@ -1216,6 +1224,8 @@ void CemuleDlg::OnSize(UINT nType, int cx, int cy)
+ {
+ 	CTrayDialog::OnSize(nType, cx, cy);
+ 	SetStatusBarPartsSize();
++	if (nType != SIZE_MINIMIZED)
++		ApplyFirewallBar();
+ 	// we might receive this message during shutdown -> bad
+ 	if (transferwnd != NULL && !theApp.IsClosing())
+ 		transferwnd->VerifyCatTabSize();
+@@ -3791,4 +3801,71 @@ void CemuleDlg::SetTaskbarIconColor()
+ 	bBrightTaskbarIconSpeed = iBrightness < 132;
+ 	DebugLog(_T("Taskbar Notifier Color: R:%u G:%u B:%u, Brightness: %u, Transparent: %s"), iRed, iGreen, iBlue, iBrightness, bTransparent ? _T("Yes") : _T("No"));
+ 	thePrefs.SetStatsColor(11, ((bBrightTaskbarIconSpeed || bTransparent) ? RGB(255, 255, 255) : RGB(0, 0, 0)));
+-}
+\ No newline at end of file
++}
++
++LRESULT CemuleDlg::OnFirewallState(WPARAM, LPARAM)
++{
++	if (theApp.m_pFirewallCheck == NULL || theApp.IsClosing())
++		return 0;
++	CString sFixCmdLine;
++	const bool bBlocked = theApp.m_pFirewallCheck->IsBlocked(sFixCmdLine);
++	if (bBlocked && m_pFirewallBar == NULL) {
++		m_pFirewallBar = new CFirewallBar;
++		if (!m_pFirewallBar->Create(this)) {
++			delete m_pFirewallBar;
++			m_pFirewallBar = NULL;
++			return 0;
++		}
++	}
++	if (m_pFirewallBar != NULL) {
++		m_pFirewallBar->SetCanAllow(!sFixCmdLine.IsEmpty());
++		ShowFirewallBar(bBlocked);
++	}
++	return 0;
++}
++
++void CemuleDlg::ShowFirewallBar(bool bShow)
++{
++	m_bFirewallBarWanted = bShow;
++	ApplyFirewallBar();
++}
++
++// The bar takes its height from the top of the main window pages, or gives it back. The layout
++// is left alone while the window is minimized: the anchors would be taken from an empty client
++// area. OnSize brings the bar in line on restore.
++void CemuleDlg::ApplyFirewallBar()
++{
++	if (m_pFirewallBar == NULL || IsIconic() || m_bFirewallBarWanted == (m_pFirewallBar->IsWindowVisible() != FALSE))
++		return;
++	CRect rcPages;
++	toolbarWnds[0]->GetWindowRect(&rcPages);
++	ScreenToClient(&rcPages);
++	if (m_bFirewallBarWanted)
++		PlaceFirewallBar(rcPages);
++	else {
++		CRect rcBar;
++		m_pFirewallBar->GetWindowRect(&rcBar);
++		RemoveAnchor(m_pFirewallBar->m_hWnd);
++		m_pFirewallBar->ShowWindow(SW_HIDE);
++		rcPages.top -= rcBar.Height();
++	}
++	for (unsigned i = 0; i < _countof(toolbarWnds); ++i) {
++		RemoveAnchor(toolbarWnds[i]->m_hWnd);
++		toolbarWnds[i]->SetWindowPos(NULL, rcPages.left, rcPages.top, rcPages.Width(), rcPages.Height(), SWP_NOZORDER);
++		AddAnchor(toolbarWnds[i]->m_hWnd, TOP_LEFT, BOTTOM_RIGHT);
++	}
++	Invalidate();
++}
++
++// Puts the bar, when it is shown, at the top of the area for the main window pages, and takes
++// its height from that area.
++void CemuleDlg::PlaceFirewallBar(CRect &rcPages)
++{
++	if (m_pFirewallBar == NULL || !m_bFirewallBarWanted)
++		return;
++	const int iHeight = m_pFirewallBar->GetHeight();
++	RemoveAnchor(m_pFirewallBar->m_hWnd);
++	m_pFirewallBar->SetWindowPos(NULL, rcPages.left, rcPages.top, rcPages.Width(), iHeight, SWP_NOZORDER | SWP_SHOWWINDOW);
++	AddAnchor(m_pFirewallBar->m_hWnd, TOP_LEFT, TOP_RIGHT);
++	rcPages.top += iHeight;
++}
+diff --git a/srchybrid/EmuleDlg.h b/srchybrid/EmuleDlg.h
+index 09fd49e..eba5ed1 100644
+--- a/srchybrid/EmuleDlg.h
++++ b/srchybrid/EmuleDlg.h
+@@ -29,6 +29,7 @@ namespace Kademlia
+ };
+ 
+ class CChatWnd;
++class CFirewallBar;
+ class CIrcWnd;
+ class CKademliaWnd;
+ class CKnownFileList;
+@@ -159,6 +160,8 @@ public:
+ 	CWnd			*toolbarWnds[8]; //for Refresh()
+ 	uint8			status;
+ 
++	void ShowFirewallBar(bool bShow);
++
+ protected:
+ 	WINDOWPLACEMENT m_wpFirstRestore;
+ 	HICON			m_hIcon;
+@@ -231,6 +234,10 @@ protected:
+ 	int  GetRecMaxUpload();
+ 	void LoadNotifier(const CString &configuration);
+ 	bool notifierenabled;
++	CFirewallBar *m_pFirewallBar;
++	bool m_bFirewallBarWanted;
++	void ApplyFirewallBar();
++	void PlaceFirewallBar(CRect &rcPages);
+ 	void ShowToolPopup(bool toolsonly = false);
+ 	void SetAllIcons();
+ 	bool CanClose();
+@@ -308,6 +315,8 @@ protected:
+ 	afx_msg LRESULT OnConsoleThreadEvent(WPARAM wParam, LPARAM lParam);
+ 	// UPnP
+ 	afx_msg LRESULT OnUPnPResult(WPARAM wParam, LPARAM lParam);
++	// Windows Firewall
++	afx_msg LRESULT OnFirewallState(WPARAM, LPARAM);
+ };
+ 
+ #ifdef _DEBUG
+diff --git a/srchybrid/FirewallBar.cpp b/srchybrid/FirewallBar.cpp
+new file mode 100644
+index 0000000..43c6c66
+--- /dev/null
++++ b/srchybrid/FirewallBar.cpp
+@@ -0,0 +1,107 @@
++//this file is part of eMule
++//Copyright (C)2002-2026 Merkur ( strEmail.Format("%s@%s", "devteam", "emule-project.net") / https://www.emule-project.net )
++//
++//This program is free software; you can redistribute it and/or
++//modify it under the terms of the GNU General Public License
++//as published by the Free Software Foundation; either
++//version 2 of the License, or (at your option) any later version.
++//
++//This program is distributed in the hope that it will be useful,
++//but WITHOUT ANY WARRANTY; without even the implied warranty of
++//MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	See the
++//GNU General Public License for more details.
++//
++//You should have received a copy of the GNU General Public License
++//along with this program; if not, write to the Free Software
++//Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
++#include "StdAfx.h"
++#include "FirewallBar.h"
++#include "emule.h"
++#include "emuledlg.h"
++#include "FirewallCheck.h"
++
++#ifdef _DEBUG
++#define new DEBUG_NEW
++#undef THIS_FILE
++static char THIS_FILE[] = __FILE__;
++#endif
++
++namespace
++{
++	const UINT MP_FIREWALL_ALLOW = 1;
++	const UINT MP_FIREWALL_IGNORE = 2;
++	LPCTSTR const s_pszText = _T("Windows Firewall is blocking your inbound connections");
++}
++
++BEGIN_MESSAGE_MAP(CFirewallBar, CWnd)
++	ON_WM_PAINT()
++	ON_WM_ERASEBKGND()
++	ON_WM_LBUTTONUP()
++END_MESSAGE_MAP()
++
++CFirewallBar::CFirewallBar()
++	: m_hIcon()
++	, m_bCanAllow()
++{
++}
++
++bool CFirewallBar::Create(CWnd *pParent)
++{
++	const int iIconSize = ::GetSystemMetrics(SM_CXSMICON);
++	m_hIcon = (HICON)::LoadImage(NULL, IDI_WARNING, IMAGE_ICON, iIconSize, iIconSize, LR_SHARED);
++	LPCTSTR pszClass = AfxRegisterWndClass(CS_HREDRAW | CS_VREDRAW, ::LoadCursor(NULL, IDC_HAND));
++	if (!CreateEx(0, pszClass, s_pszText, WS_CHILD | WS_CLIPSIBLINGS, CRect(), pParent, 0))
++		return false;
++	SetFont(pParent->GetFont(), FALSE);
++	return true;
++}
++
++// One line of text, or the icon if it is taller, with some room above and below.
++int CFirewallBar::GetHeight()
++{
++	CClientDC dc(this);
++	CFont *pOldFont = dc.SelectObject(GetFont());
++	TEXTMETRIC tm;
++	dc.GetTextMetrics(&tm);
++	dc.SelectObject(pOldFont);
++	return max(tm.tmHeight, ::GetSystemMetrics(SM_CYSMICON)) + tm.tmHeight / 2;
++}
++
++void CFirewallBar::OnPaint()
++{
++	CPaintDC dc(this);
++	CRect rc;
++	GetClientRect(&rc);
++	dc.FillSolidRect(&rc, ::GetSysColor(COLOR_INFOBK));
++	dc.FillSolidRect(rc.left, rc.bottom - 1, rc.Width(), 1, ::GetSysColor(COLOR_3DSHADOW));
++
++	const int iIconSize = ::GetSystemMetrics(SM_CXSMICON);
++	const int iMargin = iIconSize / 2;
++	if (m_hIcon != NULL)
++		::DrawIconEx(dc, rc.left + iMargin, rc.top + (rc.Height() - iIconSize) / 2, m_hIcon, iIconSize, iIconSize, 0, NULL, DI_NORMAL);
++
++	CFont *pOldFont = dc.SelectObject(GetFont());
++	dc.SetBkMode(TRANSPARENT);
++	dc.SetTextColor(::GetSysColor(COLOR_INFOTEXT));
++	rc.left += iMargin + iIconSize + iMargin;
++	dc.DrawText(s_pszText, -1, &rc, DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX);
++	dc.SelectObject(pOldFont);
++}
++
++void CFirewallBar::OnLButtonUp(UINT /*nFlags*/, CPoint point)
++{
++	CMenu menu;
++	if (!menu.CreatePopupMenu())
++		return;
++	menu.AppendMenu(MF_STRING | (m_bCanAllow ? 0 : MF_GRAYED), MP_FIREWALL_ALLOW, _T("Allow"));
++	menu.AppendMenu(MF_STRING, MP_FIREWALL_IGNORE, _T("Ignore"));
++	ClientToScreen(&point);
++	switch (menu.TrackPopupMenu(TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RETURNCMD | TPM_NONOTIFY, point.x, point.y, this)) {
++	case MP_FIREWALL_ALLOW:
++		if (theApp.m_pFirewallCheck != NULL)
++			theApp.m_pFirewallCheck->OpenPorts(GetParent()->m_hWnd);
++		break;
++	case MP_FIREWALL_IGNORE:
++		theApp.emuledlg->ShowFirewallBar(false);
++	}
++}
+diff --git a/srchybrid/FirewallBar.h b/srchybrid/FirewallBar.h
+new file mode 100644
+index 0000000..ba4de1a
+--- /dev/null
++++ b/srchybrid/FirewallBar.h
+@@ -0,0 +1,40 @@
++//this file is part of eMule
++//Copyright (C)2002-2026 Merkur ( strEmail.Format("%s@%s", "devteam", "emule-project.net") / https://www.emule-project.net )
++//
++//This program is free software; you can redistribute it and/or
++//modify it under the terms of the GNU General Public License
++//as published by the Free Software Foundation; either
++//version 2 of the License, or (at your option) any later version.
++//
++//This program is distributed in the hope that it will be useful,
++//but WITHOUT ANY WARRANTY; without even the implied warranty of
++//MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	See the
++//GNU General Public License for more details.
++//
++//You should have received a copy of the GNU General Public License
++//along with this program; if not, write to the Free Software
++//Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
++#pragma once
++
++// The bar under the toolbar that tells the user Windows Firewall blocks the inbound connections,
++// like the information bar of the old browsers: a click on it opens a menu to open the ports
++// (as administrator) or to ignore the warning until the firewall state changes again.
++class CFirewallBar : public CWnd
++{
++public:
++	CFirewallBar();
++
++	bool Create(CWnd *pParent);
++	int GetHeight();
++	void SetCanAllow(bool bCanAllow)		{ m_bCanAllow = bCanAllow; }
++
++protected:
++	afx_msg void OnPaint();
++	afx_msg BOOL OnEraseBkgnd(CDC*)			{ return TRUE; }
++	afx_msg void OnLButtonUp(UINT nFlags, CPoint point);
++	DECLARE_MESSAGE_MAP()
++
++private:
++	HICON	m_hIcon;
++	bool	m_bCanAllow;
++};
+diff --git a/srchybrid/FirewallCheck.cpp b/srchybrid/FirewallCheck.cpp
+index 2cabca2..89e38b4 100644
+--- a/srchybrid/FirewallCheck.cpp
++++ b/srchybrid/FirewallCheck.cpp
+@@ -22,6 +22,8 @@
+ #include "OtherFunctions.h"
+ #include "Preferences.h"
+ #include "Opcodes.h"
++#include "emuledlg.h"
++#include "UserMsgs.h"
+ #include "Log.h"
+ 
+ #ifdef _DEBUG
+@@ -36,6 +38,7 @@ namespace
+ 	struct SFwRule
+ 	{
+ 		CString	sName;
++		CString	sApplication;	// as the rule stores it; empty when the rule is for every program
+ 		CString	sLocalPorts;
+ 		CString	sRemoteAddresses;
+ 		long	lProfiles;
+@@ -158,6 +161,7 @@ namespace
+ 				continue;
+ 			if (bstr.Length() > 0 && !SamePath(BstrToString(bstr), sOwnPath))
+ 				continue;
++			rule.sApplication = BstrToString(bstr);
+ 
+ 			bstr.Empty();
+ 			if (rule.lProtocol != NET_FW_IP_PROTOCOL_ANY && SUCCEEDED(pRule->get_LocalPorts(&bstr)))
+@@ -217,6 +221,92 @@ namespace
+ 		return FWV_NO_RULE;
+ 	}
+ 
++	bool IsBlockedVerdict(EFwVerdict eVerdict)
++	{
++		return eVerdict == FWV_BLOCK_ALL || eVerdict == FWV_BLOCK_RULE || eVerdict == FWV_NO_RULE;
++	}
++
++	// The values go between double quotes on a cmd.exe command line, where neither a quote
++	// nor a percent sign can be passed through safely.
++	bool QuotableForCmd(const CString &s)
++	{
++		return s.FindOneOf(_T("\"%")) < 0;
++	}
++
++	// What opening a blocked port takes, as netsh commands: block rules made for this program
++	// (what Windows makes when its "allow access" prompt is cancelled) are turned into allow
++	// rules, and a port no rule covers gets an allow rule of its own. Nothing is done for a
++	// profile that blocks everything, or for a block rule that applies to every program.
++	class CFixCommand
++	{
++	public:
++		CFixCommand(const CString &sOwnPath, bool bFixable)
++			: m_sOwnPath(sOwnPath)
++			, m_bFixable(bFixable && QuotableForCmd(sOwnPath))
++		{
++		}
++
++		void Add(EFwVerdict eVerdict, const SFwRule *pRule, const CArray<SFwRule> &aRules, long lProfile, long lProtocol, LPCTSTR pszProtocol, uint16 nPort)
++		{
++			switch (eVerdict) {
++			case FWV_BLOCK_ALL:
++				m_bFixable = false;
++				break;
++			case FWV_BLOCK_RULE:
++				if (pRule->sApplication.IsEmpty()) {
++					m_bFixable = false;
++					break;
++				}
++				for (INT_PTR i = 0; i < aRules.GetCount(); ++i) {
++					const SFwRule &rule = aRules[i];
++					if (rule.bAllow || rule.sApplication.IsEmpty() || !RuleCovers(rule, lProfile, lProtocol, nPort))
++						continue;
++					if (QuotableForCmd(rule.sName) && QuotableForCmd(rule.sApplication))
++						AddCommand(_T("set rule name=\"") + rule.sName + _T("\" dir=in program=\"") + rule.sApplication + _T("\" new action=allow"));
++					else
++						m_bFixable = false;
++				}
++				break;
++			case FWV_NO_RULE:
++				{
++					CString sCommand;
++					sCommand.Format(_T("add rule name=\"eMule %s %u\" dir=in action=allow program=\"%s\" protocol=%s localport=%u profile=any"), pszProtocol, nPort, (LPCTSTR)m_sOwnPath, pszProtocol, nPort);
++					AddCommand(sCommand);
++				}
++				break;
++			default:
++				break;
++			}
++		}
++
++		// The command line for cmd.exe, empty when the ports cannot be opened this way.
++		CString GetCmdLine() const
++		{
++			if (!m_bFixable || m_asCommands.IsEmpty())
++				return CString();
++			CString sCmdLine(_T("/s /c \""));
++			for (INT_PTR i = 0; i < m_asCommands.GetCount(); ++i) {
++				if (i > 0)
++					sCmdLine += _T(" & ");
++				sCmdLine += _T("netsh advfirewall firewall ") + m_asCommands[i];
++			}
++			return sCmdLine + _T('"');
++		}
++
++	private:
++		void AddCommand(const CString &sCommand)
++		{
++			for (INT_PTR i = 0; i < m_asCommands.GetCount(); ++i)
++				if (m_asCommands[i] == sCommand)
++					return;
++			m_asCommands.Add(sCommand);
++		}
++
++		const CString	m_sOwnPath;
++		CStringArray	m_asCommands;
++		bool			m_bFixable;
++	};
++
+ 	// Returns the log line for a verdict, and whether it is a warning.
+ 	bool FormatVerdict(EFwVerdict eVerdict, const SFwRule *pRule, long lProfile, LPCTSTR pszProtocol, uint16 nPort, CString &sLine)
+ 	{
+@@ -250,6 +340,9 @@ namespace
+ CFirewallCheck::CFirewallCheck()
+ 	: m_pThread()
+ 	, m_evStop(FALSE, TRUE)
++	, m_evRecheck(FALSE, FALSE)
++	, m_hFixProcess()
++	, m_bBlocked()
+ {
+ }
+ 
+@@ -260,6 +353,8 @@ CFirewallCheck::~CFirewallCheck()
+ 		::WaitForSingleObject(m_pThread->m_hThread, INFINITE);
+ 		delete m_pThread;
+ 	}
++	if (m_hFixProcess != NULL)
++		::CloseHandle(m_hFixProcess);
+ }
+ 
+ void CFirewallCheck::Start()
+@@ -288,13 +383,81 @@ UINT AFX_CDECL CFirewallCheck::RunProc(LPVOID pParam)
+ void CFirewallCheck::Run()
+ {
+ 	// A policy that cannot be read at all (Wine, for one) will not be readable a minute later.
+-	if (!Check(true))
++	if (!Check(true, false))
++		return;
++	const HANDLE ahEvents[] = {m_evStop, m_evRecheck};
++	for (;;) {
++		const DWORD dwWait = ::WaitForMultipleObjects(_countof(ahEvents), ahEvents, FALSE, MIN2MS(1));
++		if (dwWait == WAIT_OBJECT_0)
++			break;
++		bool bAfterFix = false;
++		if (dwWait == WAIT_OBJECT_0 + 1) {
++			// Check again as soon as the netsh commands are done.
++			m_csState.Lock();
++			const HANDLE hProcess = m_hFixProcess;
++			m_hFixProcess = NULL;
++			m_csState.Unlock();
++			if (hProcess != NULL) {
++				const HANDLE ahProcess[] = {m_evStop, hProcess};
++				const DWORD dwDone = ::WaitForMultipleObjects(_countof(ahProcess), ahProcess, FALSE, SEC2MS(30));
++				::CloseHandle(hProcess);
++				if (dwDone == WAIT_OBJECT_0)
++					break;
++				bAfterFix = true;
++			}
++		}
++		Check(false, bAfterFix);
++	}
++}
++
++bool CFirewallCheck::IsBlocked(CString &sFixCmdLine)
++{
++	CSingleLock lock(&m_csState, TRUE);
++	sFixCmdLine = m_sFixCmdLine;
++	return m_bBlocked;
++}
++
++// Runs the netsh commands that open the ports through cmd.exe as administrator: the UAC prompt
++// is for them only, and eMule itself goes on without elevation.
++void CFirewallCheck::OpenPorts(HWND hWndParent)
++{
++	CString sFixCmdLine;
++	if (!IsBlocked(sFixCmdLine) || sFixCmdLine.IsEmpty())
++		return;
++	TCHAR szCmd[MAX_PATH];
++	const UINT uLen = ::GetSystemDirectory(szCmd, _countof(szCmd));
++	if (uLen == 0 || uLen + 8 >= _countof(szCmd))
++		return;
++	_tcscat_s(szCmd, _T("\\cmd.exe"));
++
++	SHELLEXECUTEINFO sei = {};
++	sei.cbSize = (DWORD)sizeof sei;
++	sei.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC;
++	sei.hwnd = hWndParent;
++	sei.lpVerb = _T("runas");
++	sei.lpFile = szCmd;
++	sei.lpParameters = sFixCmdLine;
++	sei.nShow = SW_HIDE;
++	if (!::ShellExecuteEx(&sei)) {
++		const DWORD dwError = ::GetLastError();
++		if (dwError == ERROR_CANCELLED)
++			theApp.QueueLogLine(false, _T("Windows Firewall: the rules were not changed, administrator rights were not given"));
++		else
++			theApp.QueueLogLineEx(LOG_WARNING, _T("Windows Firewall: the rules cannot be changed (error %lu)"), dwError);
+ 		return;
+-	while (::WaitForSingleObject(m_evStop, MIN2MS(1)) == WAIT_TIMEOUT)
+-		Check(false);
++	}
++	theApp.QueueDebugLogLine(false, _T("Windows Firewall: run as administrator: cmd.exe %s"), (LPCTSTR)sFixCmdLine);
++	if (sei.hProcess != NULL) {
++		m_csState.Lock();
++		if (m_hFixProcess != NULL)
++			::CloseHandle(m_hFixProcess);
++		m_hFixProcess = sei.hProcess;
++		m_csState.Unlock();
++	}
++	m_evRecheck.SetEvent();
+ }
+ 
+-bool CFirewallCheck::Check(bool bFirst)
++bool CFirewallCheck::Check(bool bFirst, bool bAfterFix)
+ {
+ 	CComPtr<INetFwPolicy2> pPolicy;
+ 	HRESULT hr = pPolicy.CoCreateInstance(__uuidof(NetFwPolicy2), NULL, CLSCTX_INPROC_SERVER);
+@@ -329,6 +492,7 @@ bool CFirewallCheck::Check(bool bFirst)
+ 	CStringArray asLines;
+ 	CArray<bool> abWarnings;
+ 	CString sLine;
++	bool bBlocked = false;
+ 
+ 	// Rules from group policy, or the policy forbidding local rules, are not in what the
+ 	// rule collection returns.
+@@ -338,6 +502,7 @@ bool CFirewallCheck::Check(bool bFirst)
+ 		asLines.Add(sLine);
+ 		abWarnings.Add(true);
+ 	}
++	CFixCommand fix(szOwnPath, eModifyState == NET_FW_MODIFY_STATE_OK);
+ 
+ 	static const long s_alProfiles[] = {NET_FW_PROFILE2_DOMAIN, NET_FW_PROFILE2_PRIVATE, NET_FW_PROFILE2_PUBLIC};
+ 	for (unsigned i = 0; i < _countof(s_alProfiles); ++i) {
+@@ -348,20 +513,36 @@ bool CFirewallCheck::Check(bool bFirst)
+ 		EFwVerdict eVerdict = Evaluate(pPolicy, aRules, lProfile, NET_FW_IP_PROTOCOL_TCP, nTCPPort, pRule);
+ 		abWarnings.Add(FormatVerdict(eVerdict, pRule, lProfile, _T("TCP"), nTCPPort, sLine));
+ 		asLines.Add(sLine);
++		bBlocked |= IsBlockedVerdict(eVerdict);
++		fix.Add(eVerdict, pRule, aRules, lProfile, NET_FW_IP_PROTOCOL_TCP, _T("TCP"), nTCPPort);
+ 		if (nUDPPort != 0) {
+ 			eVerdict = Evaluate(pPolicy, aRules, lProfile, NET_FW_IP_PROTOCOL_UDP, nUDPPort, pRule);
+ 			abWarnings.Add(FormatVerdict(eVerdict, pRule, lProfile, _T("UDP"), nUDPPort, sLine));
+ 			asLines.Add(sLine);
++			bBlocked |= IsBlockedVerdict(eVerdict);
++			fix.Add(eVerdict, pRule, aRules, lProfile, NET_FW_IP_PROTOCOL_UDP, _T("UDP"), nUDPPort);
+ 		}
+ 	}
+ 
+ 	CString sResult;
+ 	for (INT_PTR i = 0; i < asLines.GetCount(); ++i)
+ 		sResult += asLines[i] + _T('\n');
+-	if (sResult == m_sLastResult)
++	if (sResult == m_sLastResult) {
++		if (bAfterFix && bBlocked)
++			theApp.QueueLogLineEx(LOG_WARNING, _T("Windows Firewall still blocks inbound connections after the change of its rules"));
+ 		return true;
++	}
+ 	m_sLastResult = sResult;
+ 
++	// The main window shows a bar while a port is blocked; it asks for the state on its own once
++	// it is created.
++	m_csState.Lock();
++	m_bBlocked = bBlocked;
++	m_sFixCmdLine = bBlocked ? fix.GetCmdLine() : CString();
++	m_csState.Unlock();
++	if (theApp.emuledlg != NULL && theApp.emuledlg->m_hWnd != NULL)
++		::PostMessage(theApp.emuledlg->m_hWnd, UM_FIREWALL_STATE, 0, 0);
++
+ 	if (!bFirst)
+ 		theApp.QueueLogLine(false, _T("Windows Firewall: the inbound check gives a different result from the last one"));
+ 	for (INT_PTR i = 0; i < asLines.GetCount(); ++i) {
+diff --git a/srchybrid/FirewallCheck.h b/srchybrid/FirewallCheck.h
+index f8e10e2..0207fd5 100644
+--- a/srchybrid/FirewallCheck.h
++++ b/srchybrid/FirewallCheck.h
+@@ -20,8 +20,9 @@
+ // and for each network profile in use, whether inbound connections reach this program - and if
+ // not, what stops them: the firewall blocking everything, a block rule (the one Windows makes when
+ // its "allow access" prompt is cancelled), an allow rule limited to some remote addresses, or no
+-// rule at all. The check runs again every minute and logs the result again only when it changes.
+-// Only reads; changes nothing.
++// rule at all. The check runs again every minute and logs the result again only when it changes;
++// the main window is told when the ports get blocked or open again. Changes the rules only when
++// the user asks for it, through OpenPorts().
+ class CFirewallCheck
+ {
+ public:
+@@ -29,13 +30,21 @@ public:
+ 	~CFirewallCheck();
+ 
+ 	void Start();
++	bool IsBlocked(CString &sFixCmdLine);	// sFixCmdLine is empty when OpenPorts() can do nothing
++	void OpenPorts(HWND hWndParent);
+ 
+ private:
+ 	static UINT AFX_CDECL RunProc(LPVOID pParam);
+ 	void Run();
+-	bool Check(bool bFirst);
++	bool Check(bool bFirst, bool bAfterFix);
+ 
+ 	CWinThread	*m_pThread;
+ 	CEvent		m_evStop;
++	CEvent		m_evRecheck;
+ 	CString		m_sLastResult;
++
++	CCriticalSection m_csState;	// guards the members below
++	HANDLE		m_hFixProcess;
++	CString		m_sFixCmdLine;
++	bool		m_bBlocked;
+ };
+diff --git a/srchybrid/MuleToolBarCtrl.cpp b/srchybrid/MuleToolBarCtrl.cpp
+index 86434a3..2ff4648 100644
+--- a/srchybrid/MuleToolBarCtrl.cpp
++++ b/srchybrid/MuleToolBarCtrl.cpp
+@@ -743,6 +743,7 @@ void CMuleToolbarCtrl::Refresh()
+ 
+ 		rcClient.top += rToolbarRect.Height();
+ 		rcClient.bottom -= rcStatusbar.Height();
++		theApp.emuledlg->PlaceFirewallBar(rcClient);
+ 
+ 		CWnd **wnds = theApp.emuledlg->toolbarWnds;
+ 		for (int i = (int)_countof(theApp.emuledlg->toolbarWnds); --i >= 0; ++wnds) {
+diff --git a/srchybrid/UserMsgs.h b/srchybrid/UserMsgs.h
+index 2c240b1..c1c4547 100644
+--- a/srchybrid/UserMsgs.h
++++ b/srchybrid/UserMsgs.h
+@@ -50,4 +50,7 @@ enum EUserWndMessages
+ 	// TreeOptionsCtrl
+ 	, WM_TOC_SETFOCUS_TO_CHILD //+29
+ 	, WM_TOC_REPOSITION_CHILD_CONTROL //+30
++
++	// Windows Firewall
++	, UM_FIREWALL_STATE //+31
+ };
+\ No newline at end of file
+diff --git a/srchybrid/emule.vcxproj b/srchybrid/emule.vcxproj
+index 0ca3c62..d0c45db 100644
+--- a/srchybrid/emule.vcxproj
++++ b/srchybrid/emule.vcxproj
+@@ -220,6 +220,7 @@
+     <ClCompile Include="FileDetailDlgStatistics.cpp" />
+     <ClCompile Include="FileIdentifier.cpp" />
+     <ClCompile Include="FileInfoDialog.cpp" />
++    <ClCompile Include="FirewallBar.cpp" />
+     <ClCompile Include="FirewallCheck.cpp" />
+     <ClCompile Include="FrameGrabThread.cpp" />
+     <ClCompile Include="Friend.cpp" />
+@@ -492,6 +493,7 @@
+     <ClInclude Include="FileDetailDlgStatistics.h" />
+     <ClInclude Include="FileIdentifier.h" />
+     <ClInclude Include="FileInfoDialog.h" />
++    <ClInclude Include="FirewallBar.h" />
+     <ClInclude Include="FirewallCheck.h" />
+     <ClInclude Include="FrameGrabThread.h" />
+     <ClInclude Include="Friend.h" />

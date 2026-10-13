@@ -73,8 +73,11 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #   89     reachable ports. 89a takes miniupnpc out, 89b puts libplum in its
 #          place: one library that tries PCP, NAT-PMP and UPnP-IGD in turn
 #          and keeps the mappings alive on its own. 89c reads the Windows
-#          Firewall policy at startup and logs whether it lets inbound
-#          connections reach the TCP and UDP ports, and what stops them.
+#          Firewall policy at startup and every minute after, and logs
+#          whether it lets inbound connections reach the TCP and UDP ports,
+#          and what stops them. 89d shows a bar under the toolbar while a
+#          port is blocked; its menu opens the ports through netsh, run as
+#          administrator for that alone, or hides the bar.
 #   90-94  the code compiles but /Wall flags it; these bring the warning
 #          count back to zero.
 #   95-96  the code compiles and is warning-clean but is not correct on
