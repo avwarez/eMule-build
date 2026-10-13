@@ -70,7 +70,7 @@ index 4a6f676..3aaf075 100644
 +	const bool bBlocked = theApp.m_pFirewallCheck->IsBlocked(sFixCmdLine);
 +	if (bBlocked && m_pFirewallBar == NULL) {
 +		m_pFirewallBar = new CFirewallBar;
-+		if (!m_pFirewallBar->Create(this)) {
++		if (!m_pFirewallBar->CreateBar(this)) {
 +			delete m_pFirewallBar;
 +			m_pFirewallBar = NULL;
 +			return 0;
@@ -222,7 +222,7 @@ index 0000000..43c6c66
 +{
 +}
 +
-+bool CFirewallBar::Create(CWnd *pParent)
++bool CFirewallBar::CreateBar(CWnd *pParent)
 +{
 +	const int iIconSize = ::GetSystemMetrics(SM_CXSMICON);
 +	m_hIcon = (HICON)::LoadImage(NULL, IDI_WARNING, IMAGE_ICON, iIconSize, iIconSize, LR_SHARED);
@@ -314,7 +314,7 @@ index 0000000..ba4de1a
 +public:
 +	CFirewallBar();
 +
-+	bool Create(CWnd *pParent);
++	bool CreateBar(CWnd *pParent);
 +	int GetHeight();
 +	void SetCanAllow(bool bCanAllow)		{ m_bCanAllow = bCanAllow; }
 +
