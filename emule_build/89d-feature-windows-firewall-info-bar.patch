@@ -1,5 +1,5 @@
 diff --git a/srchybrid/EmuleDlg.cpp b/srchybrid/EmuleDlg.cpp
-index 4a6f676..3aaf075 100644
+index 88ba87c..2db466a 100644
 --- a/srchybrid/EmuleDlg.cpp
 +++ b/srchybrid/EmuleDlg.cpp
 @@ -95,6 +95,7 @@
@@ -10,7 +10,7 @@ index 4a6f676..3aaf075 100644
  #include "ExitBox.h"
  #include "UploadDiskIOThread.h"
  #include "PartFileWriteThread.h"
-@@ -187,6 +188,7 @@ BEGIN_MESSAGE_MAP(CemuleDlg, CTrayDialog)
+@@ -185,6 +186,7 @@ BEGIN_MESSAGE_MAP(CemuleDlg, CTrayDialog)
  
  	// UPnP
  	ON_MESSAGE(UM_UPNP_RESULT, OnUPnPResult)
@@ -18,7 +18,7 @@ index 4a6f676..3aaf075 100644
  
  	///////////////////////////////////////////////////////////////////////////
  	// WM_APP messages
-@@ -244,6 +246,8 @@ CemuleDlg::CemuleDlg(CWnd *pParent /*=NULL*/)
+@@ -241,6 +243,8 @@ CemuleDlg::CemuleDlg(CWnd *pParent /*=NULL*/)
  	, m_hTimer()
  	, m_hUPnPTimeOutTimer()
  	, notifierenabled()
@@ -27,7 +27,7 @@ index 4a6f676..3aaf075 100644
  {
  	g_uMainThreadId = GetCurrentThreadId();
  	SetClientIconList();
-@@ -328,6 +332,7 @@ CemuleDlg::~CemuleDlg()
+@@ -325,6 +329,7 @@ CemuleDlg::~CemuleDlg()
  	//VERIFY(m_SysMenuOptions.DestroyMenu());
  
  	delete m_pDropTarget;
@@ -35,7 +35,7 @@ index 4a6f676..3aaf075 100644
  	delete statusbar;
  	delete toolbar;
  	delete statisticswnd;
-@@ -547,6 +552,9 @@ BOOL CemuleDlg::OnInitDialog()
+@@ -544,6 +549,9 @@ BOOL CemuleDlg::OnInitDialog()
  	ShowPing();
  	searchwnd->UpdateCatTabs();
  
@@ -45,7 +45,7 @@ index 4a6f676..3aaf075 100644
  	///////////////////////////////////////////////////////////////////////////
  	// Restore saved window placement
  	//
-@@ -1216,6 +1224,8 @@ void CemuleDlg::OnSize(UINT nType, int cx, int cy)
+@@ -1211,6 +1219,8 @@ void CemuleDlg::OnSize(UINT nType, int cx, int cy)
  {
  	CTrayDialog::OnSize(nType, cx, cy);
  	SetStatusBarPartsSize();
@@ -54,7 +54,7 @@ index 4a6f676..3aaf075 100644
  	// we might receive this message during shutdown -> bad
  	if (transferwnd != NULL && !theApp.IsClosing())
  		transferwnd->VerifyCatTabSize();
-@@ -3791,4 +3801,71 @@ void CemuleDlg::SetTaskbarIconColor()
+@@ -3777,4 +3787,72 @@ void CemuleDlg::SetTaskbarIconColor()
  	bBrightTaskbarIconSpeed = iBrightness < 132;
  	DebugLog(_T("Taskbar Notifier Color: R:%u G:%u B:%u, Brightness: %u, Transparent: %s"), iRed, iGreen, iBlue, iBrightness, bTransparent ? _T("Yes") : _T("No"));
  	thePrefs.SetStatsColor(11, ((bBrightTaskbarIconSpeed || bTransparent) ? RGB(255, 255, 255) : RGB(0, 0, 0)));
@@ -91,10 +91,11 @@ index 4a6f676..3aaf075 100644
 +
 +// The bar takes its height from the top of the main window pages, or gives it back. The layout
 +// is left alone while the window is minimized: the anchors would be taken from an empty client
-+// area. OnSize brings the bar in line on restore.
++// area. OnSize brings the bar in line on restore. Whether the bar is shown is read from its own
++// style: IsWindowVisible() is false for it too while the main window is hidden in the tray.
 +void CemuleDlg::ApplyFirewallBar()
 +{
-+	if (m_pFirewallBar == NULL || IsIconic() || m_bFirewallBarWanted == (m_pFirewallBar->IsWindowVisible() != FALSE))
++	if (m_pFirewallBar == NULL || IsIconic() || m_bFirewallBarWanted == ((m_pFirewallBar->GetStyle() & WS_VISIBLE) != 0))
 +		return;
 +	CRect rcPages;
 +	toolbarWnds[0]->GetWindowRect(&rcPages);
@@ -171,7 +172,7 @@ index 09fd49e..eba5ed1 100644
  #ifdef _DEBUG
 diff --git a/srchybrid/FirewallBar.cpp b/srchybrid/FirewallBar.cpp
 new file mode 100644
-index 0000000..43c6c66
+index 0000000..eb12e10
 --- /dev/null
 +++ b/srchybrid/FirewallBar.cpp
 @@ -0,0 +1,107 @@
@@ -284,7 +285,7 @@ index 0000000..43c6c66
 +}
 diff --git a/srchybrid/FirewallBar.h b/srchybrid/FirewallBar.h
 new file mode 100644
-index 0000000..ba4de1a
+index 0000000..ea08849
 --- /dev/null
 +++ b/srchybrid/FirewallBar.h
 @@ -0,0 +1,40 @@
