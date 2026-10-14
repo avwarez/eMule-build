@@ -1,0 +1,14 @@
+diff --git a/srchybrid/KnownFile.cpp b/srchybrid/KnownFile.cpp
+index 16b2f7d..76dc151 100644
+--- a/srchybrid/KnownFile.cpp
++++ b/srchybrid/KnownFile.cpp
+@@ -213,7 +213,8 @@ void CKnownFile::UpdatePartsInfo()
+ 		CUpDownClient *cur_src = m_ClientUploadList.GetNext(pos);
+ 		//This could be a partfile that just completed. Many of these clients will not have this information.
+ 		if (cur_src->m_abyUpPartStatus && cur_src->GetUpPartCount() == GetPartCount()) {
+-			for (INT_PTR i = GetPartCount(); --i > 0;)
++			// down to part 0 included: the minimum taken below is the count of complete sources
++			for (INT_PTR i = GetPartCount(); --i >= 0;)
+ 				m_AvailPartFrequency[i] += static_cast<uint16>(cur_src->IsUpPartAvailable((UINT)i));
+ 
+ 			if (bRefresh)
