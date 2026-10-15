@@ -1,0 +1,304 @@
+diff --git a/srchybrid/Emule.cpp b/srchybrid/Emule.cpp
+index 041c505..4a08b81 100644
+--- a/srchybrid/Emule.cpp
++++ b/srchybrid/Emule.cpp
+@@ -418,7 +418,8 @@ BOOL CemuleApp::InitInstance()
+ 	///////////////////////////////////////////////////////////////////////////
+ 	// Common Controls initialization
+ 	//
+-	::InitCommonControls();
++	const INITCOMMONCONTROLSEX icc = {sizeof icc, ICC_WIN95_CLASSES};
++	::InitCommonControlsEx(&icc);
+ 
+ 	m_sizSmallSystemIcon.SetSize(::GetSystemMetrics(SM_CXSMICON), ::GetSystemMetrics(SM_CYSMICON));
+ 	UpdateLargeIconSize();
+diff --git a/srchybrid/EmuleDlg.cpp b/srchybrid/EmuleDlg.cpp
+index 8a8fc6f..2c0f81e 100644
+--- a/srchybrid/EmuleDlg.cpp
++++ b/srchybrid/EmuleDlg.cpp
+@@ -3482,12 +3482,12 @@ BOOL CemuleDlg::OnDeviceChange(UINT nEventType, DWORD_PTR dwData)
+ 	//	ZIP disk drives (although Windows Explorer recognises a changed media, we do not get a message)
+ 	//	CD-ROM drives (although MSDN says different...)
+ 	//
+-	if ((nEventType == DBT_DEVICEARRIVAL || nEventType == DBT_DEVICEREMOVECOMPLETE) && !IsBadReadPtr((void*)dwData, sizeof(DEV_BROADCAST_HDR))) {
++	if ((nEventType == DBT_DEVICEARRIVAL || nEventType == DBT_DEVICEREMOVECOMPLETE) && dwData != 0) {
+ #ifdef _DEBUG
+ 		CString strMsg(nEventType == DBT_DEVICEARRIVAL ? _T("DBT_DEVICEARRIVAL") : _T("DBT_DEVICEREMOVECOMPLETE"));
+ #endif
+ 		const DEV_BROADCAST_HDR *pHdr = (DEV_BROADCAST_HDR*)dwData;
+-		if (pHdr->dbch_devicetype == DBT_DEVTYP_VOLUME && !IsBadReadPtr((void*)dwData, sizeof(DEV_BROADCAST_VOLUME))) {
++		if (pHdr->dbch_devicetype == DBT_DEVTYP_VOLUME && pHdr->dbch_size >= sizeof(DEV_BROADCAST_VOLUME)) {
+ 			const DEV_BROADCAST_VOLUME *pVol = (DEV_BROADCAST_VOLUME*)pHdr;
+ #ifdef _DEBUG
+ 			strMsg += _T(" Volume");
+diff --git a/srchybrid/FileInfoDialog.cpp b/srchybrid/FileInfoDialog.cpp
+index 1f3a015..c45f8a4 100644
+--- a/srchybrid/FileInfoDialog.cpp
++++ b/srchybrid/FileInfoDialog.cpp
+@@ -111,7 +111,7 @@ public:
+ 				}
+ 			}
+ 			if (m_hLib == NULL) {
+-				const CString &strProgramFiles(ShellGetFolderPath(CSIDL_PROGRAM_FILES));
++				const CString &strProgramFiles(ShellGetFolderPath(FOLDERID_ProgramFiles));
+ 				if (!strProgramFiles.IsEmpty()) {
+ 					LPTSTR pszResult = ::PathCombine(strPath.GetBuffer(MAX_PATH), strProgramFiles, _T("MediaInfo\\MEDIAINFO.DLL"));
+ 					strPath.ReleaseBuffer();
+diff --git a/srchybrid/HttpDownloadDlg.cpp b/srchybrid/HttpDownloadDlg.cpp
+index a7e0d3b..be11c42 100644
+--- a/srchybrid/HttpDownloadDlg.cpp
++++ b/srchybrid/HttpDownloadDlg.cpp
+@@ -199,8 +199,6 @@ BEGIN_MESSAGE_MAP(CHttpDownloadDlg, CDialog)
+ 	ON_MESSAGE(WM_HTTPDOWNLOAD_THREAD_FINISHED, OnThreadFinished)
+ END_MESSAGE_MAP()
+ 
+-ULONGLONG CHttpDownloadDlg::sm_ullWinInetVer;
+-
+ CHttpDownloadDlg::CHttpDownloadDlg(CWnd *pParent /*=NULL*/)
+ 	: CDialog(CHttpDownloadDlg::IDD, pParent)
+ 	, m_hInternetSession()
+@@ -214,8 +212,6 @@ CHttpDownloadDlg::CHttpDownloadDlg(CWnd *pParent /*=NULL*/)
+ {
+ 	//{{AFX_DATA_INIT(CHttpDownloadDlg)
+ 	//}}AFX_DATA_INIT
+-	if (sm_ullWinInetVer == 0)
+-		sm_ullWinInetVer = GetModuleVersion(::GetModuleHandle(_T("wininet")));
+ }
+ 
+ void CHttpDownloadDlg::DoDataExchange(CDataExchange *pDX)
+diff --git a/srchybrid/HttpDownloadDlg.h b/srchybrid/HttpDownloadDlg.h
+index 4546c1c..0b9ad5a 100644
+--- a/srchybrid/HttpDownloadDlg.h
++++ b/srchybrid/HttpDownloadDlg.h
+@@ -90,7 +90,6 @@ protected:
+ 	HINTERNET		m_hHttpConnection;
+ 	HINTERNET		m_hHttpFile;
+ 	CWinThread		*m_pThread;
+-	static ULONGLONG sm_ullWinInetVer;
+ 	DWORD			m_dwServiceType;
+ 	INTERNET_PORT	m_nPort;
+ 	volatile bool	m_bAbort;
+diff --git a/srchybrid/OtherFunctions.cpp b/srchybrid/OtherFunctions.cpp
+index fc2a7ad..f818323 100644
+--- a/srchybrid/OtherFunctions.cpp
++++ b/srchybrid/OtherFunctions.cpp
+@@ -359,12 +359,14 @@ bool ShellDeleteFile(LPCTSTR pszFilePath)
+ 	return ::DeleteFile(pszFilePath) != 0;
+ }
+ 
+-CString ShellGetFolderPath(int iCSIDL)
++CString ShellGetFolderPath(REFKNOWNFOLDERID rfid)
+ {
+-	TCHAR szPath[MAX_PATH];
+-	if (SUCCEEDED(::SHGetFolderPath(NULL, iCSIDL, NULL, SHGFP_TYPE_CURRENT, szPath)))
+-		return CString(szPath);
+-	return CString();
++	CString strPath;
++	PWSTR pszPath = NULL;
++	if (SUCCEEDED(::SHGetKnownFolderPath(rfid, 0, NULL, &pszPath)))
++		strPath = pszPath;
++	::CoTaskMemFree(pszPath);
++	return strPath;
+ }
+ 
+ // Print the hash in a format which is similar to CertMgr's.
+@@ -940,31 +942,27 @@ bool SelectDir(HWND hWnd, LPTSTR pszPath, LPCTSTR pszTitle, LPCTSTR pszDlgTitle)
+ {
+ 	ASSERT(pszPath != NULL);
+ 	(void)::CoInitialize(NULL);
+-	LPMALLOC pShlMalloc;
+-	bool bResult = (SHGetMalloc(&pShlMalloc) == NOERROR);
+-	if (bResult) {
+-		BROWSEINFO BrsInfo = {};
+-		BrsInfo.hwndOwner = hWnd;
+-		BrsInfo.lpszTitle = (pszTitle != NULL) ? pszTitle : pszDlgTitle;
+-		BrsInfo.ulFlags = BIF_VALIDATE | BIF_NEWDIALOGSTYLE | BIF_RETURNONLYFSDIRS | BIF_SHAREABLE | BIF_DONTGOBELOWDOMAIN;
+-
+-		BROWSEINIT BrsInit = {};
+-		if (pszTitle != NULL || pszDlgTitle != NULL) {
+-			// Need the 'BrowseCallbackProc' to set those strings
+-			BrsInfo.lpfn = BrowseCallbackProc;
+-			BrsInfo.lParam = (LPARAM)&BrsInit;
+-			BrsInit.pszDlgTitle = (pszDlgTitle != NULL) ? pszDlgTitle : NULL/*pszTitle*/;
+-			BrsInit.pszInitialDir = pszPath;
+-		}
+-
+-		LPITEMIDLIST pidlBrowse;
+-		if ((pidlBrowse = ::SHBrowseForFolder(&BrsInfo)) != NULL) {
+-			bResult = ::SHGetPathFromIDList(pidlBrowse, pszPath);
+-			pShlMalloc->Free(pidlBrowse);
+-		}
+-		pShlMalloc->Release();
+-		::PathAddBackslash(pszPath);
+-	}
++	bool bResult = true;
++	BROWSEINFO BrsInfo = {};
++	BrsInfo.hwndOwner = hWnd;
++	BrsInfo.lpszTitle = (pszTitle != NULL) ? pszTitle : pszDlgTitle;
++	BrsInfo.ulFlags = BIF_VALIDATE | BIF_NEWDIALOGSTYLE | BIF_RETURNONLYFSDIRS | BIF_SHAREABLE | BIF_DONTGOBELOWDOMAIN;
++
++	BROWSEINIT BrsInit = {};
++	if (pszTitle != NULL || pszDlgTitle != NULL) {
++		// Need the 'BrowseCallbackProc' to set those strings
++		BrsInfo.lpfn = BrowseCallbackProc;
++		BrsInfo.lParam = (LPARAM)&BrsInit;
++		BrsInit.pszDlgTitle = (pszDlgTitle != NULL) ? pszDlgTitle : NULL/*pszTitle*/;
++		BrsInit.pszInitialDir = pszPath;
++	}
++
++	LPITEMIDLIST pidlBrowse;
++	if ((pidlBrowse = ::SHBrowseForFolder(&BrsInfo)) != NULL) {
++		bResult = ::SHGetPathFromIDList(pidlBrowse, pszPath);
++		::CoTaskMemFree(pidlBrowse);
++	}
++	::PathAddBackslash(pszPath);
+ 	::CoUninitialize();
+ 	return bResult;
+ }
+diff --git a/srchybrid/OtherFunctions.h b/srchybrid/OtherFunctions.h
+index 4cc8d71..00bcf54 100644
+--- a/srchybrid/OtherFunctions.h
++++ b/srchybrid/OtherFunctions.h
+@@ -220,7 +220,7 @@ void ShellOpen(LPCTSTR lpName, LPCTSTR lpParameters);
+ void ShellOpenFile(LPCTSTR lpName);
+ void ShellDefaultVerb(LPCTSTR lpName);
+ bool ShellDeleteFile(LPCTSTR pszFilePath);
+-CString ShellGetFolderPath(int iCSIDL);
++CString ShellGetFolderPath(REFKNOWNFOLDERID rfid);
+ bool SelectDir(HWND hWnd, LPTSTR pszPath, LPCTSTR pszTitle = NULL, LPCTSTR pszDlgTitle = NULL);
+ BOOL DialogBrowseFile(CString &rstrPath, LPCTSTR pszFilters, LPCTSTR pszDefaultFileName = NULL, DWORD dwFlags = 0, bool openfilestyle = true);
+ void AddBuddyButton(HWND hwndEdit, HWND hwndButton);
+diff --git a/srchybrid/PartFileConvert.cpp b/srchybrid/PartFileConvert.cpp
+index d184930..ba3cbbc 100644
+--- a/srchybrid/PartFileConvert.cpp
++++ b/srchybrid/PartFileConvert.cpp
+@@ -608,49 +608,45 @@ void CPartFileConvertDlg::PostNcDestroy()
+ void CPartFileConvertDlg::OnAddFolder()
+ {
+ 	// browse...
+-	LPMALLOC pMalloc = NULL;
+-	if (SHGetMalloc(&pMalloc) == NOERROR) {
+-		// buffer - a place to hold the file system pathname
+-		TCHAR buffer[MAX_PATH];
+-
+-		// This struct holds the various options for the dialog
+-		BROWSEINFO bi;
+-		bi.hwndOwner = m_hWnd;
+-		bi.pidlRoot = NULL;
+-		bi.pszDisplayName = buffer;
+-		CString title(GetResString(IDS_IMP_SELFOLDER));
+-		bi.lpszTitle = title.GetBuffer(title.GetLength());
+-		bi.ulFlags = BIF_EDITBOX | BIF_NEWDIALOGSTYLE | BIF_NONEWFOLDERBUTTON | BIF_SHAREABLE;
+-		bi.lpfn = NULL;
+-
+-		// Now cause the dialog to appear.
+-		LPITEMIDLIST pidlRoot;
+-		if ((pidlRoot = SHBrowseForFolder(&bi)) != NULL) {
+-			int reply;
+-			if (thePrefs.IsExtControlsEnabled())
+-				reply = LocMessageBox(IDS_IMP_DELSRC, MB_YESNOCANCEL | MB_DEFBUTTON2, 0);
+-			else
+-				reply = IDNO;
+-
+-			if (reply != IDCANCEL) {
+-				bool removesrc = (reply == IDYES);
+-
+-				//
+-				// Again, almost undocumented. How to get an ASCII pathname
+-				// from the LPITEMIDLIST struct.
+-				// I guess you just have to "know" this stuff.
+-				//
+-				if (SHGetPathFromIDList(pidlRoot, buffer)) {
+-					// Do something with the converted string.
+-					CPartFileConvert::ScanFolderToAdd(CString(buffer), removesrc);
+-				}
++	// buffer - a place to hold the file system pathname
++	TCHAR buffer[MAX_PATH];
++
++	// This struct holds the various options for the dialog
++	BROWSEINFO bi;
++	bi.hwndOwner = m_hWnd;
++	bi.pidlRoot = NULL;
++	bi.pszDisplayName = buffer;
++	CString title(GetResString(IDS_IMP_SELFOLDER));
++	bi.lpszTitle = title.GetBuffer(title.GetLength());
++	bi.ulFlags = BIF_EDITBOX | BIF_NEWDIALOGSTYLE | BIF_NONEWFOLDERBUTTON | BIF_SHAREABLE;
++	bi.lpfn = NULL;
++
++	// Now cause the dialog to appear.
++	LPITEMIDLIST pidlRoot;
++	if ((pidlRoot = SHBrowseForFolder(&bi)) != NULL) {
++		int reply;
++		if (thePrefs.IsExtControlsEnabled())
++			reply = LocMessageBox(IDS_IMP_DELSRC, MB_YESNOCANCEL | MB_DEFBUTTON2, 0);
++		else
++			reply = IDNO;
++
++		if (reply != IDCANCEL) {
++			bool removesrc = (reply == IDYES);
++
++			//
++			// Again, almost undocumented. How to get an ASCII pathname
++			// from the LPITEMIDLIST struct.
++			// I guess you just have to "know" this stuff.
++			//
++			if (SHGetPathFromIDList(pidlRoot, buffer)) {
++				// Do something with the converted string.
++				CPartFileConvert::ScanFolderToAdd(CString(buffer), removesrc);
+ 			}
+-
+-			// Free the returned item identifier list using the
+-			// shell's task allocator!Arghhhh.
+-			pMalloc->Free(pidlRoot);
+ 		}
+-		pMalloc->Release();
++
++		// Free the returned item identifier list using the
++		// shell's task allocator!Arghhhh.
++		::CoTaskMemFree(pidlRoot);
+ 	}
+ }
+ 
+diff --git a/srchybrid/TrayDialog.cpp b/srchybrid/TrayDialog.cpp
+index 48bf556..4929797 100644
+--- a/srchybrid/TrayDialog.cpp
++++ b/srchybrid/TrayDialog.cpp
+@@ -49,6 +49,7 @@ CTrayDialog::CTrayDialog(UINT uIDD, CWnd *pParent /*=NULL*/)
+ 	: CTrayDialogBase(uIDD, pParent)
+ 	, m_pbMinimizeToTray()
+ 	, m_hPrevIconDelete()
++	, m_nidIconData()
+ 	, m_uSingleClickTimer()
+ 	, u_DblClickSpeed(::GetDoubleClickTime())
+ 	, m_uLButtonDown()
+@@ -56,12 +57,9 @@ CTrayDialog::CTrayDialog(UINT uIDD, CWnd *pParent /*=NULL*/)
+ 	, m_bTrayIconVisible()
+ 	//, m_nDefaultMenuItem()
+ {
+-	m_nidIconData.cbSize = NOTIFYICONDATA_V2_SIZE; //for Windows 2K and above
+-	m_nidIconData.hWnd = 0;
++	m_nidIconData.cbSize = sizeof m_nidIconData;
+ 	m_nidIconData.uID = 1;
+ 	m_nidIconData.uCallbackMessage = UM_TRAY_ICON_NOTIFY_MESSAGE;
+-	m_nidIconData.hIcon = 0;
+-	m_nidIconData.szTip[0] = _T('\0');
+ 	m_nidIconData.uFlags = NIF_MESSAGE;
+ }
+ 
+diff --git a/srchybrid/TreeOptionsCtrl.cpp b/srchybrid/TreeOptionsCtrl.cpp
+index 2a7ac27..ecfd488 100644
+--- a/srchybrid/TreeOptionsCtrl.cpp
++++ b/srchybrid/TreeOptionsCtrl.cpp
+@@ -2246,11 +2246,7 @@ void CTreeOptionsEdit::BrowseForFolder(const CString &sInitialFolder)
+ 
+ 		//avoid memory leaks by deleting the PIDL
+ 		//using the shells task allocator
+-		IMalloc *pMalloc;
+-		if (SUCCEEDED(SHGetMalloc(&pMalloc))) {
+-			pMalloc->Free(pItemIDList);
+-			pMalloc->Release();
+-		}
++		::CoTaskMemFree(pItemIDList);
+ 	}
+ }
+ 

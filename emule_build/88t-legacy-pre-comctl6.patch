@@ -1,3 +1,16 @@
+diff --git a/srchybrid/ArchivePreviewDlg.cpp b/srchybrid/ArchivePreviewDlg.cpp
+index 1c58208..ae07539 100644
+--- a/srchybrid/ArchivePreviewDlg.cpp
++++ b/srchybrid/ArchivePreviewDlg.cpp
+@@ -205,8 +205,6 @@ BOOL CArchivePreviewDlg::OnInitDialog()
+ 
+ 	AddAllOtherAnchors();
+ 
+-	// Win98: Explicitly set to Unicode to receive Unicode notifications.
+-	m_ContentList.SendMessage(CCM_SETUNICODEFORMAT, TRUE);
+ 	// To support full sorting of the archive entries list we'd need a separate list which
+ 	// is holding the unified archive entries for all different supported archive formats so
+ 	// that the ListView's sortproc can get valid 'lParam' values which are pointing to those
 diff --git a/srchybrid/BuddyButton.cpp b/srchybrid/BuddyButton.cpp
 index 2183b16..b764d52 100644
 --- a/srchybrid/BuddyButton.cpp
@@ -26,6 +39,20 @@ index ff9e808..8db5b5a 100644
  	m_wndFormat.SetExtendedStyle(m_wndFormat.GetExtendedStyle() | TBSTYLE_EX_MIXEDBUTTONS);
  	TBBUTTON atb[1] = {};
  	//atb[0].iBitmap = 0;
+diff --git a/srchybrid/DirectoryTreeCtrl.cpp b/srchybrid/DirectoryTreeCtrl.cpp
+index d97f431..540ecac 100644
+--- a/srchybrid/DirectoryTreeCtrl.cpp
++++ b/srchybrid/DirectoryTreeCtrl.cpp
+@@ -183,9 +183,6 @@ void CDirectoryTreeCtrl::OnTvnGetdispinfo(LPNMHDR pNMHDR, LRESULT *pResult)
+ 
+ void CDirectoryTreeCtrl::Init()
+ {
+-	// Win98: Explicitly set to Unicode to receive Unicode notifications.
+-	SendMessage(CCM_SETUNICODEFORMAT, TRUE);
+-
+ 	ShowWindow(SW_HIDE);
+ 	DeleteAllItems();
+ 
 diff --git a/srchybrid/Emule.cpp b/srchybrid/Emule.cpp
 index 475650d..c1d9092 100644
 --- a/srchybrid/Emule.cpp
@@ -123,6 +150,19 @@ index c631457..92f25cc 100644
  	bool		IsVistaThemeActive() const;
  
  	bool		GetLangHelpFilePath(CString &strResult);
+diff --git a/srchybrid/IPFilterDlg.cpp b/srchybrid/IPFilterDlg.cpp
+index fa48d0b..37ab77a 100644
+--- a/srchybrid/IPFilterDlg.cpp
++++ b/srchybrid/IPFilterDlg.cpp
+@@ -173,8 +173,6 @@ BOOL CIPFilterDlg::OnInitDialog()
+ 	EnableSaveRestore(PREF_INI_SECTION);
+ 
+ 	ASSERT(m_ipfilter.GetStyle() & LVS_OWNERDATA);
+-	// Win98: Explicitly set to Unicode to receive Unicode notifications.
+-	m_ipfilter.SendMessage(CCM_SETUNICODEFORMAT, TRUE);
+ 	m_ipfilter.SetExtendedStyle(LVS_EX_FULLROWSELECT | LVS_EX_INFOTIP | LVS_EX_GRIDLINES);
+ 	m_ipfilter.EnableHdrCtrlSortBitmaps();
+ 	m_ipfilter.ReadColumnStats(_countof(s_aColumns), s_aColumns);
 diff --git a/srchybrid/IrcWnd.cpp b/srchybrid/IrcWnd.cpp
 index 13daeab..c5a66f0 100644
 --- a/srchybrid/IrcWnd.cpp
@@ -250,10 +290,19 @@ index c5708cd..15029d0 100644
  };
 \ No newline at end of file
 diff --git a/srchybrid/MuleListCtrl.cpp b/srchybrid/MuleListCtrl.cpp
-index f1248fe..da60be5 100644
+index f1248fe..372092c 100644
 --- a/srchybrid/MuleListCtrl.cpp
 +++ b/srchybrid/MuleListCtrl.cpp
-@@ -488,12 +488,6 @@ void CMuleListCtrl::SetSortArrow(int iColumn, ArrowType atType)
+@@ -113,8 +113,6 @@ void CMuleListCtrl::PreSubclassWindow()
+ {
+ 	SetColors();
+ 	CListCtrl::PreSubclassWindow();
+-	// Win98: Explicitly set to Unicode to receive Unicode notifications.
+-	SendMessage(CCM_SETUNICODEFORMAT, TRUE);
+ 	SetExtendedStyle(LVS_EX_HEADERDRAGDROP);
+ 
+ 	// Vista: Reduce flickering in header control
+@@ -488,12 +486,6 @@ void CMuleListCtrl::SetSortArrow(int iColumn, ArrowType atType)
  				if (imlSortStates.Create(14, 14, theApp.m_iDfltImageListColorFlags | ILC_MASK, 1, 0)) {
  					VERIFY(imlSortStates.Add(&bmSortStates, RGB(255, 0, 255)) >= 0);
  
@@ -266,7 +315,7 @@ index f1248fe..da60be5 100644
  					// When setting the image list for the header control for the first time we'll get
  					// the image list of the listview control!! So, better store the header control image list separate.
  					(void)pHeaderCtrl->SetImageList(&imlSortStates);
-@@ -502,12 +496,10 @@ void CMuleListCtrl::SetSortArrow(int iColumn, ArrowType atType)
+@@ -502,12 +494,10 @@ void CMuleListCtrl::SetSortArrow(int iColumn, ArrowType atType)
  
  					// Use smaller bitmap margins -- this saves some pixels which may be required for
  					// rather small column titles.
@@ -284,10 +333,20 @@ index f1248fe..da60be5 100644
  			}
  		}
 diff --git a/srchybrid/MuleToolBarCtrl.cpp b/srchybrid/MuleToolBarCtrl.cpp
-index 57d885e..0317b09 100644
+index 57d885e..86434a3 100644
 --- a/srchybrid/MuleToolBarCtrl.cpp
 +++ b/srchybrid/MuleToolBarCtrl.cpp
-@@ -266,13 +266,7 @@ void CMuleToolbarCtrl::SetAllButtonsWidth()
+@@ -104,9 +104,6 @@ void CMuleToolbarCtrl::Init()
+ {
+ 	m_astrToolbarPaths.RemoveAll();
+ 
+-	// Win98: Explicitly set to Unicode to receive Unicode notifications.
+-	SendMessage(CCM_SETUNICODEFORMAT, TRUE);
+-
+ 	ModifyStyle(0, TBSTYLE_FLAT | TBSTYLE_ALTDRAG | CCS_ADJUSTABLE | TBSTYLE_TRANSPARENT | TBSTYLE_TOOLTIPS | CCS_NODIVIDER);
+ 	if (thePrefs.GetUseReBarToolbar()) {
+ 		ModifyStyle(0, CCS_NORESIZE);
+@@ -266,13 +263,7 @@ void CMuleToolbarCtrl::SetAllButtonsWidth()
  
  		SetButtonWidth(iCalcSize, iCalcSize);
  	} else {
@@ -302,7 +361,7 @@ index 57d885e..0317b09 100644
  
  		int iFixedButtonWidth;
  		int iFixedButtonHeight;
-@@ -858,11 +852,8 @@ void CMuleToolbarCtrl::OnSettingChange(UINT uFlags, LPCTSTR lpszSection)
+@@ -858,11 +849,8 @@ void CMuleToolbarCtrl::OnSettingChange(UINT uFlags, LPCTSTR lpszSection)
  	// not use the value of that parameter to limit the invocation of our correction code.
  	//
  
@@ -315,7 +374,7 @@ index 57d885e..0317b09 100644
  }
  
  void CMuleToolbarCtrl::PressMuleButton(int nID)
-@@ -964,22 +955,6 @@ void CMuleToolbarCtrl::AutoSize()
+@@ -964,22 +952,6 @@ void CMuleToolbarCtrl::AutoSize()
  #endif
  }
  
@@ -376,6 +435,46 @@ index e3b20d8..6a04849 100644
  	m_btnSearchListMenu.SetExtendedStyle(m_btnSearchListMenu.GetExtendedStyle() & ~TBSTYLE_EX_MIXEDBUTTONS);
  	m_btnSearchListMenu.RecalcLayout(true);
  
+diff --git a/srchybrid/SharedDirsTreeCtrl.cpp b/srchybrid/SharedDirsTreeCtrl.cpp
+index c6fc64c..798df56 100644
+--- a/srchybrid/SharedDirsTreeCtrl.cpp
++++ b/srchybrid/SharedDirsTreeCtrl.cpp
+@@ -109,9 +109,6 @@ void CSharedDirsTreeCtrl::Initialize(CSharedFilesCtrl *pSharedFilesCtrl)
+ {
+ 	m_pSharedFilesCtrl = pSharedFilesCtrl;
+ 
+-	// Win98: Explicitly set to Unicode to receive Unicode notifications.
+-	SendMessage(CCM_SETUNICODEFORMAT, TRUE);
+-
+ 	m_bUseIcons = true;
+ 	SetAllIcons();
+ 	Localize();
+diff --git a/srchybrid/SmileySelector.cpp b/srchybrid/SmileySelector.cpp
+index 2e767ae..2307693 100644
+--- a/srchybrid/SmileySelector.cpp
++++ b/srchybrid/SmileySelector.cpp
+@@ -122,8 +122,6 @@ BOOL CSmileySelector::CreateWnd(CWnd *pWndParent, LPCRECT pRect, CEdit *pwndEdit
+ 	{
+ 		return FALSE;
+ 	}
+-	// Win98: Explicitly set to Unicode to receive Unicode notifications.
+-	m_tb.SendMessage(CCM_SETUNICODEFORMAT, TRUE);
+ 
+ 	//////////////////////////////////////////////////////////////////////////
+ 	// Create toolbar image list with smileys
+diff --git a/srchybrid/StatisticsDlg.cpp b/srchybrid/StatisticsDlg.cpp
+index 0861110..41c22fd 100644
+--- a/srchybrid/StatisticsDlg.cpp
++++ b/srchybrid/StatisticsDlg.cpp
+@@ -151,8 +151,6 @@ BOOL CStatisticsDlg::OnInitDialog()
+ 		SetDlgItemText(IDC_BNMENU, _T("6")); // show a down-arrow
+ 	}
+ 
+-	// Win98: Explicitly set to Unicode to receive Unicode notifications.
+-	m_stattree.SendMessage(CCM_SETUNICODEFORMAT, TRUE);
+ 	if (thePrefs.GetUseSystemFontForMainControls())
+ 		m_stattree.SendMessage(WM_SETFONT, NULL, FALSE);
+ 	CreateMyTree();
 diff --git a/srchybrid/ToolTipCtrlX.cpp b/srchybrid/ToolTipCtrlX.cpp
 index b3b0ac1..465476c 100644
 --- a/srchybrid/ToolTipCtrlX.cpp
@@ -659,3 +758,17 @@ index 5a56858..e1a7e98 100644
  		m_btnWnd2.SetExtendedStyle(m_btnWnd2.GetExtendedStyle() & ~TBSTYLE_EX_MIXEDBUTTONS);
  		m_btnWnd2.RecalcLayout(true);
  	}
+diff --git a/srchybrid/TreePropSheet.cpp b/srchybrid/TreePropSheet.cpp
+index e24d8d3..1a4ba09 100644
+--- a/srchybrid/TreePropSheet.cpp
++++ b/srchybrid/TreePropSheet.cpp
+@@ -724,9 +724,6 @@ BOOL CTreePropSheet::OnInitDialog()
+ // to the font which is used for the property pages.
+ 	m_pwndPageTree->SendMessage(WM_SETFONT, (WPARAM)AfxGetMainWnd()->GetFont()->m_hObject, TRUE);
+ 
+-	// Win98: Explicitly set to Unicode to receive Unicode notifications.
+-	m_pwndPageTree->SendMessage(CCM_SETUNICODEFORMAT, TRUE);
+-
+ 	m_pwndPageTree->SetItemHeight(m_pwndPageTree->GetItemHeight() + 6);
+ 
+ 	if (m_bTreeImages) {
