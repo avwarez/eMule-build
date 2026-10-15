@@ -70,13 +70,13 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          or one branch no supported Windows ever takes, or one run-time
 #          lookup of an API every supported Windows has - small on purpose,
 #          so each can be judged on its own.
-#   89     reachable ports. 89a takes miniupnpc out, 89b puts libplum in its
-#          place: one library that tries PCP, NAT-PMP and UPnP-IGD in turn
-#          and keeps the mappings alive on its own. 89c reads the Windows
+#   89     reachable ports. 89a puts libplum in the place of miniupnpc:
+#          one library that tries PCP, NAT-PMP and UPnP-IGD in turn and
+#          keeps the mappings alive on its own. 89b reads the Windows
 #          Firewall policy at startup and every minute after, and logs
 #          whether it lets inbound connections reach the TCP and UDP ports,
-#          and what stops them. 89d shows a bar under the toolbar while a
-#          port is blocked; its menu opens the ports through netsh, run as
+#          and what stops them; while a port is blocked it shows a bar under
+#          the toolbar, whose menu opens the ports through netsh, run as
 #          administrator for that alone, or hides the bar.
 #   90-94  the code compiles but /Wall flags it; these bring the warning
 #          count back to zero.
@@ -268,7 +268,7 @@ add_subdirectory(id3lib_build)
 # lease, error 714 on unmapping is a success, UPnP mappings are checked with
 # GetSpecificPortMappingEntry every recheck period and made again only when
 # gone, and plum_refresh_mapping() checks one at once), for the port mapping
-# emule_build/89b adds (PCP, NAT-PMP and UPnP-IGD). Has its own CMakeLists.txt.
+# emule_build/89a adds (PCP, NAT-PMP and UPnP-IGD). Has its own CMakeLists.txt.
 # Two things in it must not reach the rest of this build:
 # - option(BUILD_SHARED_LIBS ... ON) would put ON in the cache, and every
 #   add_library() without STATIC/SHARED added after it would become a DLL.

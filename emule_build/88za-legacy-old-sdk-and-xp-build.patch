@@ -1,0 +1,592 @@
+diff --git a/srchybrid/EmuleDlg.cpp b/srchybrid/EmuleDlg.cpp
+index cd73398..5590ef9 100644
+--- a/srchybrid/EmuleDlg.cpp
++++ b/srchybrid/EmuleDlg.cpp
+@@ -113,9 +113,7 @@ extern BOOL FirstTimeWizard();
+ UINT g_uMainThreadId = 0;
+ static const UINT UWM_ARE_YOU_EMULE = RegisterWindowMessage(EMULE_GUID);
+ 
+-#ifdef HAVE_WIN7_SDK_H
+ static const UINT UWM_TASK_BUTTON_CREATED = RegisterWindowMessage(_T("TaskbarButtonCreated"));
+-#endif
+ 
+ 
+ 
+@@ -199,9 +197,7 @@ BEGIN_MESSAGE_MAP(CemuleDlg, CTrayDialog)
+ 	ON_MESSAGE(TM_FILECOMPLETED, OnFileCompleted)
+ 	ON_MESSAGE(TM_CONSOLETHREADEVENT, OnConsoleThreadEvent)
+ 
+-#ifdef HAVE_WIN7_SDK_H
+ 	ON_REGISTERED_MESSAGE(UWM_TASK_BUTTON_CREATED, OnTaskbarBtnCreated)
+-#endif
+ 
+ END_MESSAGE_MAP()
+ 
+@@ -315,14 +311,12 @@ CemuleDlg::~CemuleDlg()
+ 	if (usericon)
+ 		VERIFY(::DestroyIcon(usericon));
+ 
+-#ifdef HAVE_WIN7_SDK_H
+ 	if (m_pTaskbarList != NULL) {
+ 		m_pTaskbarList.Release();
+ 		ASSERT(m_bInitedCOM);
+ 	}
+ 	if (m_bInitedCOM)
+ 		::CoUninitialize();
+-#endif
+ 
+ 	// already destroyed by windows?
+ 	//VERIFY(m_menuUploadCtrl.DestroyMenu());
+@@ -371,7 +365,6 @@ static void DialogCreateIndirect(CDialog *pWnd, UINT uID)
+ BOOL CemuleDlg::OnInitDialog()
+ {
+ 	theStats.starttime = ::GetTickCount();
+-#ifdef HAVE_WIN7_SDK_H
+ 	// allow the TaskbarButtonCreated- & (tbb-)WM_COMMAND message to be sent to our window if our app is running elevated
+ 	m_bInitedCOM = SUCCEEDED(::CoInitialize(NULL));
+ 	if (m_bInitedCOM) {
+@@ -384,7 +377,6 @@ BOOL CemuleDlg::OnInitDialog()
+ 		}
+ 	} else
+ 		ASSERT(0);
+-#endif
+ 
+ 	// temporary disable the 'startup minimized' option, otherwise no window will be shown at all
+ 	if (!thePrefs.IsFirstStart())
+@@ -735,9 +727,7 @@ void CALLBACK CemuleDlg::StartupTimer(HWND /*hwnd*/, UINT /*uiMsg*/, UINT_PTR /*
+ 				if (thePrefs.DoAutoConnect())
+ 					theApp.emuledlg->OnBnClickedConnect();
+ 
+-#ifdef HAVE_WIN7_SDK_H
+ 				theApp.emuledlg->UpdateStatusBarProgress();
+-#endif
+ 			}
+ 			break;
+ 		case 5:
+@@ -1043,9 +1033,7 @@ void CemuleDlg::ShowConnectionState()
+ 		}
+ 	}
+ 	ShowUserCount();
+-#ifdef HAVE_WIN7_SDK_H
+ 	UpdateThumbBarButtons();
+-#endif
+ }
+ 
+ void CemuleDlg::ShowUserCount()
+@@ -2540,11 +2528,9 @@ BOOL CemuleDlg::OnCommand(WPARAM wParam, LPARAM lParam)
+ 	else if (wParam >= MP_SCHACTIONS && wParam <= MP_SCHACTIONS + 99) {
+ 		theApp.scheduler->ActivateSchedule(wParam - MP_SCHACTIONS);
+ 		theApp.scheduler->SaveOriginals(); // use the new settings as original
+-#ifdef HAVE_WIN7_SDK_H
+ 	} else if (HIWORD(wParam) == THBN_CLICKED) {
+ 		OnTBBPressed(LOWORD(wParam));
+ 		return TRUE;
+-#endif
+ 	}
+ 
+ 	return CTrayDialog::OnCommand(wParam, lParam);
+@@ -3584,7 +3570,6 @@ void CemuleDlg::OnDrawClipboard()
+ //////////////////////////////////////////////////////////////////
+ // Windows 7 GUI goodies
+ 
+-#ifdef HAVE_WIN7_SDK_H
+ // update thumbbarbutton structs and add/update the GUI thumbbar
+ void CemuleDlg::UpdateThumbBarButtons(bool initialAddToDlg)
+ {
+@@ -3752,7 +3737,6 @@ void CemuleDlg::UpdateStatusBarProgress()
+ 		}
+ 	}
+ }
+-#endif
+ 
+ void CemuleDlg::SetTaskbarIconColor()
+ {
+diff --git a/srchybrid/EmuleDlg.h b/srchybrid/EmuleDlg.h
+index 2668f7d..09fd49e 100644
+--- a/srchybrid/EmuleDlg.h
++++ b/srchybrid/EmuleDlg.h
+@@ -89,7 +89,6 @@ public:
+ 	bool CopyTextToClipboard(const CString &strText);
+ 	void WatchClipboard(bool bWatch);
+ 
+-#ifdef HAVE_WIN7_SDK_H
+ 	void UpdateStatusBarProgress();
+ 	void UpdateThumbBarButtons(bool initialAddToDlg = false);
+ 	void OnTBBPressed(UINT id);
+@@ -105,7 +104,6 @@ public:
+ 		TBB_PREFERENCES,
+ 		TBB_LAST = TBB_PREFERENCES
+ 	};
+-#endif
+ 
+ 	// Logging
+ 	void AddLogText(UINT uFlags, LPCTSTR pszText);
+@@ -193,14 +191,12 @@ protected:
+ 	bool			m_bKadSuspendDisconnect;
+ 	bool			m_bEd2kSuspendDisconnect;
+ 	bool			m_bInitedCOM;
+-#ifdef HAVE_WIN7_SDK_H
+ 	CComPtr<ITaskbarList3>	m_pTaskbarList;
+ 	THUMBBUTTON		m_thbButtons[TBB_LAST + 1];
+ 
+ 	TBPFLAG			m_currentTBP_state;
+ 	float			m_prevProgress;
+ 	HICON			m_ovlIcon;
+-#endif
+ 
+ 	// Splash screen
+ 	DWORD m_dwSplashTime;
+@@ -297,9 +293,7 @@ protected:
+ 
+ 	afx_msg LRESULT OnAreYouEmule(WPARAM, LPARAM);
+ 
+-#ifdef HAVE_WIN7_SDK_H
+ 	afx_msg LRESULT OnTaskbarBtnCreated(WPARAM, LPARAM);
+-#endif
+ 
+ 	//Web Interface
+ 	afx_msg LRESULT OnWebGUIInteraction(WPARAM wParam, LPARAM lParam);
+diff --git a/srchybrid/MediaInfo.cpp b/srchybrid/MediaInfo.cpp
+index 37f33a7..0cf0d20 100644
+--- a/srchybrid/MediaInfo.cpp
++++ b/srchybrid/MediaInfo.cpp
+@@ -23,15 +23,6 @@
+ #include "SafeFile.h"
+ #ifdef HAVE_WMSDK_H
+ #include <wmsdk.h>
+-#if !defined(HAVE_VISTA_SDK)
+-static const WCHAR g_wszWMPeakBitrate[] = L"WM/PeakBitrate";
+-static const WCHAR g_wszWMStreamTypeInfo[] = L"WM/StreamTypeInfo";
+-struct WM_STREAM_TYPE_INFO
+-{
+-	GUID	guidMajorType;
+-	DWORD	cbFormat;
+-};
+-#endif
+ #endif//HAVE_WMSDK_H
+ 
+ #ifdef _DEBUG
+diff --git a/srchybrid/PPgDisplay.cpp b/srchybrid/PPgDisplay.cpp
+index f07423e..06862ff 100644
+--- a/srchybrid/PPgDisplay.cpp
++++ b/srchybrid/PPgDisplay.cpp
+@@ -84,11 +84,7 @@ void CPPgDisplay::LoadSettings()
+ 	CheckDlgButton(IDC_SHOWTRANSTOOLBAR, static_cast<UINT>(thePrefs.IsTransToolbarEnabled()));
+ 	CheckDlgButton(IDC_DISABLEHIST, static_cast<UINT>(thePrefs.GetUseAutocompletion()));
+ 
+-#ifdef HAVE_WIN7_SDK_H
+ 	CheckDlgButton(IDC_WIN7TASKBARGOODIES, static_cast<UINT>(thePrefs.IsWin7TaskbarGoodiesEnabled()));
+-#else
+-	GetDlgItem(IDC_WIN7TASKBARGOODIES)->EnableWindow(FALSE);
+-#endif
+ 
+ 	SetDlgItemInt(IDC_TOOLTIPDELAY, thePrefs.m_iToolDelayTime, FALSE);
+ }
+@@ -127,10 +123,8 @@ BOOL CPPgDisplay::OnApply()
+ 	thePrefs.m_bUseAutocompl = IsDlgButtonChecked(IDC_DISABLEHIST) != 0;
+ 	thePrefs.m_bStoreSearches = IsDlgButtonChecked(IDC_STORESEARCHES) != 0;
+ 
+-#ifdef HAVE_WIN7_SDK_H
+ 	thePrefs.m_bShowWin7TaskbarGoodies = IsDlgButtonChecked(IDC_WIN7TASKBARGOODIES) != 0;
+ 	theApp.emuledlg->EnableTaskbarGoodies(thePrefs.m_bShowWin7TaskbarGoodies);
+-#endif
+ 
+ 	thePrefs.showRatesInTitle = IsDlgButtonChecked(IDC_SHOWRATEONTITLE) != 0;
+ 
+diff --git a/srchybrid/PartFile.cpp b/srchybrid/PartFile.cpp
+index bd13bcc..dc2dc95 100644
+--- a/srchybrid/PartFile.cpp
++++ b/srchybrid/PartFile.cpp
+@@ -53,9 +53,7 @@
+ #include "CollectionViewDialog.h"
+ #include "uploaddiskiothread.h"
+ #include "PartFileWriteThread.h"
+-#ifndef XP_BUILD
+ #include <urlmon.h>
+-#endif
+ 
+ #ifdef _DEBUG
+ #define new DEBUG_NEW
+@@ -2722,25 +2720,6 @@ static void UncompressFile(LPCTSTR pszFilePath, CPartFile *pPartFile)
+ 	::CloseHandle(hFile);
+ }
+ 
+-#ifdef XP_BUILD
+-#ifndef __IZoneIdentifier_INTERFACE_DEFINED__
+-MIDL_INTERFACE("cd45f185-1b21-48e2-967b-ead743a8914e")
+-IZoneIdentifier : public IUnknown
+-{
+-public:
+-	virtual HRESULT STDMETHODCALLTYPE GetId(DWORD *pdwZone) = 0;
+-	virtual HRESULT STDMETHODCALLTYPE SetId(DWORD dwZone) = 0;
+-	virtual HRESULT STDMETHODCALLTYPE Remove() = 0;
+-};
+-#endif //__IZoneIdentifier_INTERFACE_DEFINED__
+-
+-#ifdef CLSID_PersistentZoneIdentifier
+-EXTERN_C const IID CLSID_PersistentZoneIdentifier;
+-#elif _WIN32_WINNT<_WIN32_WINNT_VISTA
+-const GUID CLSID_PersistentZoneIdentifier = {0x0968E258, 0x16C7, 0x4DBA, { 0xAA, 0x86, 0x46, 0x2D, 0xD6, 0x1E, 0x31, 0xA3 }};
+-#endif
+-#endif
+-
+ static void SetZoneIdentifier(LPCWSTR pszFilePath)
+ {
+ 	if (!thePrefs.GetCheckFileOpen())
+diff --git a/srchybrid/Pinger.cpp b/srchybrid/Pinger.cpp
+index 2eebd5e..2bb55c3 100644
+--- a/srchybrid/Pinger.cpp
++++ b/srchybrid/Pinger.cpp
+@@ -374,39 +374,6 @@ PingStatus Pinger::PingICMP(uint32 lAddr, DWORD ttl, bool doLog)
+ 
+ void Pinger::PIcmpErr(LPCTSTR pszMsg, DWORD nICMPErr)
+ {
+-#ifdef XP_BUILD
+-	static LPCTSTR const aszSendEchoErr[] =
+-	{
+-		_T("IP_STATUS_BASE (11000)"),
+-		_T("IP_BUF_TOO_SMALL (11001)"),
+-		_T("IP_DEST_NET_UNREACHABLE (11002)"),
+-		_T("IP_DEST_HOST_UNREACHABLE (11003)"),
+-		_T("IP_DEST_PROT_UNREACHABLE (11004)"),
+-		_T("IP_DEST_PORT_UNREACHABLE (11005)"),
+-		_T("IP_NO_RESOURCES (11006)"),
+-		_T("IP_BAD_OPTION (11007)"),
+-		_T("IP_HW_ERROR (11008)"),
+-		_T("IP_PACKET_TOO_BIG (11009)"),
+-		_T("IP_REQ_TIMED_OUT (11010)"),
+-		_T("IP_BAD_REQ (11011)"),
+-		_T("IP_BAD_ROUTE (11012)"),
+-		_T("IP_TTL_EXPIRED_TRANSIT (11013)"),
+-		_T("IP_TTL_EXPIRED_REASSEM (11014)"),
+-		_T("IP_PARAM_PROBLEM (11015)"),
+-		_T("IP_SOURCE_QUENCH (11016)"),
+-		_T("IP_OPTION_TOO_BIG (11017)"),
+-		_T("IP_BAD_DESTINATION (11018)"),
+-		_T("IP_ADDR_DELETED (11019)"),
+-		_T("IP_SPEC_MTU_CHANGE (11020)"),
+-		_T("IP_MTU_CHANGE (11021)"),
+-		_T("IP_UNLOAD (11022)")
+-	};
+-
+-	bool b = (nICMPErr >= IP_STATUS_BASE && nICMPErr < IP_STATUS_BASE + _countof(aszSendEchoErr));
+-	theApp.QueueDebugLogLine(false, _T("%sPinger: %s")
+-		, pszMsg ? pszMsg : _T("")
+-		, (LPCTSTR)(b ? aszSendEchoErr[nICMPErr - IP_STATUS_BASE] : GetErrorMessage(nICMPErr, 1)));
+-#else
+ 	DWORD dwSize = 511;
+ 	CStringW sErr;
+ 	bool b = (GetIpErrorString(nICMPErr, sErr.GetBuffer(dwSize), &dwSize) == NO_ERROR);
+@@ -414,5 +381,4 @@ void Pinger::PIcmpErr(LPCTSTR pszMsg, DWORD nICMPErr)
+ 	theApp.QueueDebugLogLine(false, _T("%sPinger: %s")
+ 		, pszMsg ? pszMsg : _T("")
+ 		, (LPCTSTR)(b ? (CString)sErr.Trim() : GetErrorMessage(nICMPErr, 1)));
+-#endif
+ }
+\ No newline at end of file
+diff --git a/srchybrid/Stdafx.h b/srchybrid/Stdafx.h
+index 4e980f9..861e11a 100644
+--- a/srchybrid/Stdafx.h
++++ b/srchybrid/Stdafx.h
+@@ -11,66 +11,6 @@
+ 
+ #include "emule_site_config.h"
+ 
+-// MSDN: Using the Windows Headers
+-// ===========================================================
+-//Windows Vista			_WIN32_WINNT>=0x0600	WINVER>=0x0600
+-//Windows Server 2003	_WIN32_WINNT>=0x0502    WINVER>=0x0502
+-//Windows XP			_WIN32_WINNT>=0x0501	WINVER>=0x0501
+-//Windows 2000			_WIN32_WINNT>=0x0500    WINVER>=0x0500
+-//Windows NT 4.0		_WIN32_WINNT>=0x0400	WINVER>=0x0400
+-//Windows Me			_WIN32_WINDOWS=0x0500	WINVER>=0x0500
+-//Windows 98			_WIN32_WINDOWS>=0x0410	WINVER>=0x0410
+-//Windows 95			_WIN32_WINDOWS>=0x0400	WINVER>=0x0400
+-//
+-//IE 7.0				_WIN32_IE>=0x0700
+-//IE 6.0 SP2			_WIN32_IE>=0x0603
+-//IE 6.0 SP1			_WIN32_IE>=0x0601
+-//IE 6.0				_WIN32_IE>=0x0600
+-//IE 5.5				_WIN32_IE>=0x0550
+-//IE 5.01				_WIN32_IE>=0x0501
+-//IE 5.0, 5.0a, 5.0b	_WIN32_IE>=0x0500
+-//IE 4.01				_WIN32_IE>=0x0401
+-//IE 4.0				_WIN32_IE>=0x0400
+-//IE 3.0, 3.01, 3.02	_WIN32_IE>=0x0300
+-
+-#if defined(HAVE_VISTA_SDK)
+-
+-#ifndef WINVER
+-#define WINVER 0x0502			// 0x0502 == Windows Server 2003, Windows XP (same as VS2005-MFC)
+-#endif
+-
+-#ifndef _WIN32_WINNT
+-#define _WIN32_WINNT WINVER		// same as VS2005-MFC
+-#endif
+-
+-#ifndef _WIN32_WINDOWS
+-#define _WIN32_WINDOWS 0x0410	// 0x0410 == Windows 98
+-#endif
+-
+-#ifndef _WIN32_IE
+-#define _WIN32_IE 0x0603		// 0x0603 == Internet Explorer 6.0 SP2
+-#endif
+-
+-#else //HAVE_VISTA_SDK
+-
+-#ifndef WINVER
+-#define WINVER 0x0400			// 0x0400 == Windows 98 and Windows NT 4.0 (because of '_WIN32_WINDOWS=0x0410')
+-#endif
+-
+-#ifndef _WIN32_WINNT
+-#define _WIN32_WINNT 0x0400		// 0x0400 == Windows NT 4.0
+-#endif
+-
+-#ifndef _WIN32_WINDOWS
+-#define _WIN32_WINDOWS 0x0410	// 0x0410 == Windows 98
+-#endif
+-
+-#ifndef _WIN32_IE
+-#define _WIN32_IE 0x0560		// 0x0560 == Internet Explorer 5.6 -> Comctl32.dll v5.8 (same as MFC internally used)
+-#endif
+-
+-#endif //HAVE_VISTA_SDK
+-
+ #define _ATL_CSTRING_EXPLICIT_CONSTRUCTORS	// Makes certain CString constructors explicit, preventing any unintentional conversions
+ #define	_ATL_EX_CONVERSION_MACROS_ONLY		// Disable old ATL 3.0 string conversion macros
+ #ifdef _ATL_EX_CONVERSION_MACROS_ONLY
+@@ -163,10 +103,6 @@
+ #endif
+ #endif//!defined(_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES) || (_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES==0)
+ 
+-#if defined(XP_BUILD) && !defined(_WIN64) && !defined(_USE_32BIT_TIME_T)
+-#define _USE_32BIT_TIME_T
+-#endif
+-
+ //Windows XP compatibility requires 'inet_addr' and 'WSAAsyncGetHostByName' (warning C4996)
+ #ifndef _WINSOCK_DEPRECATED_NO_WARNINGS
+ #define _WINSOCK_DEPRECATED_NO_WARNINGS
+diff --git a/srchybrid/UploadQueue.cpp b/srchybrid/UploadQueue.cpp
+index c6130f6..7975554 100644
+--- a/srchybrid/UploadQueue.cpp
++++ b/srchybrid/UploadQueue.cpp
+@@ -911,10 +911,8 @@ VOID CALLBACK CUploadQueue::UploadTimer(HWND /*hwnd*/, UINT /*uMsg*/, UINT_PTR /
+ 				// Update connection stats...
+ 				theStats.UpdateConnectionStats((float)theApp.uploadqueue->GetDatarate() / 1024, (float)theApp.downloadqueue->GetDatarate() / 1024);
+ 
+-#ifdef HAVE_WIN7_SDK_H
+ 				if (thePrefs.IsWin7TaskbarGoodiesEnabled())
+ 					theApp.emuledlg->UpdateStatusBarProgress();
+-#endif
+ 			}
+ 
+ 			// display graphs
+diff --git a/srchybrid/emule.vcxproj b/srchybrid/emule.vcxproj
+index 4eb332e..405dc69 100644
+--- a/srchybrid/emule.vcxproj
++++ b/srchybrid/emule.vcxproj
+@@ -46,8 +46,7 @@
+   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+   <PropertyGroup Label="Configuration">
+     <CharacterSet>Unicode</CharacterSet>
+-    <PlatformToolset Condition="'$(Platform)'!='ARM64'">v141_xp</PlatformToolset>
+-    <PlatformToolset Condition="'$(Platform)'=='ARM64'">v145</PlatformToolset>
++    <PlatformToolset>v145</PlatformToolset>
+     <UseOfMfc>Static</UseOfMfc>
+   </PropertyGroup>
+   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+@@ -80,7 +79,6 @@
+       <Optimization>Disabled</Optimization>
+       <PrecompiledHeader>Use</PrecompiledHeader>
+       <PreprocessorDefinitions>ID3LIB_LINKOPTION=1;MINIUPNP_STATICLIB;SUPPORT_LARGE_FILES;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+-      <PreprocessorDefinitions Condition="'$(Platform)'!='ARM64'">XP_BUILD;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+       <WarningLevel>EnableAllWarnings</WarningLevel>
+     </ClCompile>
+@@ -110,7 +108,6 @@
+       <OmitFramePointers>true</OmitFramePointers>
+       <PrecompiledHeader>Use</PrecompiledHeader>
+       <PreprocessorDefinitions>ID3LIB_LINKOPTION=1;MINIUPNP_STATICLIB;SUPPORT_LARGE_FILES;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+-      <PreprocessorDefinitions Condition="'$(Platform)'!='ARM64'">XP_BUILD;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+       <WarningLevel>EnableAllWarnings</WarningLevel>
+     </ClCompile>
+     <Link>
+@@ -137,7 +134,6 @@
+       <Optimization>Disabled</Optimization>
+       <PrecompiledHeader>Use</PrecompiledHeader>
+       <PreprocessorDefinitions>ID3LIB_LINKOPTION=1;MINIUPNP_STATICLIB;SUPPORT_LARGE_FILES;_BOOTSTRAPNODESDAT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+-      <PreprocessorDefinitions Condition="'$(Platform)'!='ARM64'">XP_BUILD;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+       <WarningLevel>EnableAllWarnings</WarningLevel>
+     </ClCompile>
+@@ -333,7 +329,7 @@
+     <ClCompile Include="RichEditStream.cpp" />
+     <ClCompile Include="SafeFile.cpp" />
+     <ClCompile Include="Scanner.cpp">
+-      <PreprocessorDefinitions Condition="'$(Platform)'=='Win32'">_CRT_SECURE_NO_DEPRECATE;_USE_32BIT_TIME_T;%(PreprocessorDefinitions)</PreprocessorDefinitions>
++      <PreprocessorDefinitions Condition="'$(Platform)'=='Win32'">_CRT_SECURE_NO_DEPRECATE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+       <PreprocessorDefinitions Condition="'$(Platform)'=='x64'">_CRT_SECURE_NO_DEPRECATE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+       <PrecompiledHeader />
+     </ClCompile>
+diff --git a/srchybrid/emule_site_config.h b/srchybrid/emule_site_config.h
+index 1c06482..d89344c 100644
+--- a/srchybrid/emule_site_config.h
++++ b/srchybrid/emule_site_config.h
+@@ -9,153 +9,14 @@
+ #define	HAVE_SAPI_H
+ #define HAVE_QEDIT_H
+ #define HAVE_WMSDK_H
+-#define HAVE_WIN7_SDK_H
+-#define HAVE_VISTA_SDK
+ 
+-#ifdef XP_BUILD
+-#define _WIN32_WINNT _WIN32_WINNT_WINXP
+-#define NTDDI_VERSION NTDDI_WINXP
+-#endif //XP_BUILD
+ #if _MSC_VER<1937 //before VS2022 17.7
+ #define NOEXCEPT noexcept
+ #else
+ #define NOEXCEPT
+ #endif
+ 
+-//////////////////////////////////////////////////////////////////////////////
+-// Visual Studio 2003
+-//////////////////////////////////////////////////////////////////////////////
+-#if _MSC_VER==1310
+-
+-// 'sapi.h' is not shipped with VS2003.
+-// Uncomment the following line if you get compile errors due to missing 'sapi.h'
+-//#undef HAVE_SAPI_H
+-
+-// 'qedit.h' is shipped with VS2003.
+-//#undef HAVE_QEDIT_H
+-
+-// 'wmsdk.h' is not shipped with VS2003.
+-//
+-// 'wmsdk.h' is shipped with Windows Media Format SDK 9 (http://download.microsoft.com/download/3/0/4/30451651-9e47-4313-89a3-5bb1db003c26/WMFormatSDK.exe)
+-//		Compiles fine with VS2003 (has a few missing declarations which where
+-//		resolved manually). However, this is the *PREFERRED* Windows Media Format SDK
+-//		for building eMule with VS2003.
+-//
+-// 'wmsdk.h' is shipped with Windows Media Format SDK 9.5 (http://download.microsoft.com/download/9/f/d/9fdfb288-b4bf-45fa-959c-1cc6d909aa92/wmformat95sdk.exe)
+-//		Compiles fine with VS2003 but the SDK itself can *not* get installed
+-//		under Windows Vista. It installs only under Windows XP.
+-//
+-// 'wmsdk.h' is shipped with Windows Media Format SDK 11 (http://download.microsoft.com/download/a/c/3/ac367925-39e7-4451-a175-a224f94fbdce/wmformat11sdk.exe)
+-//		Does not compile with VS2003 because of a clash in 'shlobj.h' which is
+-//		not that easy to resolve, if at all. It might compile fine when used in
+-//		combination with the latest non-Vista Platform SDK (Windows Server 2003 R2).
+-//
+-// Uncomment the following line if you get compile errors due to missing 'wmsdk.h'
+-//#undef HAVE_WMSDK_H
+-
+-#endif
+-
+-
+-//////////////////////////////////////////////////////////////////////////////
+-// Visual Studio 2005
+-//////////////////////////////////////////////////////////////////////////////
+-#if _MSC_VER==1400
+-
+-// NOTE: eMule can not get compiled with VS2005 out of the box because the SDK
+-// which is shipped with VS2005 does not contain the ‘upnp.h’ header file - and
+-// this feature is not yet optional for compiling eMule. Thus you need to install
+-// an additional more recent SDK when compiling with VS2005.
+-//
+-// It is supposed that eMule can get compiled with VS2005 and the latest
+-// "Windows Server 2003 (Windows XP) SDK" - but it was not yet verified.
+-//
+-// It is known that eMule can get compiled with VS2005 and the "Vista SDK 6.0/6.1".
+-// To compile eMule with the "Vista SDK 6.0/6.1", define 'HAVE_VISTA_SDK'.
+-
+-#define HAVE_VISTA_SDK		// Preferred SDK for VS2005
+-#define HAVE_WMF_SDK		// WMF SDK is part of the Vista SDK
+-#define HAVE_DIRECTX_SDK	// DirectX 9(!) SDK
+-
+-// 'sapi.h' is not shipped with VS2005.
+-// 'sapi.h' is shipped with Vista SDK 6.1
+-// You need to install the Speech SDK to enable this feature.
+-#ifndef HAVE_VISTA_SDK
+-#undef HAVE_SAPI_H
+-#endif//HAVE_VISTA_SDK
+-
+-// 'qedit.h' is not shipped with VS2005.
+-// 'qedit.h' is shipped with Vista SDK 6.1, but it needs an additional file ('ddraw.h') which
+-// is only shipped with the DirectX 9 SDK.
+-// You need to install the DirectX 9 SDK to enable this feature.
+-#if !defined(HAVE_VISTA_SDK) || !defined(HAVE_DIRECTX_SDK)
+-//#undef HAVE_QEDIT_H
+-#endif//!defined(HAVE_VISTA_SDK) || !defined(HAVE_DIRECTX_SDK)
+-
+-// 'wmsdk.h' is not shipped with VS2005.
+-// 'wmsdk.h' is shipped with Vista SDK 6.1 and with Windows Media Format SDK 9+
+-#if !defined(HAVE_VISTA_SDK) && !defined(HAVE_WMF_SDK)
+-#undef HAVE_WMSDK_H
+-#endif//!defined(HAVE_VISTA_SDK) && !defined(HAVE_WMF_SDK)
+-
+-#endif
+-
+-
+-//////////////////////////////////////////////////////////////////////////////
+-// Visual Studio 2008
+-//////////////////////////////////////////////////////////////////////////////
+-#if _MSC_VER==1500
+-
+-#define HAVE_VISTA_SDK		// VS2008 is already shipped with a Vista SDK
+-#define HAVE_WMF_SDK		// WMF SDK is part of the Vista SDK
+-#define HAVE_DIRECTX_SDK	// DirectX 9(!) SDK
+-
+-// 'sapi.h' is shipped with VS2008 as part of the Vista SDK
+-#ifndef HAVE_VISTA_SDK
+-#undef HAVE_SAPI_H
+-#endif//HAVE_VISTA_SDK
+-
+-// 'qedit.h' file is shipped with VS2008 as part of the Vista SDK, but it needs
+-// an additional file ('ddraw.h') which is only shipped with the DirectX 9 SDK.
+-// You need to install the DirectX 9 SDK to enable this feature.
+-#if !defined(HAVE_VISTA_SDK) || !defined(HAVE_DIRECTX_SDK)
+-#undef HAVE_QEDIT_H
+-#endif//!defined(HAVE_VISTA_SDK) || !defined(HAVE_DIRECTX_SDK)
+-
+-// 'wmsdk.h' is shipped with VS2008 as part of the Vista SDK
+-#if !defined(HAVE_VISTA_SDK) && !defined(HAVE_WMF_SDK)
+-#undef HAVE_WMSDK_H
+-#endif//!defined(HAVE_VISTA_SDK) && !defined(HAVE_WMF_SDK)
+-
+-#endif
+-
+-//////////////////////////////////////////////////////////////////////////////
+-// Visual Studio 2012, 2013, 2015, 2017, 2019, 2022, 2026
+-//////////////////////////////////////////////////////////////////////////////
+-//  VS2012==1700, VS2013==1800,
+-//	VS2015==1900, VS2017==1910-1916, VS2019==1920-1929, VS2022==1930-1944
+-//  VS2026==1950-1951...
+-#if _MSC_VER>=1700
+-
+-#define HAVE_VISTA_SDK		// shipped with Windows SDK
+-#define HAVE_WMF_SDK		// WMF SDK is part of the Windows SDK
+-#define HAVE_DIRECTX_SDK	// DirectX 9(!) SDK
+-
+-// 'sapi.h' is shipped as part of the Windows SDK
+-#ifndef HAVE_VISTA_SDK
+-#undef HAVE_SAPI_H
+-#endif//HAVE_VISTA_SDK
+-
+-// 'qedit.h' file was shipped in VS2003
+-// In VS2005 or VS2008 it was a part of Vista SDK and required an additional file 'ddraw.h'
+-#if !defined(HAVE_VISTA_SDK) || !defined(HAVE_DIRECTX_SDK)
+-#undef HAVE_QEDIT_H
+-#endif//!defined(HAVE_VISTA_SDK) || !defined(HAVE_DIRECTX_SDK)
+-
+-// 'wmsdk.h' is shipped as part of the Windows SDK
+-#if !defined(HAVE_VISTA_SDK) && !defined(HAVE_WMF_SDK)
+-#undef HAVE_WMSDK_H
+-#endif//!defined(HAVE_VISTA_SDK) && !defined(HAVE_WMF_SDK)
+-
++// Windows 10 is the minimum. sdkddkver.h derives WINVER, _WIN32_IE and NTDDI_VERSION
++// from this, and would pick the same value on its own if it were left undefined.
++#define _WIN32_WINNT 0x0A00
+ #include <sdkddkver.h>
+-
+-#endif
+\ No newline at end of file

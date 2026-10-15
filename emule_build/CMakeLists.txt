@@ -106,7 +106,7 @@ target_compile_features(emule PRIVATE cxx_std_23)
 
 # KNOWN LIMITATION: id3lib.vcxproj wants PlatformToolset v141 and
 # ResizableLib.vcxproj wants v140_xp (emule.vcxproj uses v145 on every platform
-# since 88zc). Those toolsets are not installed here - every target in this
+# since 88za). Those toolsets are not installed here - every target in this
 # build uses whatever toolset ships with the installed VS generator (confirmed:
 # only MSVC 14.50/14.51 are present). Accepted as-is.
 
@@ -136,7 +136,7 @@ endif()
 # cryptopp/, zlib/, id3lib/, mbedtls/, libplum/, resizablelib/ all live as
 # sibling submodules) has to be on the include path, not emule/ (the eMule
 # submodule's own root, which holds none of them).
-# UPnPImplLibPlum.h (added by 89b) does #include "libplum\include\plum\plum.h",
+# UPnPImplLibPlum.h (added by 89a) does #include "libplum\include\plum\plum.h",
 # which CMAKE_SOURCE_DIR already resolves.
 target_include_directories(emule PRIVATE
     ${EMULE_SRC_DIR}
@@ -150,7 +150,7 @@ target_compile_definitions(emule PRIVATE
     _UNICODE
     $<$<CONFIG:Release>:NDEBUG>
 )
-# XP_BUILD, which emule.vcxproj set for Win32 and x64 until 88zc removed it, was
+# XP_BUILD, which emule.vcxproj set for Win32 and x64 until 88za removed it, was
 # left out here on every platform, as it already was on ARM64. The binaries cannot run on XP
 # anyway (mbedTLS 4 imports bcrypt.dll), so all it did was pin the SDK headers
 # to XP and, on Win32, force a 32-bit time_t that mbedTLS does not share - its
@@ -192,7 +192,7 @@ set_source_files_properties("${EMULE_SRC_DIR}/Parser.cpp" "${EMULE_SRC_DIR}/Scan
 # x64 get _CRT_SECURE_NO_DEPRECATE; ARM64 does not - the vcxproj has no ARM64
 # condition for this file at all (never updated when the ARM64 platform was
 # added), replicated as-is. The vcxproj also gave Win32 _USE_32BIT_TIME_T here,
-# the per-file twin of the one XP_BUILD set in Stdafx.h; 88zc drops both, so this
+# the per-file twin of the one XP_BUILD set in Stdafx.h; 88za drops both, so this
 # file keeps the same time_t as the rest of eMule.
 set_source_files_properties("${EMULE_SRC_DIR}/Scanner.cpp" PROPERTIES
     COMPILE_DEFINITIONS "$<$<OR:$<STREQUAL:${EMULE_PLATFORM_DIR},Win32>,$<STREQUAL:${EMULE_PLATFORM_DIR},x64>>:_CRT_SECURE_NO_DEPRECATE>"
