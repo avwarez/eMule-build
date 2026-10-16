@@ -1,0 +1,154 @@
+diff --git a/srchybrid/BaseClient.cpp b/srchybrid/BaseClient.cpp
+index 5bcda5b..c2805f7 100644
+--- a/srchybrid/BaseClient.cpp
++++ b/srchybrid/BaseClient.cpp
+@@ -187,6 +187,7 @@ void CUpDownClient::Init()
+ 	m_nCurSessionDown = 0;
+ 	m_nCurQueueSessionPayloadUp = 0; // PENDING: Is this necessary? ResetSessionUp()...
+ 	m_addedPayloadQueueSession = 0;
++	m_uPowerShareStretches = 0;
+ 	m_nUpPartCount = 0;
+ 	m_nUpCompleteSourcesCount = 0;
+ 	md4clr(requpfileid);
+diff --git a/srchybrid/UpdownClient.h b/srchybrid/UpdownClient.h
+index 014a414..b5b7e51 100644
+--- a/srchybrid/UpdownClient.h
++++ b/srchybrid/UpdownClient.h
+@@ -230,6 +230,11 @@ public:
+ 	UINT			GetUploadDatarate() const						{ return m_nUpDatarate; }
+ 	UINT			GetScore(bool sysvalue, bool isdownloading = false, bool onlybasevalue = false) const;
+ 	bool			IsPowerShareRequest() const;
++	// A PowerShare client keeps its slot for one more SESSIONMAXTRANS at a time while nobody who
++	// outranks the ordinary clients waits for it; this counts the stretches added to the session.
++	UINT			GetPowerShareStretches() const					{ return m_uPowerShareStretches; }
++	void			SetPowerShareStretches(UINT uStretches)			{ m_uPowerShareStretches = uStretches; }
++	bool			IsReadyForUploadSlot() const;
+ 	void			AddReqBlock(Requested_Block_Struct *reqblock, bool bSignalIOThread);
+ 	DWORD			GetUpStartTime() const							{ return m_dwUploadTime; }
+ 	DWORD			GetUpStartTimeDelay() const						{ return ::GetTickCount() - m_dwUploadTime; }
+@@ -257,6 +262,7 @@ public:
+ 						m_nCurSessionUp = m_nTransferredUp;
+ 						m_addedPayloadQueueSession = 0;
+ 						m_nCurQueueSessionPayloadUp = 0;
++						m_uPowerShareStretches = 0;
+ 					}
+ 
+ 	uint64			GetSessionDown() const							{ return m_nTransferredDown - m_nCurSessionDown; }
+@@ -538,6 +544,7 @@ protected:
+ 	uint64		m_nCurSessionDown;
+ 	uint64		m_nCurQueueSessionPayloadUp;
+ 	uint64		m_addedPayloadQueueSession;
++	UINT		m_uPowerShareStretches;
+ 	DWORD		m_dwUploadTime;
+ 	DWORD		m_dwLastUpRequest;
+ 	UINT		m_cAsked;
+diff --git a/srchybrid/UploadClient.cpp b/srchybrid/UploadClient.cpp
+index 3f3b6ba..b78d84c 100644
+--- a/srchybrid/UploadClient.cpp
++++ b/srchybrid/UploadClient.cpp
+@@ -246,6 +246,16 @@ bool CUpDownClient::IsPowerShareRequest() const
+ 	return pReqFile != NULL && pReqFile->IsPowerShared();
+ }
+ 
++// Whether a slot that frees up now could go to this waiting client. FindBestClientInQueue() passes
++// over a LowID client that is not connected, and a client told to stand down by OP_OUTOFPARTREQS
++// does not answer on the connection that carried it.
++bool CUpDownClient::IsReadyForUploadSlot() const
++{
++	if (m_fSentOutOfPartReqs)
++		return false;
++	return !HasLowID() || (socket != NULL && socket->IsConnected());
++}
++
+ bool CUpDownClient::ProcessExtendedInfo(CSafeMemFile &data, CKnownFile *tempreqfile)
+ {
+ 	delete[] m_abyUpPartStatus;
+diff --git a/srchybrid/UploadQueue.cpp b/srchybrid/UploadQueue.cpp
+index 903715a..d6cb0cb 100644
+--- a/srchybrid/UploadQueue.cpp
++++ b/srchybrid/UploadQueue.cpp
+@@ -780,7 +780,26 @@ void CUploadQueue::UpdateMaxClientScore()
+ 	}
+ }
+ 
+-bool CUploadQueue::CheckForTimeOver(const CUpDownClient *client)
++// A waiting client that outranks every ordinary one and could take a slot right now: a
++// PowerShare request, or a friend with a friend slot. nNotReady counts the PowerShare requests
++// and friends that are waiting but could not take a slot yet.
++const CUpDownClient* CUploadQueue::FindWaitingPowerShareRival(UINT &nNotReady) const
++{
++	nNotReady = 0;
++	for (POSITION pos = waitinglist.GetHeadPosition(); pos != NULL;) {
++		const CUpDownClient *cur_client = waitinglist.GetNext(pos);
++		if (!cur_client->IsPowerShareRequest() && !(cur_client->IsFriend() && cur_client->GetFriendSlot() && !cur_client->HasLowID()))
++			continue;
++		if (!cur_client->IsReadyForUploadSlot() || cur_client->IsBanned()) {
++			++nNotReady;
++			continue;
++		}
++		return cur_client;
++	}
++	return NULL;
++}
++
++bool CUploadQueue::CheckForTimeOver(CUpDownClient *client)
+ {
+ 	//If we have nobody in the queue, do NOT remove the current uploads.
+ 	//This will save some bandwidth and some unneeded swapping from upload/queue/upload.
+@@ -800,9 +819,33 @@ bool CUploadQueue::CheckForTimeOver(const CUpDownClient *client)
+ 
+ 	if (thePrefs.TransferFullChunks()) {
+ 		// Allow the client to download a specified amount per session; but keep going if no one needs this slot
+-		if (client->GetQueueSessionPayloadUp() > SESSIONMAXTRANS && !ForceNewClient()) {
++		const uint64 uSessionLimit = SESSIONMAXTRANS * (uint64)(client->GetPowerShareStretches() + 1);
++		if (client->GetQueueSessionPayloadUp() > uSessionLimit && !ForceNewClient()) {
++			// A PowerShare client goes on for another SESSIONMAXTRANS unless a PowerShare request or
++			// a friend with a friend slot is waiting and can take the slot; the session is
++			// stretched past what was sent already, in case ForceNewClient() held the check back.
++			if (client->IsPowerShareRequest()) {
++				UINT nNotReady;
++				const CUpDownClient *pRival = FindWaitingPowerShareRival(nNotReady);
++				if (pRival == NULL) {
++					client->SetPowerShareStretches((UINT)(client->GetQueueSessionPayloadUp() / SESSIONMAXTRANS));
++					if (thePrefs.GetLogUlDlEvents())
++						AddDebugLogLine(false, _T("PowerShare: slot kept at %s, next check at %s, %u waiting, none outranking (%u PowerShare/friend not ready) Client: %s")
++							, (LPCTSTR)CastItoXBytes(client->GetQueueSessionPayloadUp())
++							, (LPCTSTR)CastItoXBytes(SESSIONMAXTRANS * (uint64)(client->GetPowerShareStretches() + 1))
++							, (UINT)waitinglist.GetCount(), nNotReady, (LPCTSTR)client->DbgGetClientInfo());
++					return false;
++				}
++				if (thePrefs.GetLogUlDlEvents())
++					AddDebugLogLine(false, _T("PowerShare: slot handed over at %s after %u extra stretches, to %s Client: %s Next: %s")
++						, (LPCTSTR)CastItoXBytes(client->GetQueueSessionPayloadUp()), client->GetPowerShareStretches()
++						, pRival->IsPowerShareRequest() ? _T("PowerShare request") : _T("friend")
++						, (LPCTSTR)client->DbgGetClientInfo(), (LPCTSTR)pRival->DbgGetClientInfo());
++			} else if (client->GetPowerShareStretches() > 0 && thePrefs.GetLogUlDlEvents())
++				AddDebugLogLine(false, _T("PowerShare: kept slot ends at %s, the request is no longer PowerShare Client: %s")
++					, (LPCTSTR)CastItoXBytes(client->GetQueueSessionPayloadUp()), (LPCTSTR)client->DbgGetClientInfo());
+ 			if (thePrefs.GetLogUlDlEvents())
+-				AddDebugLogLine(DLP_DEFAULT, false, _T("%s: Upload session ended due to max transferred amount (%s)"), client->GetUserName(), (LPCTSTR)CastItoXBytes(SESSIONMAXTRANS));
++				AddDebugLogLine(DLP_DEFAULT, false, _T("%s: Upload session ended due to max transferred amount (%s)"), client->GetUserName(), (LPCTSTR)CastItoXBytes(uSessionLimit));
+ 			return true;
+ 		}
+ 	} else {
+diff --git a/srchybrid/UploadQueue.h b/srchybrid/UploadQueue.h
+index 07db5a2..fea6531 100644
+--- a/srchybrid/UploadQueue.h
++++ b/srchybrid/UploadQueue.h
+@@ -72,7 +72,7 @@ public:
+ 	uint32	GetDatarate() const								{ return datarate; }
+ 	uint32  GetToNetworkDatarate() const;
+ 
+-	bool	CheckForTimeOver(const CUpDownClient *client);
++	bool	CheckForTimeOver(CUpDownClient *client);
+ 	INT_PTR	GetWaitingUserCount() const						{ return waitinglist.GetCount(); }
+ 	INT_PTR	GetUploadQueueLength() const					{ return uploadinglist.GetCount(); }
+ 	INT_PTR	GetActiveUploadsCount() const					{ return m_MaxActiveClientsShortTime; }
+@@ -117,6 +117,7 @@ protected:
+ 	static VOID CALLBACK UploadTimer(HWND hWnd, UINT nMsg, UINT_PTR nId, DWORD dwTime) noexcept;
+ 
+ private:
++	const CUpDownClient* FindWaitingPowerShareRival(UINT &nNotReady) const;
+ 	void	UpdateMaxClientScore();
+ 	uint32	GetMaxClientScore() const						{ return m_imaxscore; }
+ 	void	UpdateActiveClientsInfo(DWORD curTick);
