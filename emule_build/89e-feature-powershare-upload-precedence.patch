@@ -1,0 +1,59 @@
+diff --git a/srchybrid/UpdownClient.h b/srchybrid/UpdownClient.h
+index f9b28d4..014a414 100644
+--- a/srchybrid/UpdownClient.h
++++ b/srchybrid/UpdownClient.h
+@@ -229,6 +229,7 @@ public:
+ 	bool			IsDownloading() const							{ return (m_eUploadState == US_UPLOADING); }
+ 	UINT			GetUploadDatarate() const						{ return m_nUpDatarate; }
+ 	UINT			GetScore(bool sysvalue, bool isdownloading = false, bool onlybasevalue = false) const;
++	bool			IsPowerShareRequest() const;
+ 	void			AddReqBlock(Requested_Block_Struct *reqblock, bool bSignalIOThread);
+ 	DWORD			GetUpStartTime() const							{ return m_dwUploadTime; }
+ 	DWORD			GetUpStartTimeDelay() const						{ return ::GetTickCount() - m_dwUploadTime; }
+diff --git a/srchybrid/UploadClient.cpp b/srchybrid/UploadClient.cpp
+index 61ad554..e12ebad 100644
+--- a/srchybrid/UploadClient.cpp
++++ b/srchybrid/UploadClient.cpp
+@@ -226,7 +226,25 @@ uint32 CUpDownClient::GetScore(bool sysvalue, bool isdownloading, bool onlybasev
+ 
+ 	if ((IsEmuleClient() || GetClientSoft() < 10) && m_byEmuleVersion <= 0x19)
+ 		fBaseValue *= 0.5f;
+-	return (uint32)fBaseValue;
++
++	// Ordinary scores are capped below 0x08000000 and a PowerShare request gets 0x08000000 on
++	// top of its own: every PowerShare request ranks above every ordinary one and below a friend
++	// slot, while waiting time, credits and file priority still order the PowerShare requests
++	// among themselves. The cap takes some 86 days of waiting to reach.
++	uint32 uScore = (fBaseValue < (float)0x07FFFFFEu) ? (uint32)fBaseValue : 0x07FFFFFEu;
++	if (!onlybasevalue && IsPowerShareRequest())
++		uScore += 0x08000000u;
++	return uScore;
++}
++
++// The requested file is PowerShared, and the client is not LowID: the same condition under
++// which a friend slot outranks everybody.
++bool CUpDownClient::IsPowerShareRequest() const
++{
++	if (HasLowID())
++		return false;
++	const CKnownFile *pReqFile = theApp.sharedfiles->GetFileByID(requpfileid);
++	return pReqFile != NULL && pReqFile->IsPowerShared();
+ }
+ 
+ bool CUpDownClient::ProcessExtendedInfo(CSafeMemFile &data, CKnownFile *tempreqfile)
+diff --git a/srchybrid/UploadQueue.cpp b/srchybrid/UploadQueue.cpp
+index 7975554..e29c53b 100644
+--- a/srchybrid/UploadQueue.cpp
++++ b/srchybrid/UploadQueue.cpp
+@@ -309,6 +309,11 @@ void CUploadQueue::Process()
+ 			}
+ 			if (CheckForTimeOver(cur_client)) {
+ 				RemoveFromUploadQueue(cur_client, _T("Completed transfer"), true);
++				// A PowerShare client starts waiting again, so that it queues up behind the other
++				// PowerShare clients instead of outranking them with the longest wait of all.
++				// Ordinary clients keep their waiting time, as they always did.
++				if (cur_client->IsPowerShareRequest())
++					cur_client->SetWaitStartTime();
+ 				cur_client->SendOutOfPartReqsAndAddToWaitingQueue();
+ 				continue;
+ 			}
