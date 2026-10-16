@@ -1,0 +1,91 @@
+diff --git a/srchybrid/KnownFile.cpp b/srchybrid/KnownFile.cpp
+index a2dc535..dc0512e 100644
+--- a/srchybrid/KnownFile.cpp
++++ b/srchybrid/KnownFile.cpp
+@@ -297,7 +297,12 @@ void CKnownFile::UpdatePartsInfo()
+ 	for (INT_PTR i = GetPartCount(); --i >= 0;)
+ 		if (nLeastAvailablePart > m_AvailPartFrequency[i])
+ 			nLeastAvailablePart = m_AvailPartFrequency[i];
+-	m_bPowerShareAuthorized = (nLeastAvailablePart <= 1 || m_nCompleteSourcesCountHi <= GetPartCount());
++	const bool bPowerShareAuthorized = (nLeastAvailablePart <= 1 || m_nCompleteSourcesCountHi <= GetPartCount());
++	if (bPowerShareAuthorized != m_bPowerShareAuthorized && IsPowerShareOn())
++		AddDebugLogLine(false, _T("PowerShare: %s for \"%s\" (least available part on %u requesting clients, complete sources %u-%u, %u parts)")
++			, bPowerShareAuthorized ? _T("allowed again") : _T("denied")
++			, (LPCTSTR)GetFileName(), nLeastAvailablePart, m_nCompleteSourcesCountLo, m_nCompleteSourcesCountHi, GetPartCount());
++	m_bPowerShareAuthorized = bPowerShareAuthorized;
+ 
+ 	if (theApp.emuledlg->sharedfileswnd->m_hWnd)
+ 		theApp.emuledlg->sharedfileswnd->sharedfilesctrl.UpdateFile(this);
+@@ -775,6 +780,8 @@ bool CKnownFile::LoadTagsFromFile(CFileDataIO &file)
+ 		m_uMetaDataVer = META_DATA_VER;
+ 	}
+ 
++	if (IsPowerShareOn())
++		AddDebugLogLine(false, _T("PowerShare: on for \"%s\" (known.met)"), (LPCTSTR)GetFileName());
+ 	return true;
+ }
+ 
+@@ -1241,6 +1248,8 @@ void CKnownFile::SetPowerShareOn(bool bOn)
+ 		}
+ 	}
+ 	m_iPowerShareMode = bOn ? 1 : 0;
++	AddDebugLogLine(false, _T("PowerShare: switched %s for \"%s\"%s"), bOn ? _T("on") : _T("off"), (LPCTSTR)GetFileName()
++		, (bOn && IsPartFile()) ? _T(", inactive until the file is complete") : (bOn && !m_bPowerShareAuthorized) ? _T(", currently denied") : _T(""));
+ }
+ 
+ void CKnownFile::RemoveMetaDataTags(UINT uTagType)
+diff --git a/srchybrid/UploadQueue.cpp b/srchybrid/UploadQueue.cpp
+index e29c53b..1682ee7 100644
+--- a/srchybrid/UploadQueue.cpp
++++ b/srchybrid/UploadQueue.cpp
+@@ -147,8 +147,12 @@ CUpDownClient* CUploadQueue::FindBestClientInQueue()
+ 		}
+ 	}
+ 
+-	if (lowclient && bestlowscore > bestscore)
++	if (lowclient && bestlowscore > bestscore) {
+ 		lowclient->m_bAddNextConnect = true;
++		if (thePrefs.GetLogUlDlEvents() && lowclient->IsPowerShareRequest())
++			AddDebugLogLine(false, _T("PowerShare: LowID client not connected, slot kept for its next connection, score %u (best connected %u) Client: %s")
++				, bestlowscore, bestscore, (LPCTSTR)lowclient->DbgGetClientInfo());
++	}
+ 
+ 	return newclient;
+ }
+@@ -196,6 +200,11 @@ bool CUploadQueue::AddUpNextClient(LPCTSTR pszReason, CUpDownClient *directadd)
+ 
+ 	if (pszReason && thePrefs.GetLogUlDlEvents())
+ 		AddDebugLogLine(false, _T("Adding client to upload list: %s Client: %s"), pszReason, (LPCTSTR)newclient->DbgGetClientInfo());
++	if (thePrefs.GetLogUlDlEvents() && newclient->IsPowerShareRequest())
++		AddDebugLogLine(false, _T("PowerShare: upload slot after waiting %s, score %u%s Client: %s")
++			, (LPCTSTR)CastSecondsToHM((::GetTickCount() - newclient->GetWaitStartTime()) / SEC2MS(1))
++			, newclient->GetScore(false), newclient->HasLowID() ? _T(" (LowID)") : _T("")
++			, (LPCTSTR)newclient->DbgGetClientInfo());
+ 
+ 	if (newclient->HasCollectionUploadSlot() && directadd == NULL) {
+ 		ASSERT(0);
+@@ -312,8 +321,11 @@ void CUploadQueue::Process()
+ 				// A PowerShare client starts waiting again, so that it queues up behind the other
+ 				// PowerShare clients instead of outranking them with the longest wait of all.
+ 				// Ordinary clients keep their waiting time, as they always did.
+-				if (cur_client->IsPowerShareRequest())
++				if (cur_client->IsPowerShareRequest()) {
+ 					cur_client->SetWaitStartTime();
++					if (thePrefs.GetLogUlDlEvents())
++						AddDebugLogLine(false, _T("PowerShare: session ended, waiting time restarted Client: %s"), (LPCTSTR)cur_client->DbgGetClientInfo());
++				}
+ 				cur_client->SendOutOfPartReqsAndAddToWaitingQueue();
+ 				continue;
+ 			}
+@@ -655,6 +667,11 @@ void CUploadQueue::AddClientToQueue(CUpDownClient *client, bool bIgnoreTimelimit
+ 		theApp.emuledlg->transferwnd->GetQueueList().AddClient(client, true);
+ 		theApp.emuledlg->transferwnd->ShowQueueCount(waitinglist.GetCount());
+ 		client->SendRankingInfo();
++		if (thePrefs.GetLogUlDlEvents() && client->IsPowerShareRequest())
++			AddDebugLogLine(false, _T("PowerShare: request queued, score %u%s, rank %u of %u File: \"%s\" Client: %s")
++				, client->GetScore(false), client->HasLowID() ? _T(" (LowID)") : _T("")
++				, GetWaitingPosition(client), (UINT)waitinglist.GetCount()
++				, (LPCTSTR)reqfile->GetFileName(), (LPCTSTR)client->DbgGetClientInfo());
+ 	}
+ }
+ 
