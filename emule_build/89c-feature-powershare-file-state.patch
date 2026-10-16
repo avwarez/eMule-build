@@ -1,0 +1,123 @@
+diff --git a/srchybrid/KnownFile.cpp b/srchybrid/KnownFile.cpp
+index 09c5b70..a2dc535 100644
+--- a/srchybrid/KnownFile.cpp
++++ b/srchybrid/KnownFile.cpp
+@@ -86,6 +86,8 @@ CKnownFile::CKnownFile()
+ 	, m_bAutoUpPriority(thePrefs.GetNewAutoUp())
+ 	, m_PublishedED2K()
+ 	, m_bAICHRecoverHashSetAvailable()
++	, m_iPowerShareMode(-1)
++	, m_bPowerShareAuthorized(true)
+ {
+ 	m_iUpPriority = m_bAutoUpPriority ? PR_HIGH : PR_NORMAL;
+ 	statistic.fileParent = this;
+@@ -118,6 +120,8 @@ void CKnownFile::AssertValid() const
+ 	(void)m_iED2KPartCount;
+ 	ASSERT(m_iUpPriority == PR_VERYLOW || m_iUpPriority == PR_LOW || m_iUpPriority == PR_NORMAL || m_iUpPriority == PR_HIGH || m_iUpPriority == PR_VERYHIGH);
+ 	CHECK_BOOL(m_bAutoUpPriority);
++	ASSERT(m_iPowerShareMode >= -1 && m_iPowerShareMode <= 3);
++	CHECK_BOOL(m_bPowerShareAuthorized);
+ 	(void)s_ShareStatusBar;
+ 	CHECK_BOOL(m_PublishedED2K);
+ 	(void)kadFileSearchID;
+@@ -285,6 +289,16 @@ void CKnownFile::UpdatePartsInfo()
+ 		}
+ 		m_tCompleteSourcesTime = tNow + MIN2S(1);
+ 	}
++
++	// PowerShare is refused on a file which many others have complete already (the MorphXT rule):
++	// it is allowed while some part is seen on at most one of the clients asking for the file, or
++	// while the high estimate of complete sources does not exceed the number of parts.
++	UINT nLeastAvailablePart = UINT_MAX;
++	for (INT_PTR i = GetPartCount(); --i >= 0;)
++		if (nLeastAvailablePart > m_AvailPartFrequency[i])
++			nLeastAvailablePart = m_AvailPartFrequency[i];
++	m_bPowerShareAuthorized = (nLeastAvailablePart <= 1 || m_nCompleteSourcesCountHi <= GetPartCount());
++
+ 	if (theApp.emuledlg->sharedfileswnd->m_hWnd)
+ 		theApp.emuledlg->sharedfileswnd->sharedfilesctrl.UpdateFile(this);
+ }
+@@ -729,6 +743,10 @@ bool CKnownFile::LoadTagsFromFile(CFileDataIO &file)
+ 				ASSERT(0);
+ 			break;
+ 		default:
++			if (newtag->HasName() && newtag->IsInt() && CmpED2KTagName(newtag->GetName(), FT_POWERSHARE) == 0) {
++				m_iPowerShareMode = (newtag->GetInt() <= 3) ? (sint8)newtag->GetInt() : -1;
++				break;
++			}
+ 			ConvertED2KTag(newtag);
+ 			if (newtag) {
+ 				m_taglist.Add(newtag);
+@@ -875,6 +893,12 @@ bool CKnownFile::WriteToFile(CFileDataIO &file)
+ 		priotag.WriteTagToFile(file);
+ 		++uTagCount;
+ 
++		if (m_iPowerShareMode >= 0) {
++			CTag powersharetag(FT_POWERSHARE, (uint64)m_iPowerShareMode);
++			powersharetag.WriteTagToFile(file);
++			++uTagCount;
++		}
++
+ 
+ 		if (m_lastPublishTimeKadSrc) {
+ 			CTag kadLastPubSrc(FT_KADLASTPUBLISHSRC, (uint32)m_lastPublishTimeKadSrc);
+@@ -1205,6 +1229,20 @@ void CKnownFile::SetUpPriority(uint8 iNewUpPriority, bool bSave)
+ 		static_cast<CPartFile*>(this)->SavePartFile();
+ }
+ 
++void CKnownFile::SetPowerShareOn(bool bOn)
++{
++	// A part file brings the mode MorphXT wrote in its part.met along in m_taglist; drop that
++	// copy, or known.met gets the tag twice.
++	for (INT_PTR i = m_taglist.GetCount(); --i >= 0;) {
++		const CTag *pTag = m_taglist[i];
++		if (pTag->HasName() && CmpED2KTagName(pTag->GetName(), FT_POWERSHARE) == 0) {
++			delete pTag;
++			m_taglist.RemoveAt(i);
++		}
++	}
++	m_iPowerShareMode = bOn ? 1 : 0;
++}
++
+ void CKnownFile::RemoveMetaDataTags(UINT uTagType)
+ {
+ 	static const struct
+diff --git a/srchybrid/KnownFile.h b/srchybrid/KnownFile.h
+index f9a81ae..fa4eec9 100644
+--- a/srchybrid/KnownFile.h
++++ b/srchybrid/KnownFile.h
+@@ -68,6 +68,14 @@ public:
+ 	void	SetAutoUpPriority(bool NewAutoUpPriority)	{ m_bAutoUpPriority = NewAutoUpPriority; }
+ 	void	UpdateAutoUpPriority();
+ 
++	// PowerShare puts the requests for a complete file ahead of every ordinary upload request.
++	// The mode is kept the way MorphXT stores it (-1 not set, 0 off, 1 on, 2 auto, 3 limited):
++	// only 1 is acted upon, the other values are kept so that known.met does not lose them.
++	bool	IsPowerShareOn() const						{ return m_iPowerShareMode == 1; }
++	void	SetPowerShareOn(bool bOn);
++	bool	IsPowerShareAuthorized() const				{ return m_bPowerShareAuthorized; }
++	bool	IsPowerShared() const						{ return IsPowerShareOn() && m_bPowerShareAuthorized && !IsPartFile(); }
++
+ 	// This has lost its meaning here. This is the total clients we know that want this file.
+ 	// Right now this number is used for auto priorities.
+ 	// This may be replaced with total complete source known in the network.
+@@ -172,4 +180,6 @@ private:
+ 	bool	m_bAutoUpPriority;
+ 	bool	m_PublishedED2K;
+ 	bool	m_bAICHRecoverHashSetAvailable;
++	sint8	m_iPowerShareMode;
++	bool	m_bPowerShareAuthorized;
+ };
+\ No newline at end of file
+diff --git a/srchybrid/Opcodes.h b/srchybrid/Opcodes.h
+index 2f7d827..139f6b3 100644
+--- a/srchybrid/Opcodes.h
++++ b/srchybrid/Opcodes.h
+@@ -483,6 +483,7 @@
+ #define	FT_ED2K_MEDIA_LENGTH	"length"	// <string> !!!
+ #define	FT_ED2K_MEDIA_BITRATE	"bitrate"	// <uint32>
+ #define	FT_ED2K_MEDIA_CODEC		"codec"		// <string>
++#define	FT_POWERSHARE			"ZZUL_POWERSHARE"	// <uint32> PowerShare mode, written by MorphXT too
+ #define TAG_NSENT				"# Sent"
+ #define TAG_ONIP				"ip"
+ #define TAG_ONPORT				"port"
