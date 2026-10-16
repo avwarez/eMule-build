@@ -64,25 +64,27 @@ index 3f3b6ba..b78d84c 100644
  {
  	delete[] m_abyUpPartStatus;
 diff --git a/srchybrid/UploadQueue.cpp b/srchybrid/UploadQueue.cpp
-index 903715a..d6cb0cb 100644
+index 903715a..10b7294 100644
 --- a/srchybrid/UploadQueue.cpp
 +++ b/srchybrid/UploadQueue.cpp
-@@ -780,7 +780,26 @@ void CUploadQueue::UpdateMaxClientScore()
+@@ -780,7 +780,28 @@ void CUploadQueue::UpdateMaxClientScore()
  	}
  }
  
 -bool CUploadQueue::CheckForTimeOver(const CUpDownClient *client)
-+// A waiting client that outranks every ordinary one and could take a slot right now: a
-+// PowerShare request, or a friend with a friend slot. nNotReady counts the PowerShare requests
-+// and friends that are waiting but could not take a slot yet.
++// A waiting client that FindBestClientInQueue() would hand a slot to right now ahead of every
++// ordinary one: its score is above the ordinary cap, which makes it a PowerShare request or a
++// friend with a friend slot, and it is neither due to be purged nor unable to take the slot.
++// nNotReady counts the waiting clients with such a score that could not take a slot yet.
 +const CUpDownClient* CUploadQueue::FindWaitingPowerShareRival(UINT &nNotReady) const
 +{
 +	nNotReady = 0;
++	const DWORD curTick = ::GetTickCount();
 +	for (POSITION pos = waitinglist.GetHeadPosition(); pos != NULL;) {
 +		const CUpDownClient *cur_client = waitinglist.GetNext(pos);
-+		if (!cur_client->IsPowerShareRequest() && !(cur_client->IsFriend() && cur_client->GetFriendSlot() && !cur_client->HasLowID()))
++		if (cur_client->GetScore(false) < 0x08000000u)
 +			continue;
-+		if (!cur_client->IsReadyForUploadSlot() || cur_client->IsBanned()) {
++		if (!cur_client->IsReadyForUploadSlot() || curTick >= cur_client->GetLastUpRequest() + MAX_PURGEQUEUETIME) {
 +			++nNotReady;
 +			continue;
 +		}
@@ -95,7 +97,7 @@ index 903715a..d6cb0cb 100644
  {
  	//If we have nobody in the queue, do NOT remove the current uploads.
  	//This will save some bandwidth and some unneeded swapping from upload/queue/upload.
-@@ -800,9 +819,33 @@ bool CUploadQueue::CheckForTimeOver(const CUpDownClient *client)
+@@ -800,9 +821,33 @@ bool CUploadQueue::CheckForTimeOver(const CUpDownClient *client)
  
  	if (thePrefs.TransferFullChunks()) {
  		// Allow the client to download a specified amount per session; but keep going if no one needs this slot
