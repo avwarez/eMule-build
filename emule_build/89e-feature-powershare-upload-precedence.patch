@@ -11,10 +11,10 @@ index f9b28d4..014a414 100644
  	DWORD			GetUpStartTime() const							{ return m_dwUploadTime; }
  	DWORD			GetUpStartTimeDelay() const						{ return ::GetTickCount() - m_dwUploadTime; }
 diff --git a/srchybrid/UploadClient.cpp b/srchybrid/UploadClient.cpp
-index 61ad554..e12ebad 100644
+index 61ad554..3f3b6ba 100644
 --- a/srchybrid/UploadClient.cpp
 +++ b/srchybrid/UploadClient.cpp
-@@ -226,7 +226,25 @@ uint32 CUpDownClient::GetScore(bool sysvalue, bool isdownloading, bool onlybasev
+@@ -226,7 +226,24 @@ uint32 CUpDownClient::GetScore(bool sysvalue, bool isdownloading, bool onlybasev
  
  	if ((IsEmuleClient() || GetClientSoft() < 10) && m_byEmuleVersion <= 0x19)
  		fBaseValue *= 0.5f;
@@ -30,12 +30,11 @@ index 61ad554..e12ebad 100644
 +	return uScore;
 +}
 +
-+// The requested file is PowerShared, and the client is not LowID: the same condition under
-+// which a friend slot outranks everybody.
++// The requested file is PowerShared. A LowID client qualifies too: while it is not connected
++// FindBestClientInQueue passes it over and marks it to be taken on its next connection, the same
++// way it handles any other LowID client at the head of the queue.
 +bool CUpDownClient::IsPowerShareRequest() const
 +{
-+	if (HasLowID())
-+		return false;
 +	const CKnownFile *pReqFile = theApp.sharedfiles->GetFileByID(requpfileid);
 +	return pReqFile != NULL && pReqFile->IsPowerShared();
  }
