@@ -35,7 +35,7 @@ index a2dc535..dc0512e 100644
  
  void CKnownFile::RemoveMetaDataTags(UINT uTagType)
 diff --git a/srchybrid/UploadQueue.cpp b/srchybrid/UploadQueue.cpp
-index e29c53b..1682ee7 100644
+index 7975554..903715a 100644
 --- a/srchybrid/UploadQueue.cpp
 +++ b/srchybrid/UploadQueue.cpp
 @@ -147,8 +147,12 @@ CUpDownClient* CUploadQueue::FindBestClientInQueue()
@@ -64,20 +64,7 @@ index e29c53b..1682ee7 100644
  
  	if (newclient->HasCollectionUploadSlot() && directadd == NULL) {
  		ASSERT(0);
-@@ -312,8 +321,11 @@ void CUploadQueue::Process()
- 				// A PowerShare client starts waiting again, so that it queues up behind the other
- 				// PowerShare clients instead of outranking them with the longest wait of all.
- 				// Ordinary clients keep their waiting time, as they always did.
--				if (cur_client->IsPowerShareRequest())
-+				if (cur_client->IsPowerShareRequest()) {
- 					cur_client->SetWaitStartTime();
-+					if (thePrefs.GetLogUlDlEvents())
-+						AddDebugLogLine(false, _T("PowerShare: session ended, waiting time restarted Client: %s"), (LPCTSTR)cur_client->DbgGetClientInfo());
-+				}
- 				cur_client->SendOutOfPartReqsAndAddToWaitingQueue();
- 				continue;
- 			}
-@@ -655,6 +667,11 @@ void CUploadQueue::AddClientToQueue(CUpDownClient *client, bool bIgnoreTimelimit
+@@ -650,6 +659,11 @@ void CUploadQueue::AddClientToQueue(CUpDownClient *client, bool bIgnoreTimelimit
  		theApp.emuledlg->transferwnd->GetQueueList().AddClient(client, true);
  		theApp.emuledlg->transferwnd->ShowQueueCount(waitinglist.GetCount());
  		client->SendRankingInfo();
