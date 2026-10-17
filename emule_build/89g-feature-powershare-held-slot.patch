@@ -64,10 +64,10 @@ index 3f3b6ba..b78d84c 100644
  {
  	delete[] m_abyUpPartStatus;
 diff --git a/srchybrid/UploadQueue.cpp b/srchybrid/UploadQueue.cpp
-index 903715a..10b7294 100644
+index 903715a..e3ce1d9 100644
 --- a/srchybrid/UploadQueue.cpp
 +++ b/srchybrid/UploadQueue.cpp
-@@ -780,7 +780,28 @@ void CUploadQueue::UpdateMaxClientScore()
+@@ -780,7 +780,43 @@ void CUploadQueue::UpdateMaxClientScore()
  	}
  }
  
@@ -75,17 +75,32 @@ index 903715a..10b7294 100644
 +// A waiting client that FindBestClientInQueue() would hand a slot to right now ahead of every
 +// ordinary one: its score is above the ordinary cap, which makes it a PowerShare request or a
 +// friend with a friend slot, and it is neither due to be purged nor unable to take the slot.
-+// nNotReady counts the waiting clients with such a score that could not take a slot yet.
-+const CUpDownClient* CUploadQueue::FindWaitingPowerShareRival(UINT &nNotReady) const
++// nNotReady counts the waiting clients with such a score that could not take a slot yet, and
++// pLowID is the best of them that only waits to be connected: a LowID client, the kind
++// FindBestClientInQueue() marks to be taken on its next connection, not marked yet.
++const CUpDownClient* CUploadQueue::FindWaitingPowerShareRival(UINT &nNotReady, CUpDownClient *&pLowID) const
 +{
 +	nNotReady = 0;
++	pLowID = NULL;
++	uint32 uLowIDScore = 0;
 +	const DWORD curTick = ::GetTickCount();
 +	for (POSITION pos = waitinglist.GetHeadPosition(); pos != NULL;) {
-+		const CUpDownClient *cur_client = waitinglist.GetNext(pos);
-+		if (cur_client->GetScore(false) < 0x08000000u)
++		CUpDownClient *cur_client = waitinglist.GetNext(pos);
++		const uint32 uScore = cur_client->GetScore(false);
++		if (uScore < 0x08000000u)
 +			continue;
-+		if (!cur_client->IsReadyForUploadSlot() || curTick >= cur_client->GetLastUpRequest() + MAX_PURGEQUEUETIME) {
++		if (curTick >= cur_client->GetLastUpRequest() + MAX_PURGEQUEUETIME) {
 +			++nNotReady;
++			continue;
++		}
++		if (!cur_client->IsReadyForUploadSlot()) {
++			++nNotReady;
++			if (cur_client->HasLowID() && !(cur_client->socket != NULL && cur_client->socket->IsConnected())
++				&& !cur_client->m_bAddNextConnect && uScore > uLowIDScore)
++			{
++				uLowIDScore = uScore;
++				pLowID = cur_client;
++			}
 +			continue;
 +		}
 +		return cur_client;
@@ -97,7 +112,7 @@ index 903715a..10b7294 100644
  {
  	//If we have nobody in the queue, do NOT remove the current uploads.
  	//This will save some bandwidth and some unneeded swapping from upload/queue/upload.
-@@ -800,9 +821,33 @@ bool CUploadQueue::CheckForTimeOver(const CUpDownClient *client)
+@@ -800,9 +836,44 @@ bool CUploadQueue::CheckForTimeOver(const CUpDownClient *client)
  
  	if (thePrefs.TransferFullChunks()) {
  		// Allow the client to download a specified amount per session; but keep going if no one needs this slot
@@ -109,8 +124,19 @@ index 903715a..10b7294 100644
 +			// stretched past what was sent already, in case ForceNewClient() held the check back.
 +			if (client->IsPowerShareRequest()) {
 +				UINT nNotReady;
-+				const CUpDownClient *pRival = FindWaitingPowerShareRival(nNotReady);
++				CUpDownClient *pLowID;
++				const CUpDownClient *pRival = FindWaitingPowerShareRival(nNotReady, pLowID);
 +				if (pRival == NULL) {
++					// A LowID rival that is not connected cannot take this slot, and is given its turn the
++					// way FindBestClientInQueue() would give it: marked to get a slot of its own when it
++					// connects. FindBestClientInQueue() runs only when a new slot is wanted, never while
++					// this one is kept, so without this the rival waits as long as the slot is kept.
++					if (pLowID != NULL) {
++						pLowID->m_bAddNextConnect = true;
++						if (thePrefs.GetLogUlDlEvents())
++							AddDebugLogLine(false, _T("PowerShare: LowID client not connected, slot kept for its next connection, score %u Client: %s")
++								, pLowID->GetScore(false), (LPCTSTR)pLowID->DbgGetClientInfo());
++					}
 +					client->SetPowerShareStretches((UINT)(client->GetQueueSessionPayloadUp() / SESSIONMAXTRANS));
 +					if (thePrefs.GetLogUlDlEvents())
 +						AddDebugLogLine(false, _T("PowerShare: slot kept at %s, next check at %s, %u waiting, none outranking (%u PowerShare/friend not ready) Client: %s")
@@ -134,7 +160,7 @@ index 903715a..10b7294 100644
  		}
  	} else {
 diff --git a/srchybrid/UploadQueue.h b/srchybrid/UploadQueue.h
-index 07db5a2..fea6531 100644
+index 07db5a2..ba683d0 100644
 --- a/srchybrid/UploadQueue.h
 +++ b/srchybrid/UploadQueue.h
 @@ -72,7 +72,7 @@ public:
@@ -150,7 +176,7 @@ index 07db5a2..fea6531 100644
  	static VOID CALLBACK UploadTimer(HWND hWnd, UINT nMsg, UINT_PTR nId, DWORD dwTime) noexcept;
  
  private:
-+	const CUpDownClient* FindWaitingPowerShareRival(UINT &nNotReady) const;
++	const CUpDownClient* FindWaitingPowerShareRival(UINT &nNotReady, CUpDownClient *&pLowID) const;
  	void	UpdateMaxClientScore();
  	uint32	GetMaxClientScore() const						{ return m_imaxscore; }
  	void	UpdateActiveClientsInfo(DWORD curTick);
