@@ -1,0 +1,93 @@
+diff --git a/srchybrid/UploadClient.cpp b/srchybrid/UploadClient.cpp
+index 1a5f81c..f27ae58 100644
+--- a/srchybrid/UploadClient.cpp
++++ b/srchybrid/UploadClient.cpp
+@@ -413,12 +413,19 @@ void CUpDownClient::AddReqBlock(Requested_Block_Struct *reqblock, bool bSignalIO
+ 			return;
+ 		}
+ 
+-		for (POSITION pos = pUploadingClientStruct->m_DoneBlocks_list.GetHeadPosition(); pos != NULL;) {
++		pUploadingClientStruct->m_dwDiagLastReq = ::GetTickCount(); //DIAG
++		INT_PTR iDiagDepth = pUploadingClientStruct->m_DoneBlocks_list.GetCount(); //DIAG
++		for (POSITION pos = pUploadingClientStruct->m_DoneBlocks_list.GetHeadPosition(); pos != NULL; --iDiagDepth) {
+ 			const Requested_Block_Struct *cur_reqblock = pUploadingClientStruct->m_DoneBlocks_list.GetNext(pos);
+ 			if (reqblock->StartOffset == cur_reqblock->StartOffset
+ 				&& reqblock->EndOffset == cur_reqblock->EndOffset
+ 				&& md4equ(reqblock->FileID, cur_reqblock->FileID))
+ 			{
++				//DIAG: depth 1 is the block sent last
++				++pUploadingClientStruct->m_uDiagReqDupDone;
++				pUploadingClientStruct->m_uDiagLastDupStart = reqblock->StartOffset;
++				pUploadingClientStruct->m_uDiagLastDupEnd = reqblock->EndOffset;
++				pUploadingClientStruct->m_iDiagLastDupDepth = iDiagDepth;
+ 				delete reqblock;
+ 				return;
+ 			}
+@@ -429,10 +436,12 @@ void CUpDownClient::AddReqBlock(Requested_Block_Struct *reqblock, bool bSignalIO
+ 				&& reqblock->EndOffset == cur_reqblock->EndOffset
+ 				&& md4equ(reqblock->FileID, cur_reqblock->FileID))
+ 			{
++				++pUploadingClientStruct->m_uDiagReqDupQueued; //DIAG
+ 				delete reqblock;
+ 				return;
+ 			}
+ 		}
++		++pUploadingClientStruct->m_uDiagReqNew; //DIAG
+ 		pUploadingClientStruct->m_BlockRequests_queue.AddTail(reqblock);
+ 		dbgLastQueueCount = pUploadingClientStruct->m_BlockRequests_queue.GetCount();
+ 		lockBlockLists.Unlock(); // not needed, just to make it visible
+diff --git a/srchybrid/UploadQueue.cpp b/srchybrid/UploadQueue.cpp
+index b770763..9c6bfc5 100644
+--- a/srchybrid/UploadQueue.cpp
++++ b/srchybrid/UploadQueue.cpp
+@@ -715,6 +715,14 @@ bool CUploadQueue::RemoveFromUploadQueue(CUpDownClient *client, LPCTSTR pszReaso
+ 					, (LPCTSTR)CastItoXBytes(client->GetQueueSessionPayloadUp())
+ 					, (LPCTSTR)CastItoXBytes(client->GetPayloadInBuffer()), curClientStruct->m_BlockRequests_queue.GetCount()
+ 					, theApp.sharedfiles->GetFileByID(client->GetUploadFileID()) ? (LPCTSTR)theApp.sharedfiles->GetFileByID(client->GetUploadFileID())->GetFileName() : _T(""));
++				//DIAG: what the peer asked for during the session, see UploadingToClient_Struct
++				const UploadingToClient_Struct &diag = *curClientStruct;
++				AddDebugLogLine(DLP_DEFAULT, false, _T("UPDIAG|session end: requests new %u, dropped as sent %u, dropped as queued %u; sent blocks %Id; last request %s; last dropped as sent %I64u-%I64u depth %Id Client: %s")
++					, diag.m_uDiagReqNew, diag.m_uDiagReqDupDone, diag.m_uDiagReqDupQueued
++					, diag.m_DoneBlocks_list.GetCount()
++					, diag.m_dwDiagLastReq ? (LPCTSTR)(CastSecondsToHM((::GetTickCount() - diag.m_dwDiagLastReq) / SEC2MS(1)) + _T(" ago")) : _T("never")
++					, diag.m_uDiagLastDupStart, diag.m_uDiagLastDupEnd, diag.m_iDiagLastDupDepth
++					, (LPCTSTR)client->DbgGetClientInfo());
+ 			}
+ 			client->m_bAddNextConnect = false;
+ 
+diff --git a/srchybrid/UploadQueue.h b/srchybrid/UploadQueue.h
+index fea6531..126c279 100644
+--- a/srchybrid/UploadQueue.h
++++ b/srchybrid/UploadQueue.h
+@@ -27,6 +27,13 @@ struct UploadingToClient_Struct
+ 		: m_pClient()
+ 		, m_bIOError()
+ 		, m_bDisableCompression()
++		, m_uDiagReqNew()
++		, m_uDiagReqDupDone()
++		, m_uDiagReqDupQueued()
++		, m_uDiagLastDupStart()
++		, m_uDiagLastDupEnd()
++		, m_iDiagLastDupDepth()
++		, m_dwDiagLastReq()
+ 	{
+ 	}
+ 	~UploadingToClient_Struct();
+@@ -37,6 +44,17 @@ struct UploadingToClient_Struct
+ 	CCriticalSection									m_csBlockListsLock; // don't acquire other locks while having this one in any thread other than UploadDiskIOThread or make sure deadlocks are impossible
+ 	bool												m_bIOError;
+ 	bool												m_bDisableCompression;
++	// DIAG: the block requests of this upload session, counted by AddReqBlock() on the main
++	// thread and logged when the session ends. A request equal to a block already sent is
++	// dropped without a word, so a vanilla log cannot tell a peer that stopped asking from a
++	// peer that asked again for what it already had.
++	UINT												m_uDiagReqNew;
++	UINT												m_uDiagReqDupDone;
++	UINT												m_uDiagReqDupQueued;
++	uint64												m_uDiagLastDupStart;
++	uint64												m_uDiagLastDupEnd;
++	INT_PTR												m_iDiagLastDupDepth;
++	DWORD												m_dwDiagLastReq;
+ };
+ typedef CTypedPtrList<CPtrList, UploadingToClient_Struct*> CUploadingPtrList;
+ 

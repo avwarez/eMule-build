@@ -92,7 +92,9 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          rather than code, so they change no binary.
 #   99     reserved for temporary diagnostics - a patch that makes a build
 #          report something rather than fix it; whatever lands here is meant
-#          to be deleted once it has been read.
+#          to be deleted once it has been read. 99a logs, when an upload
+#          session ends, how many block requests the peer sent and how many
+#          were dropped as already sent or already queued.
 # ---------------------------------------------------------------------------
 find_package(Git REQUIRED)
 
