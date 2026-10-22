@@ -1,0 +1,51 @@
+diff --git a/srchybrid/EMSocket.cpp b/srchybrid/EMSocket.cpp
+index cd8e44c..dff3f98 100644
+--- a/srchybrid/EMSocket.cpp
++++ b/srchybrid/EMSocket.cpp
+@@ -111,6 +111,7 @@ CEMSocket::CEMSocket()
+ 	, m_bUseBigSendBuffers()
+ 	, m_bUseOverlappedSend(true)
+ 	, m_bPendingSendOv()
++	, m_dwDiagSendThread()
+ {
+ 	lastCalledSend = timeGetTime();
+ 	lastSent = lastCalledSend > SEC2MS(1) ? lastCalledSend - SEC2MS(1) : 0;
+@@ -809,6 +810,7 @@ SocketSentBytes CEMSocket::SendOv(uint32 maxNumberOfBytesToSend, uint32 minFragS
+ 				// all right, prepare to send our collected buffers
+ 				memset(&m_PendingSendOperation, 0, sizeof WSAOVERLAPPED);
+ 				m_PendingSendOperation.hEvent = theApp.uploadBandwidthThrottler->GetSocketAvailableEvent();
++				m_dwDiagSendThread = ::GetCurrentThreadId(); // 99c
+ 				m_bPendingSendOv = true;
+ 				if (CEncryptedStreamSocket::SendOv(m_aBufferSend, &m_PendingSendOperation) == 0)
+ 					CleanUpOverlappedSendOperation(false);
+@@ -1148,6 +1150,18 @@ void CEMSocket::CleanUpOverlappedSendOperation(bool bCancel)
+ 				::Sleep(20);
+ 			};
+ 
++		// 99c: a send still in flight here keeps its OVERLAPPED and buffers after they are freed, and when it
++		// ends its status is written into whatever took their place. CancelIo() only cancels the I/O that the
++		// calling thread started. Only the main log is told; what happens next is unchanged.
++		if (bCancel && !HasOverlappedIoCompleted(&m_PendingSendOperation)) {
++			ULONGLONG uDiagBytes = 0;
++			for (INT_PTR i = m_aBufferSend.GetCount(); --i >= 0;)
++				uDiagBytes += m_aBufferSend[i].len;
++			theApp.QueueLogLineEx(LOG_ERROR, _T("Socket send: a send of %I64u bytes is still in progress when %s frees it (started by thread %lu, cancelled from thread %lu) - its end will write into freed memory")
++				, uDiagBytes, byConnected == EMS_DISCONNECTED ? _T("the socket teardown") : _T("the send error handling")
++				, m_dwDiagSendThread, ::GetCurrentThreadId());
++		}
++
+ 		for (INT_PTR i = m_aBufferSend.GetCount(); --i >= 0;)
+ 			delete[] m_aBufferSend[i].buf;
+ 		m_aBufferSend.RemoveAll();
+diff --git a/srchybrid/EMSocket.h b/srchybrid/EMSocket.h
+index 3875a13..b21d839 100644
+--- a/srchybrid/EMSocket.h
++++ b/srchybrid/EMSocket.h
+@@ -127,6 +127,7 @@ private:
+ 	uint32	m_sendblen; //packet length in sendbuffer
+ 	uint32	m_sent;
+ 	WSAOVERLAPPED m_PendingSendOperation;
++	DWORD	m_dwDiagSendThread; // 99c: thread that started the pending send
+ 	CArray<WSABUF> m_aBufferSend;
+ 
+ 	CTypedPtrList<CPtrList, Packet*> controlpacket_queue;	//use sendLocker!
