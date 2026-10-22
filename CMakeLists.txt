@@ -95,6 +95,9 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          to be deleted once it has been read. 99a logs, when an upload
 #          session ends, how many block requests the peer sent and how many
 #          were dropped as already sent or already queued.
+#          99b writes to the main log any upload disk read that fails or
+#          takes 10 s or more, and says when that leaves the upload read
+#          thread stopped or the read pending for good.
 # ---------------------------------------------------------------------------
 find_package(Git REQUIRED)
 

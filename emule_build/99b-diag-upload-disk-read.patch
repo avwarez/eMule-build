@@ -1,0 +1,90 @@
+diff --git a/srchybrid/UploadDiskIOThread.cpp b/srchybrid/UploadDiskIOThread.cpp
+index 5bfb746..1d01ae6 100644
+--- a/srchybrid/UploadDiskIOThread.cpp
++++ b/srchybrid/UploadDiskIOThread.cpp
+@@ -45,6 +45,34 @@ static char THIS_FILE[] = __FILE__;
+ #define RUN_WORK	2
+ #define WAKEUP		((ULONG_PTR)(~0))
+ 
++// 99b: a read that takes this long holds up every upload, see ReadCompletionRoutine()
++#define DIAG_SLOW_READ_MS	SEC2MS(10)
++
++// 99b: GetQueuedCompletionStatus() also returns FALSE when the packet it hands over is a read
++// that failed. Both loops in RunInternal() take that FALSE as the end: the waiting loop ends the
++// thread, the draining loop ends the drain and the failed read is never completed, so it stays
++// pending and WakeUpCall() never posts again. Either way no upload gets data from then on.
++// Only the main log is told; what the loops do is unchanged.
++static BOOL DiagGetQueuedCompletionStatus(HANDLE hPort, DWORD &dwRead, ULONG_PTR &completionKey, OverlappedRead_Struct *&pCurIO, DWORD dwWait)
++{
++	const BOOL bRet = ::GetQueuedCompletionStatus(hPort, &dwRead, &completionKey, (LPOVERLAPPED*)&pCurIO, dwWait);
++	if (!bRet) {
++		const DWORD dwError = ::GetLastError();
++		if (pCurIO != NULL)
++			theApp.QueueLogLineEx(LOG_ERROR, _T("Upload disk I/O: reading \"%s\" at %I64u-%I64u failed after %lu ms, error %lu: %s - %s")
++				, (LPCTSTR)pCurIO->pFile->GetFileName(), pCurIO->uStartOffset, pCurIO->uEndOffset
++				, ::GetTickCount() - pCurIO->dwDiagStart, dwError, (LPCTSTR)GetErrorMessage(dwError, 1)
++				, dwWait == INFINITE ? _T("the upload read thread stops, no upload should get data until eMule restarts")
++					: _T("the read stays pending for good, uploads should stall once the reads in flight are done"));
++		else if (dwError != WAIT_TIMEOUT)
++			theApp.QueueLogLineEx(LOG_ERROR, _T("Upload disk I/O: GetQueuedCompletionStatus failed, error %lu: %s - %s")
++				, dwError, (LPCTSTR)GetErrorMessage(dwError, 1)
++				, dwWait == INFINITE ? _T("the upload read thread stops, no upload should get data until eMule restarts") : _T("draining stops"));
++		::SetLastError(dwError);
++	}
++	return bRet;
++}
++
+ IMPLEMENT_DYNCREATE(CUploadDiskIOThread, CWinThread)
+ 
+ CUploadDiskIOThread::CUploadDiskIOThread()
+@@ -91,7 +119,7 @@ UINT CUploadDiskIOThread::RunInternal()
+ 	OverlappedRead_Struct *pCurIO = NULL;
+ 	m_Run = RUN_IDLE;
+ 	while (m_Run
+-			&& ::GetQueuedCompletionStatus(m_hPort, &dwRead, &completionKey, (LPOVERLAPPED*)&pCurIO, INFINITE)
++			&& DiagGetQueuedCompletionStatus(m_hPort, dwRead, completionKey, pCurIO, INFINITE)
+ 			&& completionKey)
+ 	{
+ 		m_Run = RUN_WORK;
+@@ -110,7 +138,7 @@ UINT CUploadDiskIOThread::RunInternal()
+ 				break;
+ 			if (completionKey != WAKEUP) //ignore wakeups
+ 				ReadCompletionRoutine(dwRead, pCurIO);
+-		} while (::GetQueuedCompletionStatus(m_hPort, &dwRead, &completionKey, (LPOVERLAPPED*)&pCurIO, 0));
++		} while (DiagGetQueuedCompletionStatus(m_hPort, dwRead, completionKey, pCurIO, 0));
+ 
+ 		if (!completionKey) //thread termination
+ 			break;
+@@ -238,6 +266,7 @@ void CUploadDiskIOThread::StartCreateNextBlockPackage(UploadingToClient_Struct *
+ 			pOverlappedRead->uStartOffset = currentblock->StartOffset;
+ 			pOverlappedRead->uEndOffset = currentblock->EndOffset;
+ 			pOverlappedRead->pBuffer = new byte[(size_t)uTogo];
++			pOverlappedRead->dwDiagStart = ::GetTickCount();
+ 
+ 			if (!::ReadFile(pFile->m_hRead, pOverlappedRead->pBuffer, (DWORD)uTogo, NULL, (LPOVERLAPPED)pOverlappedRead)) {
+ 				DWORD dwError = ::GetLastError();
+@@ -282,6 +311,12 @@ void CUploadDiskIOThread::ReadCompletionRoutine(DWORD dwRead, const OverlappedRe
+ 
+ 	CKnownFile *pKnownFile = pOvRead->pFile;
+ 	if (m_Run) {
++		// 99b: while a read is pending the thread is not woken for new block requests, so a slow
++		// read holds up every upload, not only the one it is for
++		const DWORD dwDiagTook = ::GetTickCount() - pOvRead->dwDiagStart;
++		if (dwDiagTook >= DIAG_SLOW_READ_MS)
++			theApp.QueueLogLineEx(LOG_WARNING, _T("Upload disk I/O: reading \"%s\" at %I64u-%I64u took %lu ms, %lu bytes read, every upload waited for it")
++				, (LPCTSTR)pOvRead->pFile->GetFileName(), pOvRead->uStartOffset, pOvRead->uEndOffset, dwDiagTook, dwRead);
+ 		m_listPendingIO.RemoveAt(pOvRead->pos);
+ 		bool bReadError = !dwRead;
+ 		if (bReadError)
+diff --git a/srchybrid/UploadDiskIOThread.h b/srchybrid/UploadDiskIOThread.h
+index 13d2bcc..2656afb 100644
+--- a/srchybrid/UploadDiskIOThread.h
++++ b/srchybrid/UploadDiskIOThread.h
+@@ -32,6 +32,7 @@ struct OverlappedRead_Struct
+ 	uint64					uEndOffset;
+ 	BYTE					*pBuffer;
+ 	POSITION				pos;
++	DWORD					dwDiagStart; // 99b: tick when the read was started
+ };
+ 
+ class CUploadDiskIOThread : public CWinThread
