@@ -99,8 +99,8 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          takes 10 s or more, and says when that leaves the upload read
 #          thread stopped or the read pending for good.
 #          99c writes to the main log any socket send still in progress
-#          when its buffers are freed, with the thread that started it and
-#          the one that tried to cancel it.
+#          when its socket lets go of it, with the thread that started it
+#          and the one that tried to cancel it, and again when 97o frees it.
 # ---------------------------------------------------------------------------
 find_package(Git REQUIRED)
 

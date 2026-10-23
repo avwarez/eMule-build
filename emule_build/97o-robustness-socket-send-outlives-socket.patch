@@ -1,0 +1,173 @@
+diff --git a/srchybrid/EMSocket.cpp b/srchybrid/EMSocket.cpp
+index cd8e44c..8d73530 100644
+--- a/srchybrid/EMSocket.cpp
++++ b/srchybrid/EMSocket.cpp
+@@ -82,6 +82,47 @@ namespace
+ 
+ IMPLEMENT_DYNAMIC(CEMSocket, CEncryptedStreamSocket)
+ 
++namespace
++{
++	// 97o: a send still in flight when its socket let go of it. When the send ends, its status is
++	// written into the OVERLAPPED, and until then the buffers may still be read, so both wait here.
++	struct AbandonedSend
++	{
++		WSAOVERLAPPED *pOverlapped;
++		CArray<WSABUF> aBuffer;
++		DWORD dwEnded; // when the send was first seen ended, 0 before
++	};
++
++	CCriticalSection s_lockAbandonedSends;
++	CList<AbandonedSend*> s_listAbandonedSends;
++}
++
++// 97o: called by the throttler thread, which started the sends; under Wine their end is written
++// when that thread runs, not when another one cancels them.
++void CEMSocket::FreeFinishedAbandonedSends()
++{
++	CSingleLock lockAbandoned(&s_lockAbandonedSends, TRUE);
++	const DWORD dwNow = ::GetTickCount();
++	for (POSITION pos = s_listAbandonedSends.GetHeadPosition(); pos != NULL;) {
++		const POSITION posCur = pos;
++		AbandonedSend *pAbandoned = s_listAbandonedSends.GetNext(pos);
++		if (!HasOverlappedIoCompleted(pAbandoned->pOverlapped))
++			continue;
++		// keep it one more second after its end is first seen, as a margin
++		if (pAbandoned->dwEnded == 0) {
++			pAbandoned->dwEnded = dwNow ? dwNow : 1;
++			continue;
++		}
++		if (dwNow - pAbandoned->dwEnded < SEC2MS(1))
++			continue;
++		for (INT_PTR i = pAbandoned->aBuffer.GetCount(); --i >= 0;)
++			delete[] pAbandoned->aBuffer[i].buf;
++		delete pAbandoned->pOverlapped;
++		delete pAbandoned;
++		s_listAbandonedSends.RemoveAt(posCur);
++	}
++}
++
+ CEMSocket::CEMSocket()
+ 	: m_pProxyLayer()
+ 	, m_uTimeOut(CONNECTION_TIMEOUT) // default timeout for ed2k sockets
+@@ -97,6 +138,7 @@ CEMSocket::CEMSocket()
+ 	, sendbuffer()
+ 	, m_sendblen()
+ 	, m_sent()
++	, m_pPendingSendOperation(new WSAOVERLAPPED())
+ 	, m_numberOfSentBytesCompleteFile()
+ 	, m_numberOfSentBytesPartFile()
+ 	//, m_numberOfSentBytesControlPacket()
+@@ -134,6 +176,7 @@ CEMSocket::~CEMSocket()
+ 	ClearQueues();
+ 	CEMSocket::RemoveAllLayers(); // deadlake PROXYSUPPORT
+ 	AsyncSelect(0);
++	delete m_pPendingSendOperation; // 97o: a send still in flight took its own along
+ }
+ 
+ // deadlake PROXYSUPPORT
+@@ -807,10 +850,10 @@ SocketSentBytes CEMSocket::SendOv(uint32 maxNumberOfBytesToSend, uint32 minFragS
+ 
+ 			if (m_aBufferSend.GetCount() > 0) {
+ 				// all right, prepare to send our collected buffers
+-				memset(&m_PendingSendOperation, 0, sizeof WSAOVERLAPPED);
+-				m_PendingSendOperation.hEvent = theApp.uploadBandwidthThrottler->GetSocketAvailableEvent();
++				memset(m_pPendingSendOperation, 0, sizeof WSAOVERLAPPED);
++				m_pPendingSendOperation->hEvent = theApp.uploadBandwidthThrottler->GetSocketAvailableEvent();
+ 				m_bPendingSendOv = true;
+-				if (CEncryptedStreamSocket::SendOv(m_aBufferSend, &m_PendingSendOperation) == 0)
++				if (CEncryptedStreamSocket::SendOv(m_aBufferSend, m_pPendingSendOperation) == 0)
+ 					CleanUpOverlappedSendOperation(false);
+ 				else {
+ 					int nError = WSAGetLastError();
+@@ -1113,7 +1156,7 @@ bool CEMSocket::IsBusyExtensiveCheck()
+ 	if (!m_bPendingSendOv)
+ 		return false;
+ 	DWORD dwTransferred, dwFlags;
+-	if (WSAGetOverlappedResult(GetSocketHandle(), &m_PendingSendOperation, &dwTransferred, FALSE, &dwFlags)) {
++	if (WSAGetOverlappedResult(GetSocketHandle(), m_pPendingSendOperation, &dwTransferred, FALSE, &dwFlags)) {
+ 		CleanUpOverlappedSendOperation(false);
+ 		OnSend(0);
+ 		return false;
+@@ -1138,15 +1181,27 @@ void CEMSocket::CleanUpOverlappedSendOperation(bool bCancel)
+ {
+ 	if (m_bPendingSendOv) {
+ 		m_bPendingSendOv = false;
+-		if (bCancel && CancelIo((HANDLE)GetSocketHandle()))
+-			for (int i = 5; --i >= 0;) { //use counter and sleep(), because this may loop forever
+-				DWORD dwTransferred, dwFlags;
+-				if (WSAGetOverlappedResult(GetSocketHandle(), &m_PendingSendOperation, &dwTransferred, FALSE, &dwFlags))
+-					break;
+-				if (WSAGetLastError() != WSA_IO_INCOMPLETE)
+-					break;
++		// 97o: CancelIo() cancels only the I/O started by the calling thread, and sends are started
++		// by the throttler thread; CancelIoEx() cancels this send whichever thread started it.
++		if (bCancel && !HasOverlappedIoCompleted(m_pPendingSendOperation)) {
++			::CancelIoEx((HANDLE)GetSocketHandle(), m_pPendingSendOperation);
++			for (int i = 5; --i >= 0 && !HasOverlappedIoCompleted(m_pPendingSendOperation);) //use counter and sleep(), because this may loop forever
+ 				::Sleep(20);
+-			};
++		}
++
++		// 97o: a send that has not ended yet will still write its status into the OVERLAPPED and may
++		// still read the buffers: hand both over to FreeFinishedAbandonedSends() and take a new OVERLAPPED.
++		if (bCancel && !HasOverlappedIoCompleted(m_pPendingSendOperation)) {
++			AbandonedSend *pAbandoned = new AbandonedSend;
++			pAbandoned->pOverlapped = m_pPendingSendOperation;
++			pAbandoned->aBuffer.Copy(m_aBufferSend);
++			pAbandoned->dwEnded = 0;
++			m_aBufferSend.RemoveAll();
++			m_pPendingSendOperation = new WSAOVERLAPPED();
++			CSingleLock lockAbandoned(&s_lockAbandonedSends, TRUE);
++			s_listAbandonedSends.AddTail(pAbandoned);
++			return;
++		}
+ 
+ 		for (INT_PTR i = m_aBufferSend.GetCount(); --i >= 0;)
+ 			delete[] m_aBufferSend[i].buf;
+diff --git a/srchybrid/EMSocket.h b/srchybrid/EMSocket.h
+index 3875a13..bb97efe 100644
+--- a/srchybrid/EMSocket.h
++++ b/srchybrid/EMSocket.h
+@@ -82,6 +82,7 @@ public:
+ 	virtual SocketSentBytes SendFileAndControlData(uint32 maxNumberOfBytesToSend, uint32 minFragSize)	{ return SendEM(maxNumberOfBytesToSend, minFragSize, false); }
+ 
+ 	uint32	GetNeededBytes();
++	static void FreeFinishedAbandonedSends();
+ #ifdef _DEBUG
+ 	// Diagnostic Support
+ 	virtual void AssertValid() const;
+@@ -126,7 +127,7 @@ private:
+ 	char	*sendbuffer;
+ 	uint32	m_sendblen; //packet length in sendbuffer
+ 	uint32	m_sent;
+-	WSAOVERLAPPED m_PendingSendOperation;
++	WSAOVERLAPPED *m_pPendingSendOperation; // 97o: on the heap, so that a send still in flight can keep it after the socket is gone
+ 	CArray<WSABUF> m_aBufferSend;
+ 
+ 	CTypedPtrList<CPtrList, Packet*> controlpacket_queue;	//use sendLocker!
+diff --git a/srchybrid/UploadBandwidthThrottler.cpp b/srchybrid/UploadBandwidthThrottler.cpp
+index d9a8e54..542800f 100644
+--- a/srchybrid/UploadBandwidthThrottler.cpp
++++ b/srchybrid/UploadBandwidthThrottler.cpp
+@@ -315,6 +315,7 @@ UINT UploadBandwidthThrottler::RunInternal()
+ 	int nSlotsBusyLevel = 0;
+ 
+ 	lastTickReachedBandwidth = lastLoopTick = timeGetTime();
++	DWORD lastAbandonedSendsTick = lastLoopTick;
+ 	while (m_bRun) {
+ 		//m_eventPaused.Lock();
+ 
+@@ -473,6 +474,12 @@ UINT UploadBandwidthThrottler::RunInternal()
+ 		const DWORD thisLoopTick = timeGetTime();
+ 		timeSinceLastLoop = thisLoopTick - lastLoopTick;
+ 
++		// 97o: free the sends that ended after their socket had let go of them
++		if (thisLoopTick - lastAbandonedSendsTick >= SEC2MS(1)) {
++			lastAbandonedSendsTick = thisLoopTick;
++			CEMSocket::FreeFinishedAbandonedSends();
++		}
++
+ 		// Calculate how many bytes we can spend
+ 		sint64 bytesToSpend;
+ 		if (allowedDataRate >= _UI32_MAX) {
