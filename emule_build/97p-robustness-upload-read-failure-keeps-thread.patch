@@ -1,0 +1,74 @@
+diff --git a/srchybrid/UploadDiskIOThread.cpp b/srchybrid/UploadDiskIOThread.cpp
+index 5bfb746..eeceabf 100644
+--- a/srchybrid/UploadDiskIOThread.cpp
++++ b/srchybrid/UploadDiskIOThread.cpp
+@@ -45,6 +45,29 @@ static char THIS_FILE[] = __FILE__;
+ #define RUN_WORK	2
+ #define WAKEUP		((ULONG_PTR)(~0))
+ 
++// 97p: GetQueuedCompletionStatus() also returns FALSE when the packet it hands over is a read
++// that failed. That read is handed on as one that read nothing, so that ReadCompletionRoutine()
++// drops the upload it was for and the thread goes on; FALSE is returned only when nothing was
++// dequeued (the drain is over, or the port itself failed).
++static BOOL GetNextCompletion(HANDLE hPort, DWORD &dwRead, ULONG_PTR &completionKey, OverlappedRead_Struct *&pCurIO, DWORD dwWait)
++{
++	pCurIO = NULL;
++	if (::GetQueuedCompletionStatus(hPort, &dwRead, &completionKey, (LPOVERLAPPED*)&pCurIO, dwWait))
++		return TRUE;
++	const DWORD dwError = ::GetLastError();
++	if (pCurIO != NULL) {
++		theApp.QueueLogLineEx(LOG_ERROR, _T("Upload disk I/O: reading \"%s\" at %I64u-%I64u failed, error %lu: %s - the upload it was for is stopped, the others go on")
++			, (LPCTSTR)pCurIO->pFile->GetFileName(), pCurIO->uStartOffset, pCurIO->uEndOffset, dwError, (LPCTSTR)GetErrorMessage(dwError, 1));
++		dwRead = 0;
++		return TRUE;
++	}
++	if (dwError != WAIT_TIMEOUT)
++		theApp.QueueLogLineEx(LOG_ERROR, _T("Upload disk I/O: waiting for disk reads failed, error %lu: %s - no upload gets data until eMule restarts")
++			, dwError, (LPCTSTR)GetErrorMessage(dwError, 1));
++	::SetLastError(dwError);
++	return FALSE;
++}
++
+ IMPLEMENT_DYNCREATE(CUploadDiskIOThread, CWinThread)
+ 
+ CUploadDiskIOThread::CUploadDiskIOThread()
+@@ -91,7 +114,7 @@ UINT CUploadDiskIOThread::RunInternal()
+ 	OverlappedRead_Struct *pCurIO = NULL;
+ 	m_Run = RUN_IDLE;
+ 	while (m_Run
+-			&& ::GetQueuedCompletionStatus(m_hPort, &dwRead, &completionKey, (LPOVERLAPPED*)&pCurIO, INFINITE)
++			&& GetNextCompletion(m_hPort, dwRead, completionKey, pCurIO, INFINITE)
+ 			&& completionKey)
+ 	{
+ 		m_Run = RUN_WORK;
+@@ -110,7 +133,7 @@ UINT CUploadDiskIOThread::RunInternal()
+ 				break;
+ 			if (completionKey != WAKEUP) //ignore wakeups
+ 				ReadCompletionRoutine(dwRead, pCurIO);
+-		} while (::GetQueuedCompletionStatus(m_hPort, &dwRead, &completionKey, (LPOVERLAPPED*)&pCurIO, 0));
++		} while (GetNextCompletion(m_hPort, dwRead, completionKey, pCurIO, 0));
+ 
+ 		if (!completionKey) //thread termination
+ 			break;
+@@ -120,7 +143,8 @@ UINT CUploadDiskIOThread::RunInternal()
+ 			theApp.uploadBandwidthThrottler->NewUploadDataAvailable();
+ 			m_bSignalThrottler = false;
+ 		}
+-		if (m_bNewData.exchange(0) && m_listPendingIO.IsEmpty())
++		// 97p: also with reads pending, as a slow one must not hold up the others
++		if (m_bNewData.exchange(0))
+ 			PostQueuedCompletionStatus(m_hPort, 0, WAKEUP, NULL);
+ 	}
+ 	m_Run = RUN_STOP;
+@@ -480,8 +504,9 @@ void CUploadDiskIOThread::CreatePackedPackets(const OverlappedRead_Struct &Overl
+ 
+ void CUploadDiskIOThread::WakeUpCall()
+ {
+-	//pending I/O makes posting unnecessary
+-	if (m_Run == RUN_IDLE && m_listPendingIO.IsEmpty())
++	// 97p: pending I/O does not make posting unnecessary: a read that takes long
++	// (a disk that does not answer) would hold up every other upload until it ends
++	if (m_Run == RUN_IDLE)
+ 		PostQueuedCompletionStatus(m_hPort, 0, WAKEUP, NULL);
+ 	else
+ 		m_bNewData.exchange(1);
