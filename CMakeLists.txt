@@ -65,12 +65,13 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          the C++ standard we build at removed the construct).
 #   88     legacy features taken out: code that only ever ran on Windows
 #          versions we no longer target, or that nothing calls any more.
-#          Each patch removes one feature, down to its resources and ini keys
-#          (the translated strings stay, the language DLLs still carry them),
-#          or one branch no supported Windows ever takes, or one run-time
-#          lookup of an API every supported Windows has - small on purpose,
-#          so each can be judged on its own.
-#   89     reachable ports. 89a puts libplum in the place of miniupnpc:
+#          Each patch takes out one thing: a feature, down to its resources
+#          and ini keys (the translated strings stay, the language DLLs still
+#          carry them); the Windows version detection together with every
+#          branch taken on it (88x), as on every supported Windows each of
+#          them goes the same way; the run-time lookups of APIs every
+#          supported Windows has (88zf).
+#   89     features added. 89a puts libplum in the place of miniupnpc:
 #          one library that tries PCP, NAT-PMP and UPnP-IGD in turn and
 #          keeps the mappings alive on its own. 89b reads the Windows
 #          Firewall policy at startup and every minute after, and logs
@@ -78,6 +79,14 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          and what stops them; while a port is blocked it shows a bar under
 #          the toolbar, whose menu opens the ports through netsh, run as
 #          administrator for that alone, or hides the bar.
+#          89c adds PowerShare, stored in known.met the way MorphXT stores
+#          it: a complete file is marked from the Shared Files list, and the
+#          requests for it are served ahead of every ordinary one - unless
+#          many clients have the file complete already, or its upload
+#          priority was set to low or very low by hand. 89f writes what
+#          PowerShare does to the debug log, and 89g keeps a PowerShare
+#          upload going past the session limit while no other PowerShare
+#          request or friend slot is waiting for the slot.
 #   90-94  the code compiles but /Wall flags it; these bring the warning
 #          count back to zero.
 #   95-96  the code compiles and is warning-clean but is not correct on

@@ -1,8 +1,8 @@
 diff --git a/srchybrid/OtherFunctions.cpp b/srchybrid/OtherFunctions.cpp
-index f407fee..e6ce323 100644
+index 5cf579a..4540381 100644
 --- a/srchybrid/OtherFunctions.cpp
 +++ b/srchybrid/OtherFunctions.cpp
-@@ -4009,94 +4009,6 @@ int bestclr(const RGBQUAD* const palette, const BGR c)
+@@ -4085,94 +4085,6 @@ int bestclr(const RGBQUAD* const palette, const BGR c)
  	return best;
  }
  
@@ -97,7 +97,7 @@ index f407fee..e6ce323 100644
  byte* bmp2mem(HBITMAP hbmp, size_t &size, REFGUID imgfmt)
  {
  	if (hbmp) {
-@@ -4132,20 +4044,4 @@ HBITMAP mem2bmp(const byte *inbuf, const size_t size)
+@@ -4208,20 +4120,4 @@ HBITMAP mem2bmp(const byte *inbuf, const size_t size)
  			return img.Detach();
  	}
  	return 0;
@@ -120,10 +120,10 @@ index f407fee..e6ce323 100644
  }
 \ No newline at end of file
 diff --git a/srchybrid/OtherFunctions.h b/srchybrid/OtherFunctions.h
-index a3582d6..f9b31a3 100644
+index fb4ec71..926d6c5 100644
 --- a/srchybrid/OtherFunctions.h
 +++ b/srchybrid/OtherFunctions.h
-@@ -350,8 +350,6 @@ struct BGR //order of colours in bitmap and palette
+@@ -352,8 +352,6 @@ struct BGR //order of colours in bitmap and palette
  int			bestclr(const RGBQUAD *const palette, const BGR c);
  byte*		bmp2mem(HBITMAP hbmp, size_t &size, REFGUID imgfmt);
  HBITMAP		mem2bmp(const byte *inbuf, const size_t size);
@@ -133,7 +133,7 @@ index a3582d6..f9b31a3 100644
  ///////////////////////////////////////////////////////////////////////////////
  // MD4/MD5 helpers
 diff --git a/srchybrid/TitledMenu.cpp b/srchybrid/TitledMenu.cpp
-index 9d7b27b..176b480 100644
+index 506bdbc..5a5f453 100644
 --- a/srchybrid/TitledMenu.cpp
 +++ b/srchybrid/TitledMenu.cpp
 @@ -37,7 +37,6 @@ CTitledMenu::CTitledMenu()
@@ -165,16 +165,16 @@ index 9d7b27b..176b480 100644
  	ASSERT(m_mapIconNameToBitmap.IsEmpty());
  	return __super::CreateMenu();
  }
-@@ -97,8 +89,6 @@ void CTitledMenu::AddMenuTitle(LPCTSTR lpszTitle, bool bIsIconMenu)
- void CTitledMenu::EnableIcons()
- {
+@@ -102,8 +94,6 @@ void CTitledMenu::EnableIcons()
+ 		return;
+ 	}
  	m_bIconMenu = true;
 -	m_ImageList.DeleteImageList();
 -	m_ImageList.Create(ICONSIZE, ICONSIZE, theApp.m_iDfltImageListColorFlags | ILC_MASK, 0, 1);
  
  	MENUINFO mi;
  	mi.cbSize = (DWORD)sizeof mi;
-@@ -108,7 +98,7 @@ void CTitledMenu::EnableIcons()
+@@ -113,7 +103,7 @@ void CTitledMenu::EnableIcons()
  	SetMenuInfo(&mi);
  }
  
@@ -183,7 +183,7 @@ index 9d7b27b..176b480 100644
  void CTitledMenu::MeasureItem(LPMEASUREITEMSTRUCT lpMIS)
  {
  	if (lpMIS->itemID == MP_TITLE) {
-@@ -123,16 +113,11 @@ void CTitledMenu::MeasureItem(LPMEASUREITEMSTRUCT lpMIS)
+@@ -128,16 +118,11 @@ void CTitledMenu::MeasureItem(LPMEASUREITEMSTRUCT lpMIS)
  		static const int nBorderSize = 2;
  		lpMIS->itemWidth = size.cx + nBorderSize;
  		lpMIS->itemHeight = size.cy + nBorderSize;
@@ -202,7 +202,7 @@ index 9d7b27b..176b480 100644
  void CTitledMenu::DrawItem(LPDRAWITEMSTRUCT lpDIS)
  {
  	if (lpDIS->itemID == MP_TITLE) {
-@@ -171,19 +156,6 @@ void CTitledMenu::DrawItem(LPDRAWITEMSTRUCT lpDIS)
+@@ -176,19 +161,6 @@ void CTitledMenu::DrawItem(LPDRAWITEMSTRUCT lpDIS)
  		::SetTextColor(lpDIS->hDC, crOld);
  		::SetBkMode(lpDIS->hDC, iOldBkMode);
  		::SetBkColor(lpDIS->hDC, crOldBk);
@@ -222,7 +222,7 @@ index 9d7b27b..176b480 100644
  	}
  }
  
-@@ -287,56 +259,28 @@ void CTitledMenu::SetMenuBitmap(UINT nFlags, UINT nIDNewItem, LPCTSTR /*lpszNewI
+@@ -292,56 +264,28 @@ void CTitledMenu::SetMenuBitmap(UINT nFlags, UINT nIDNewItem, LPCTSTR /*lpszNewI
  	CString strIconLower(lpszIconName);
  	if (strIconLower.MakeLower().IsEmpty())
  		return;

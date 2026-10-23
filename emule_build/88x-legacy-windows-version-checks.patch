@@ -1,0 +1,544 @@
+diff --git a/srchybrid/Emule.cpp b/srchybrid/Emule.cpp
+index 55ee16b..e790cb7 100644
+--- a/srchybrid/Emule.cpp
++++ b/srchybrid/Emule.cpp
+@@ -1468,17 +1468,6 @@ void CemuleApp::CreateAllFonts()
+ 
+ const CString& CemuleApp::GetDefaultFontFaceName()
+ {
+-/* Support for old Windows was dropped
+-	if (m_strDefaultFontFaceName.IsEmpty()) {
+-		OSVERSIONINFO osvi;
+-		osvi.dwOSVersionInfoSize = (DWORD)sizeof osvi;
+-		if (GetVersionEx(&osvi)
+-			&& osvi.dwPlatformId == VER_PLATFORM_WIN32_NT
+-			&& osvi.dwMajorVersion >= 5) // Win2000/XP or higher
+-			m_strDefaultFontFaceName = _T("MS Shell Dlg 2");
+-		else
+-			m_strDefaultFontFaceName = _T("MS Shell Dlg");
+-	}*/
+ 	return m_strDefaultFontFaceName;
+ }
+ 
+diff --git a/srchybrid/EmuleDlg.cpp b/srchybrid/EmuleDlg.cpp
+index 2480a0a..3d7905f 100644
+--- a/srchybrid/EmuleDlg.cpp
++++ b/srchybrid/EmuleDlg.cpp
+@@ -371,19 +371,17 @@ BOOL CemuleDlg::OnInitDialog()
+ 	theStats.starttime = ::GetTickCount();
+ #ifdef HAVE_WIN7_SDK_H
+ 	// allow the TaskbarButtonCreated- & (tbb-)WM_COMMAND message to be sent to our window if our app is running elevated
+-	if (thePrefs.GetWindowsVersion() >= _WINVER_7_) {
+-		m_bInitedCOM = SUCCEEDED(::CoInitialize(NULL));
+-		if (m_bInitedCOM) {
+-			typedef BOOL(WINAPI *PChangeWindowMessageFilter)(UINT message, DWORD dwFlag);
+-			PChangeWindowMessageFilter ChangeWindowMessageFilter
+-				= (PChangeWindowMessageFilter)(::GetProcAddress(::GetModuleHandle(_T("user32.dll")), "ChangeWindowMessageFilter"));
+-			if (ChangeWindowMessageFilter) {
+-				ChangeWindowMessageFilter(UWM_TASK_BUTTON_CREATED, 1);
+-				ChangeWindowMessageFilter(WM_COMMAND, 1);
+-			}
+-		} else
+-			ASSERT(0);
+-	}
++	m_bInitedCOM = SUCCEEDED(::CoInitialize(NULL));
++	if (m_bInitedCOM) {
++		typedef BOOL(WINAPI *PChangeWindowMessageFilter)(UINT message, DWORD dwFlag);
++		PChangeWindowMessageFilter ChangeWindowMessageFilter
++			= (PChangeWindowMessageFilter)(::GetProcAddress(::GetModuleHandle(_T("user32.dll")), "ChangeWindowMessageFilter"));
++		if (ChangeWindowMessageFilter) {
++			ChangeWindowMessageFilter(UWM_TASK_BUTTON_CREATED, 1);
++			ChangeWindowMessageFilter(WM_COMMAND, 1);
++		}
++	} else
++		ASSERT(0);
+ #endif
+ 
+ 	// temporary disable the 'startup minimized' option, otherwise no window will be shown at all
+@@ -3668,8 +3666,7 @@ void CemuleDlg::OnTBBPressed(UINT id)
+ // When Windows tells us, the taskbar button was created, it is safe to initialize our taskbar stuff
+ LRESULT CemuleDlg::OnTaskbarBtnCreated(WPARAM, LPARAM)
+ {
+-	// Sanity check that the OS is Win 7 or later
+-	if (thePrefs.GetWindowsVersion() >= _WINVER_7_ && !theApp.IsClosing()) {
++	if (!theApp.IsClosing()) {
+ 		if (m_pTaskbarList)
+ 			m_pTaskbarList.Release();
+ 
+diff --git a/srchybrid/FileInfoDialog.cpp b/srchybrid/FileInfoDialog.cpp
+index 709a812..1f3a015 100644
+--- a/srchybrid/FileInfoDialog.cpp
++++ b/srchybrid/FileInfoDialog.cpp
+@@ -133,9 +133,7 @@ public:
+ 				// -----------------------------
+ 				// But then MediaInfo adopted YY.MM (year, month) versioning scheme...
+ 				ULONGLONG ullVersion = GetModuleVersion(m_hLib);
+-				if (ullVersion >= MAKEDLLVERULL(0, 7, 13, 0)
+-					&& (thePrefs.GetWindowsVersion() >= _WINVER_VISTA_ && ullVersion < MAKEDLLVERULL(26, 6, 0, 0)
+-						|| ullVersion < MAKEDLLVERULL(21, 4, 0, 0))) //21.03 for Windows XP
++				if (ullVersion >= MAKEDLLVERULL(0, 7, 13, 0) && ullVersion < MAKEDLLVERULL(26, 6, 0, 0))
+ 				{
+ 					(FARPROC &)m_pfnMediaInfo_New = ::GetProcAddress(m_hLib, "MediaInfo_New");
+ 					(FARPROC &)m_pfnMediaInfo_Delete = ::GetProcAddress(m_hLib, "MediaInfo_Delete");
+diff --git a/srchybrid/MuleSystrayDlg.cpp b/srchybrid/MuleSystrayDlg.cpp
+index d21b42b..f561351 100644
+--- a/srchybrid/MuleSystrayDlg.cpp
++++ b/srchybrid/MuleSystrayDlg.cpp
+@@ -277,9 +277,7 @@ BOOL CMuleSystrayDlg::OnInitDialog()
+ 	CFont Font;
+ 	Font.CreateFont(-16, 0, 900, 0, 700, 0, 0, 0, 0, 3, 2, 1, 34, _T("Tahoma"));
+ 
+-	UINT winver = thePrefs.GetWindowsVersion();
+-	int iClr = (winver == _WINVER_95_ || winver == _WINVER_NT4_ || g_bLowColorDesktop)
+-		? COLOR_ACTIVECAPTION : COLOR_GRADIENTACTIVECAPTION;
++	int iClr = g_bLowColorDesktop ? COLOR_ACTIVECAPTION : COLOR_GRADIENTACTIVECAPTION;
+ 	m_ctrlSidebar.SetColors(::GetSysColor(COLOR_CAPTIONTEXT), ::GetSysColor(COLOR_ACTIVECAPTION), ::GetSysColor(iClr));
+ 
+ 	m_ctrlSidebar.SetHorizontal(false);
+diff --git a/srchybrid/Opcodes.h b/srchybrid/Opcodes.h
+index d46a864..2f7d827 100644
+--- a/srchybrid/Opcodes.h
++++ b/srchybrid/Opcodes.h
+@@ -106,7 +106,6 @@
+ 
+ #define CONFIGFOLDER			_T("config\\")
+ #define MAXCONPER5SEC			20
+-#define MAXCON5WIN9X			10
+ #define	UPLOAD_CLIENT_MAXDATARATE	(25*1024) // max. target upload speed per client
+ #define	MIN_UP_CLIENTS_ALLOWED	2			// min. clients allowed to download regardless of any other factors. Don't set this too high
+ #define	MAX_UP_CLIENTS_ALLOWED	100			// max. clients allowed regardless of any other factors; cannot be below MIN_UP_CLIENTS_ALLOWED+3
+diff --git a/srchybrid/OtherFunctions.cpp b/srchybrid/OtherFunctions.cpp
+index 4540381..fc2a7ad 100644
+--- a/srchybrid/OtherFunctions.cpp
++++ b/srchybrid/OtherFunctions.cpp
+@@ -532,7 +532,7 @@ bool Ask4RegFix(bool checkOnly, bool dontAsk, bool bAutoTakeCollections)
+ 		// we actually need to change the registry and write an entry for HKCU
+ 		if (checkOnly)
+ 			return true;
+-		HKEY hkeyCR = thePrefs.GetWindowsVersion() < _WINVER_2K_ ? HKEY_LOCAL_MACHINE : HKEY_CURRENT_USER;
++		HKEY hkeyCR = HKEY_CURRENT_USER;
+ 		if (regkey.Create(hkeyCR, _T("Software\\Classes\\ed2k\\shell\\open\\command")) == ERROR_SUCCESS) {
+ 			if (dontAsk || (LocMessageBox(IDS_ASSIGNED2K, MB_ICONQUESTION | MB_YESNO, 0) == IDYES)) {
+ 				VERIFY(regkey.SetStringValue(NULL, regbuffer) == ERROR_SUCCESS);
+@@ -567,7 +567,7 @@ void BackupReg()
+ 	//		This means that saving/restoring existent registry keys works completely differently in Win98/XP.
+ 	//		Actually it works correctly under Win98 and is broken in WinXP+. Though, did someone notice it at all?
+ 
+-	HKEY hkeyCR = thePrefs.GetWindowsVersion() < _WINVER_2K_ ? HKEY_LOCAL_MACHINE : HKEY_CURRENT_USER;
++	HKEY hkeyCR = HKEY_CURRENT_USER;
+ 	// Look for pre-existing old ed2k links
+ 	CRegKey regkey;
+ 	if (regkey.Create(hkeyCR, _T("Software\\Classes\\ed2k\\shell\\open\\command")) == ERROR_SUCCESS) {
+@@ -591,7 +591,7 @@ void BackupReg()
+ // Barry - Restore previous values
+ void RevertReg()
+ {
+-	HKEY hkeyCR = thePrefs.GetWindowsVersion() < _WINVER_2K_ ? HKEY_LOCAL_MACHINE : HKEY_CURRENT_USER;
++	HKEY hkeyCR = HKEY_CURRENT_USER;
+ 	// restore previous ed2k links before being assigned to emule
+ 	CRegKey regkey;
+ 	if (regkey.Create(hkeyCR, _T("Software\\Classes\\ed2k\\shell\\open\\command")) == ERROR_SUCCESS) {
+@@ -616,136 +616,6 @@ void RevertReg()
+ UINT GetMaxWindowsTCPConnections()
+ {
+ 	return UNLIMITED;
+-/*	OSVERSIONINFOEX osvi;
+-	osvi.dwOSVersionInfoSize = (DWORD)sizeof(OSVERSIONINFOEX);
+-
+-	if (!GetVersionEx((OSVERSIONINFO*)&osvi)) {
+-		//if OSVERSIONINFOEX doesn't work, try OSVERSIONINFO
+-		osvi.dwOSVersionInfoSize = (DWORD)sizeof(OSVERSIONINFO);
+-		if (!GetVersionEx((OSVERSIONINFO*)&osvi))
+-			return UNLIMITED;  //shouldn't ever happen
+-	}
+-
+-	if (osvi.dwPlatformId == VER_PLATFORM_WIN32_NT) // Windows NT product family
+-		return UNLIMITED;  //no limits
+-
+-	if (osvi.dwPlatformId == VER_PLATFORM_WIN32_WINDOWS) { // Windows 95 product family
+-
+-		HKEY hKey;
+-		if (osvi.dwMajorVersion == 4 && osvi.dwMinorVersion == 0) { //old school 95
+-			DWORD dwValue;
+-			DWORD dwLength = (DWORD)sizeof dwValue;
+-
+-			RegOpenKeyEx(HKEY_LOCAL_MACHINE, _T("System\\CurrentControlSet\\Services\\VxD\\MSTCP")
+-				, 0, KEY_QUERY_VALUE, &hKey);
+-			LONG lResult = RegQueryValueEx(hKey, _T("MaxConnections"), NULL, NULL
+-				, (LPBYTE)&dwValue, &dwLength);
+-			RegCloseKey(hKey);
+-
+-			if (lResult != ERROR_SUCCESS || dwValue < 1)
+-				return 100;  //the default for 95 is 100
+-
+-			return dwValue;
+-
+-		}
+-		//98 or ME
+-		TCHAR szValue[32];
+-		DWORD dwLength = (DWORD)sizeof szValue;
+-		LONG lResult;
+-
+-		RegOpenKeyEx(HKEY_LOCAL_MACHINE, _T("System\\CurrentControlSet\\Services\\VxD\\MSTCP")
+-			, 0, KEY_QUERY_VALUE, &hKey);
+-		lResult = RegQueryValueEx(hKey, TEXT("MaxConnections"), NULL, NULL, (LPBYTE)szValue, &dwLength);
+-		RegCloseKey(hKey);
+-
+-		LONG lMaxConnections;
+-		if (lResult != ERROR_SUCCESS || (lMaxConnections = _tstoi(szValue)) < 1)
+-			return 100;  //the default for 98/ME is 100
+-
+-		return lMaxConnections;
+-	}
+-
+-	return UNLIMITED;  //give the user the benefit of the doubt, most use NT+ anyway
+-*/
+-}
+-
+-#pragma warning(push)
+-#pragma warning(disable:4996) //GetVersionEx()
+-WORD DetectWinVersion()
+-{
+-	OSVERSIONINFOEX osvi;
+-	osvi.dwOSVersionInfoSize = (DWORD)sizeof(OSVERSIONINFOEX);
+-
+-	if (!GetVersionEx((OSVERSIONINFO*)&osvi)) {
+-		osvi.dwOSVersionInfoSize = (DWORD)sizeof(OSVERSIONINFO);
+-		if (!GetVersionEx((OSVERSIONINFO*)&osvi))
+-			return 0;
+-	}
+-
+-	switch (osvi.dwPlatformId) {
+-	case VER_PLATFORM_WIN32_NT:
+-		if (osvi.dwMajorVersion <= 4)
+-			return _WINVER_NT4_;
+-		if (osvi.dwMajorVersion == 5) {
+-			if (osvi.dwMinorVersion == 0)
+-				return _WINVER_2K_;
+-			if (osvi.dwMinorVersion == 1)
+-				return _WINVER_XP_;
+-			if (osvi.dwMinorVersion == 2)
+-				return _WINVER_2003_;
+-		}
+-		if (osvi.dwMajorVersion == 6) {
+-			if (osvi.dwMinorVersion == 0)
+-				return _WINVER_VISTA_;
+-			if (osvi.dwMinorVersion == 1)
+-				return _WINVER_7_;
+-			if (osvi.dwMinorVersion == 2)
+-				return _WINVER_8_;
+-			if (osvi.dwMinorVersion == 3)
+-				return _WINVER_8_1_;
+-		}
+-		if (osvi.dwMajorVersion == 10 && osvi.dwMinorVersion == 0)
+-			return _WINVER_10_; //for Windows 11 - osvi.dwBuildNumber>=22000
+-		return _WINVER_7_; // never return Win95 if we get the info about an NT system
+-
+-	case VER_PLATFORM_WIN32_WINDOWS:
+-		if (osvi.dwMajorVersion == 4) {
+-			if (osvi.dwMinorVersion == 0)
+-				return _WINVER_95_;
+-			if (osvi.dwMinorVersion == 10)
+-				return _WINVER_98_;
+-			if (osvi.dwMinorVersion == 90)
+-				return _WINVER_ME_;
+-		}
+-	}
+-
+-	return _WINVER_95_;		// there shouldn't be anything lower than this
+-}
+-
+-bool IsRunningXPSP2()
+-{
+-	OSVERSIONINFOEX osvi;
+-	osvi.dwOSVersionInfoSize = (DWORD)sizeof(OSVERSIONINFOEX);
+-
+-	if (!GetVersionEx((OSVERSIONINFO*)&osvi)) {
+-		osvi.dwOSVersionInfoSize = (DWORD)sizeof(OSVERSIONINFO);
+-		if (!GetVersionEx((OSVERSIONINFO*)&osvi))
+-			return false;
+-	}
+-
+-	return osvi.dwPlatformId == VER_PLATFORM_WIN32_NT
+-		&& osvi.dwMajorVersion == 5
+-		&& osvi.dwMinorVersion == 1
+-		&& osvi.wServicePackMajor >= 2;
+-}
+-#pragma warning(pop)
+-
+-bool IsRunningXPSP2OrHigher()
+-{
+-	WORD wv = thePrefs.GetWindowsVersion();
+-	if (wv == _WINVER_XP_)
+-		return IsRunningXPSP2();
+-	return wv > _WINVER_XP_;
+ }
+ 
+ uint64 GetFreeDiskSpaceX(LPCTSTR pDirectory)
+@@ -3634,7 +3504,7 @@ bool DoCollectionRegFix(bool checkOnly)
+ 		// we actually need to change the registry and write an entry for HKCU
+ 		if (checkOnly)
+ 			return true;
+-		HKEY hkeyCR = thePrefs.GetWindowsVersion() < _WINVER_2K_ ? HKEY_LOCAL_MACHINE : HKEY_CURRENT_USER;
++		HKEY hkeyCR = HKEY_CURRENT_USER;
+ 		if (regkey.Create(hkeyCR, _T("Software\\Classes\\eMule\\shell\\open\\command")) == ERROR_SUCCESS) {
+ 			VERIFY(regkey.SetStringValue(NULL, regbuffer) == ERROR_SUCCESS);
+ 
+diff --git a/srchybrid/OtherFunctions.h b/srchybrid/OtherFunctions.h
+index 926d6c5..4cc8d71 100644
+--- a/srchybrid/OtherFunctions.h
++++ b/srchybrid/OtherFunctions.h
+@@ -317,23 +317,6 @@ ULONGLONG GetModuleVersion(HMODULE hModule);
+ 
+ UINT GetMaxWindowsTCPConnections();
+ 
+-#define _WINVER_95_		0x0400	// 4.0
+-#define _WINVER_NT4_	0x0401	// 4.1 (baked version)
+-#define _WINVER_98_		0x040A	// 4.10
+-#define _WINVER_ME_		0x045A	// 4.90
+-#define _WINVER_2K_		0x0500	// 5.0
+-#define _WINVER_XP_		0x0501	// 5.1
+-#define _WINVER_2003_	0x0502	// 5.2
+-#define _WINVER_VISTA_	0x0600	// 6.0
+-#define _WINVER_7_		0x0601	// 6.1
+-#define	_WINVER_S2008_	0x0601	// 6.1
+-#define _WINVER_8_		0x0602	// 6.2
+-#define _WINVER_8_1_	0x0603	// 6.3
+-#define _WINVER_10_		0x0a00	// 10.0
+-
+-WORD		DetectWinVersion();
+-bool		IsRunningXPSP2();
+-bool		IsRunningXPSP2OrHigher();
+ uint64		GetFreeDiskSpaceX(LPCTSTR pDirectory);
+ ULONGLONG	GetDiskFileSize(LPCTSTR pszFilePath);
+ int			GetAppImageListColorFlag();
+diff --git a/srchybrid/PPgConnection.cpp b/srchybrid/PPgConnection.cpp
+index 83d08c7..e1c5703 100644
+--- a/srchybrid/PPgConnection.cpp
++++ b/srchybrid/PPgConnection.cpp
+@@ -191,9 +191,6 @@ void CPPgConnection::LoadSettings()
+ 		GetDlgItem(IDC_NETWORK_KADEMLIA)->EnableWindow(thePrefs.GetUDPPort() > 0);
+ 		CheckDlgButton(IDC_NETWORK_ED2K, static_cast<UINT>(thePrefs.networked2k));
+ 
+-		WORD wv = thePrefs.GetWindowsVersion();
+-		GetDlgItem(IDC_PREF_UPNPONSTART)->EnableWindow(wv != _WINVER_95_ && wv != _WINVER_98_ && wv != _WINVER_NT4_);
+-
+ 		CheckDlgButton(IDC_PREF_UPNPONSTART, static_cast<UINT>(thePrefs.IsUPnPEnabled()));
+ 
+ 		//ShowLimitValues(); - will be called in OnLimiterChange()
+diff --git a/srchybrid/PPgDisplay.cpp b/srchybrid/PPgDisplay.cpp
+index 91bdfca..f07423e 100644
+--- a/srchybrid/PPgDisplay.cpp
++++ b/srchybrid/PPgDisplay.cpp
+@@ -85,11 +85,10 @@ void CPPgDisplay::LoadSettings()
+ 	CheckDlgButton(IDC_DISABLEHIST, static_cast<UINT>(thePrefs.GetUseAutocompletion()));
+ 
+ #ifdef HAVE_WIN7_SDK_H
+-	if (thePrefs.GetWindowsVersion() >= _WINVER_7_)
+-		CheckDlgButton(IDC_WIN7TASKBARGOODIES, static_cast<UINT>(thePrefs.IsWin7TaskbarGoodiesEnabled()));
+-	else
++	CheckDlgButton(IDC_WIN7TASKBARGOODIES, static_cast<UINT>(thePrefs.IsWin7TaskbarGoodiesEnabled()));
++#else
++	GetDlgItem(IDC_WIN7TASKBARGOODIES)->EnableWindow(FALSE);
+ #endif
+-		GetDlgItem(IDC_WIN7TASKBARGOODIES)->EnableWindow(FALSE);
+ 
+ 	SetDlgItemInt(IDC_TOOLTIPDELAY, thePrefs.m_iToolDelayTime, FALSE);
+ }
+diff --git a/srchybrid/PPgGeneral.cpp b/srchybrid/PPgGeneral.cpp
+index a127a94..b3cca64 100644
+--- a/srchybrid/PPgGeneral.cpp
++++ b/srchybrid/PPgGeneral.cpp
+@@ -95,12 +95,7 @@ void CPPgGeneral::LoadSettings()
+ 	CheckDlgButton(IDC_STARTMIN, static_cast<UINT>(thePrefs.startMinimized));
+ 	CheckDlgButton(IDC_STARTWIN, static_cast<UINT>(thePrefs.m_bAutoStart));
+ 
+-	if (thePrefs.GetWindowsVersion() != _WINVER_95_)
+-		CheckDlgButton(IDC_PREVENTSTANDBY, static_cast<UINT>(thePrefs.GetPreventStandby()));
+-	else {
+-		CheckDlgButton(IDC_PREVENTSTANDBY, 0);
+-		GetDlgItem(IDC_PREVENTSTANDBY)->EnableWindow(FALSE);
+-	}
++	CheckDlgButton(IDC_PREVENTSTANDBY, static_cast<UINT>(thePrefs.GetPreventStandby()));
+ 
+ 	CString strBuffer;
+ 	strBuffer.Format(_T("%u %s"), thePrefs.versioncheckdays, (LPCTSTR)GetResString(IDS_DAYS2));
+diff --git a/srchybrid/PPgNotify.cpp b/srchybrid/PPgNotify.cpp
+index 6ee5970..554782f 100644
+--- a/srchybrid/PPgNotify.cpp
++++ b/srchybrid/PPgNotify.cpp
+@@ -103,8 +103,6 @@ BOOL CPPgNotify::OnInitDialog()
+ 
+ 	SetDlgItemText(IDC_EDIT_TBN_WAVFILE, thePrefs.notifierSoundFile);
+ 
+-	bool b = IsRunningXPSP2OrHigher();
+-	m_mail.bSendMail &= b;
+ 	CheckDlgButton(IDC_CB_ENABLENOTIFICATIONS, m_mail.bSendMail ? BST_CHECKED : BST_UNCHECKED);
+ 	SetDlgItemText(IDC_EDIT_RECEIVER, m_mail.sTo);
+ 	SetDlgItemText(IDC_EDIT_SENDER, m_mail.sFrom);
+diff --git a/srchybrid/PPgTweaks.cpp b/srchybrid/PPgTweaks.cpp
+index 61fb8ab..6c5f9d4 100644
+--- a/srchybrid/PPgTweaks.cpp
++++ b/srchybrid/PPgTweaks.cpp
+@@ -324,7 +324,6 @@ void CPPgTweaks::DoDataExchange(CDataExchange *pDX)
+ 	// File related group
+ 	//
+ 	DDX_TreeCheck(pDX, IDC_EXT_OPTS, m_htiSparsePartFiles, m_bSparsePartFiles);
+-	m_ctrlTreeOptions.SetCheckBoxEnable(m_htiSparsePartFiles, wv != _WINVER_VISTA_ /*only disable on Vista, not later versions*/);
+ 	DDX_TreeCheck(pDX, IDC_EXT_OPTS, m_htiImportParts, m_bImportParts);
+ 	DDX_TreeCheck(pDX, IDC_EXT_OPTS, m_htiFullAlloc, m_bFullAlloc);
+ 	DDX_TreeCheck(pDX, IDC_EXT_OPTS, m_htiCheckDiskspace, m_bCheckDiskspace);
+diff --git a/srchybrid/Preferences.cpp b/srchybrid/Preferences.cpp
+index 2f2caae..8bfd98b 100644
+--- a/srchybrid/Preferences.cpp
++++ b/srchybrid/Preferences.cpp
+@@ -440,7 +440,6 @@ CIni	*CPreferences::skinsIni;
+ Preferences_Ext_Struct *CPreferences::prefsExt;
+ CArray<Category_Struct*> CPreferences::catArr;
+ UINT	CPreferences::m_nWebMirrorAlertLevel;
+-WORD	CPreferences::m_wWinVer;
+ bool	CPreferences::m_bUseOldTimeRemaining;
+ 
+ int		CPreferences::m_byLogLevel;
+@@ -1742,7 +1741,6 @@ void CPreferences::SavePreferences()
+ 	ini.WriteBool(_T("HighresTimer"), m_bHighresTimer);
+ 	ini.WriteInt(_T("WebMirrorAlertLevel"), m_nWebMirrorAlertLevel);
+ 	ini.WriteInt(_T("DebugLogLevel"), m_byLogLevel);
+-	ini.WriteInt(_T("WinXPSP2OrHigher"), static_cast<int>(IsRunningXPSP2OrHigher()));
+ 	ini.WriteBool(_T("RememberCancelledFiles"), m_bRememberCancelledFiles);
+ 	ini.WriteBool(_T("RememberDownloadedFiles"), m_bRememberDownloadedFiles);
+ 
+@@ -1941,12 +1939,6 @@ void CPreferences::LoadPreferences()
+ 	maxhalfconnections = ini.GetInt(_T("MaxHalfConnections"), 9);
+ 	m_bConditionalTCPAccept = ini.GetBool(_T("ConditionalTCPAccept"), false);
+ 
+-	// reset max half-open to a default if OS changed to/from XP SP2 or higher
+-	int dwSP2OrHigher = ini.GetInt(_T("WinXPSP2OrHigher"), -1);
+-	bool dwCurSP2OrHigher = IsRunningXPSP2OrHigher();
+-	if (dwSP2OrHigher != static_cast<int>(dwCurSP2OrHigher))
+-		maxhalfconnections = dwCurSP2OrHigher ? 9 : 50;
+-
+ 	m_strBindAddrW = ini.GetString(_T("BindAddr")).Trim();
+ 	m_pszBindAddrW = m_strBindAddrW.IsEmpty() ? NULL : (LPCWSTR)m_strBindAddrW;
+ 	m_strBindAddrA = m_strBindAddrW;
+@@ -1998,7 +1990,7 @@ void CPreferences::LoadPreferences()
+ 
+ 	statsMax = ini.GetInt(_T("VariousStatisticsMaxValue"), 100);
+ 	statsAverageMinutes = ini.GetInt(_T("StatsAverageMinutes"), 5);
+-	MaxConperFive = ini.GetInt(_T("MaxConnectionsPerFiveSeconds"), GetDefaultMaxConperFive());
++	MaxConperFive = ini.GetInt(_T("MaxConnectionsPerFiveSeconds"), MAXCONPER5SEC);
+ 
+ 	reconnect = ini.GetBool(_T("Reconnect"), true);
+ 	m_bUseServerPriorities = ini.GetBool(_T("Scoresystem"), true);
+@@ -2301,7 +2293,7 @@ void CPreferences::LoadPreferences()
+ 	m_bRememberDownloadedFiles = ini.GetBool(_T("RememberDownloadedFiles"), true);
+ 	m_bPartiallyPurgeOldKnownFiles = ini.GetBool(_T("PartiallyPurgeOldKnownFiles"), true);
+ 
+-	m_email.bSendMail = IsRunningXPSP2OrHigher() && ini.GetBool(_T("NotifierSendMail"), false);
++	m_email.bSendMail = ini.GetBool(_T("NotifierSendMail"), false);
+ 	m_email.uAuth = static_cast<SMTPauth>(ini.GetInt(_T("NotifierMailAuth"), 0));
+ 	m_email.uTLS = static_cast<TLSmode>(ini.GetInt(_T("NotifierMailTLS"), 0));
+ 	m_email.sFrom = ini.GetString(_T("NotifierMailSender"), _T(""));
+@@ -2399,29 +2391,6 @@ void CPreferences::LoadPreferences()
+ 	SetLanguage();
+ }
+ 
+-WORD CPreferences::GetWindowsVersion()
+-{
+-	static bool bWinVerAlreadyDetected = false;
+-	if (!bWinVerAlreadyDetected) {
+-		bWinVerAlreadyDetected = true;
+-		m_wWinVer = DetectWinVersion();
+-	}
+-	return m_wWinVer;
+-}
+-
+-UINT CPreferences::GetDefaultMaxConperFive()
+-{
+-	switch (GetWindowsVersion()) {
+-	case _WINVER_98_:
+-		return 5;
+-	case _WINVER_95_:
+-	case _WINVER_ME_:
+-		return MAXCON5WIN9X;
+-	default:
+-		return MAXCONPER5SEC;
+-	}
+-}
+-
+ //////////////////////////////////////////////////////////
+ // category implementations
+ //////////////////////////////////////////////////////////
+@@ -3023,18 +2992,7 @@ void CPreferences::ChangeUserDirMode(int nNewMode)
+ 
+ bool CPreferences::GetSparsePartFiles()
+ {
+-	// Vista's Sparse File implementation seems to be buggy as far as i can see
+-	// If a sparse file exceeds a given limit of write I/O operations in a certain order
+-	// (or i.e. end to beginning) in its lifetime, it will at some point throw out
+-	// a FILE_SYSTEM_LIMITATION error and deny any writing to this file.
+-	// It was suggested that Vista might limit the data runs, which would lead to such behaviour,
+-	// but wouldn't make much sense for a sparse file implementation nevertheless.
+-	// Due to the fact that eMule writes a lot of small blocks into sparse files and flushes them
+-	// every 6 seconds, this problem pops up sooner or later for all big files.
+-	// I don't see any way to walk around this for now
+-	// Update: This problem seems to be fixed on Win7, possibly on earlier Vista ServicePacks too
+-	//		   In any case, we allow sparse files for versions earlier and later than Vista
+-	return m_bSparsePartFiles && (GetWindowsVersion() != _WINVER_VISTA_);
++	return m_bSparsePartFiles;
+ }
+ 
+ bool CPreferences::IsRunningAeroGlassTheme()
+diff --git a/srchybrid/Preferences.h b/srchybrid/Preferences.h
+index 031d87a..003ee2c 100644
+--- a/srchybrid/Preferences.h
++++ b/srchybrid/Preferences.h
+@@ -1053,7 +1053,6 @@ public:
+ 	static bool		GetMessageEnableSmileys()			{ return m_bMessageEnableSmileys; }
+ 	static bool		GetIRCEnableUTF8()					{ return m_bIRCEnableUTF8; }
+ 
+-	static WORD		GetWindowsVersion();
+ 	static bool		IsRunningAeroGlassTheme();
+ 	static bool		GetStartMinimized()					{ return startMinimized; }
+ 	static void		SetStartMinimized( bool instartMinimized) { startMinimized = instartMinimized; }
+@@ -1126,7 +1125,6 @@ public:
+ 	static COLORREF GetLogSuccessColor()				{ return m_crLogSuccess; }
+ 
+ 	static UINT		GetMaxConperFive()					{ return MaxConperFive; }
+-	static UINT		GetDefaultMaxConperFive();
+ 
+ 	static bool		IsSafeServerConnectEnabled()		{ return m_bSafeServerConnect; }
+ 	static void		SetSafeServerConnectEnabled(bool in) { m_bSafeServerConnect = in; }
+@@ -1405,7 +1403,6 @@ public:
+ protected:
+ 	static CString	m_strFileCommentsFilePath;
+ 	static Preferences_Ext_Struct *prefsExt;
+-	static WORD		m_wWinVer;
+ 	static CArray<Category_Struct*> catArr;
+ 	static CString	m_astrDefaultDirs[13];
+ 	static bool		m_abDefaultDirsCreated[13];
+diff --git a/srchybrid/TitledMenu.cpp b/srchybrid/TitledMenu.cpp
+index 5a5f453..176b480 100644
+--- a/srchybrid/TitledMenu.cpp
++++ b/srchybrid/TitledMenu.cpp
+@@ -88,11 +88,6 @@ void CTitledMenu::AddMenuTitle(LPCTSTR lpszTitle, bool bIsIconMenu)
+ 
+ void CTitledMenu::EnableIcons()
+ {
+-	switch (thePrefs.GetWindowsVersion()) {
+-	case _WINVER_95_:
+-	case _WINVER_NT4_:
+-		return;
+-	}
+ 	m_bIconMenu = true;
+ 
+ 	MENUINFO mi;
+@@ -245,7 +240,7 @@ static HBITMAP IconToBitmap32(HICON hIcon, int cx, int cy)
+ 
+ void CTitledMenu::SetMenuBitmap(UINT nFlags, UINT nIDNewItem, LPCTSTR /*lpszNewItem*/, LPCTSTR lpszIconName)
+ {
+-	if (!m_bIconMenu || (nFlags & MF_SEPARATOR) != 0 || thePrefs.GetWindowsVersion() < _WINVER_2K_) {
++	if (!m_bIconMenu || (nFlags & MF_SEPARATOR) != 0) {
+ 		if (m_bIconMenu && lpszIconName != NULL)
+ 			ASSERT(0);
+ 		return;

@@ -1,0 +1,95 @@
+diff --git a/srchybrid/BuddyButton.cpp b/srchybrid/BuddyButton.cpp
+index b764d52..b39165a 100644
+--- a/srchybrid/BuddyButton.cpp
++++ b/srchybrid/BuddyButton.cpp
+@@ -34,11 +34,13 @@ struct SBuddyData
+ 	HWND m_hwndButton;
+ };
+ 
+-#pragma warning(push)
+-#pragma warning(disable: 5039)
+-static LRESULT CALLBACK BuddyButtonSubClassedProc(HWND hWnd, UINT uMessage, WPARAM wParam, LPARAM lParam)
++// Both window procedures below are only ever entered from Win32 code, where a C++
++// exception must never arrive. C5039 asks for that to be stated in their types.
++typedef LRESULT (CALLBACK *NoThrowWndProc)(HWND, UINT, WPARAM, LPARAM) noexcept;
++
++static LRESULT CALLBACK BuddyButtonSubClassedProc(HWND hWnd, UINT uMessage, WPARAM wParam, LPARAM lParam) noexcept
+ {
+-	WNDPROC pfnOldWndProc = (WNDPROC)::GetProp(hWnd, s_szPropOldWndProc);
++	NoThrowWndProc pfnOldWndProc = (NoThrowWndProc)::GetProp(hWnd, s_szPropOldWndProc);
+ 	ASSERT(pfnOldWndProc != NULL);
+ 
+ 	SBuddyData *pBuddyData = static_cast<SBuddyData*>(::GetProp(hWnd, s_szPropBuddyData));
+@@ -78,9 +80,9 @@ static LRESULT CALLBACK BuddyButtonSubClassedProc(HWND hWnd, UINT uMessage, WPAR
+ 
+ void AddBuddyButton(HWND hwndEdit, HWND hwndButton)
+ {
+-	FARPROC lpfnOldWndProc = (FARPROC)::SetWindowLongPtr(hwndEdit, GWLP_WNDPROC, (LONG_PTR)BuddyButtonSubClassedProc);
+-	ASSERT(lpfnOldWndProc != NULL);
+-	VERIFY(::SetProp(hwndEdit, s_szPropOldWndProc, (HANDLE)lpfnOldWndProc));
++	LONG_PTR lOldWndProc = ::SetWindowLongPtr(hwndEdit, GWLP_WNDPROC, (LONG_PTR)BuddyButtonSubClassedProc);
++	ASSERT(lOldWndProc != 0);
++	VERIFY(::SetProp(hwndEdit, s_szPropOldWndProc, (HANDLE)lOldWndProc));
+ 
+ 	// Remove the 'flat' style which may have been set by 'InitWindowStyles'
+ 	LONG_PTR dwButtonStyle = ::GetWindowLongPtr(hwndButton, GWL_STYLE);
+@@ -97,7 +99,6 @@ void AddBuddyButton(HWND hwndEdit, HWND hwndButton)
+ 
+ 	::SetWindowPos(hwndEdit, NULL, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
+ }
+-#pragma warning(pop)
+ 
+ void DestroyIconsArr(HICON *pIcon, size_t cnt)
+ {
+diff --git a/srchybrid/Emule.cpp b/srchybrid/Emule.cpp
+index ade93d9..0ff54e5 100644
+--- a/srchybrid/Emule.cpp
++++ b/srchybrid/Emule.cpp
+@@ -99,7 +99,11 @@ bool g_bLowColorDesktop = false;
+ #ifdef _DEBUG
+ static CMemoryState oldMemState, newMemState, diffMemState;
+ 
+-_CRT_ALLOC_HOOK g_pfnPrevCrtAllocHook = NULL;
++// The CRT calls an allocation hook from C code, so a hook must never throw. The
++// previous hook is kept in a noexcept type that says so: it goes back to the
++// extern "C" _CrtSetAllocHook, and C5039 asks for exactly that guarantee.
++typedef int (__cdecl *NoThrowCrtAllocHook)(int, void*, size_t, int, long, const unsigned char*, int) noexcept;
++NoThrowCrtAllocHook g_pfnPrevCrtAllocHook = NULL;
+ CMap<const unsigned char*, const unsigned char*, UINT, UINT> g_allocations;
+ int eMuleAllocHook(int mode, void *pUserData, size_t nSize, int nBlockUse, long lRequest, const unsigned char *pszFileName, int nLine) noexcept;
+ 
+@@ -390,7 +394,7 @@ BOOL CemuleApp::InitInstance()
+ 	oldMemState.Checkpoint();
+ 	// Installing that memory debug code works fine in Debug builds when running within VS Debugger,
+ 	// but some other test applications don't like that all....
+-	//g_pfnPrevCrtAllocHook = _CrtSetAllocHook(&eMuleAllocHook);
++	//g_pfnPrevCrtAllocHook = (NoThrowCrtAllocHook)_CrtSetAllocHook(&eMuleAllocHook);
+ #endif
+ 	//afxMemDF = allocMemDF | delayFreeMemDF;
+ 
+diff --git a/srchybrid/Statistics.cpp b/srchybrid/Statistics.cpp
+index c7c389d..5a764d0 100644
+--- a/srchybrid/Statistics.cpp
++++ b/srchybrid/Statistics.cpp
+@@ -26,7 +26,7 @@ static char THIS_FILE[] = __FILE__;
+ #endif
+ 
+ #ifdef _DEBUG
+-extern _CRT_ALLOC_HOOK g_pfnPrevCrtAllocHook;
++extern int (__cdecl *g_pfnPrevCrtAllocHook)(int, void*, size_t, int, long, const unsigned char*, int) noexcept;
+ #endif
+ 
+ #define MAXAVERAGETIME	SEC2MS(40)
+diff --git a/srchybrid/StatisticsDlg.cpp b/srchybrid/StatisticsDlg.cpp
+index 41c22fd..de8a650 100644
+--- a/srchybrid/StatisticsDlg.cpp
++++ b/srchybrid/StatisticsDlg.cpp
+@@ -42,7 +42,7 @@ static char THIS_FILE[] = __FILE__;
+ #endif
+ 
+ #ifdef _DEBUG
+-extern _CRT_ALLOC_HOOK g_pfnPrevCrtAllocHook;
++extern int (__cdecl *g_pfnPrevCrtAllocHook)(int, void*, size_t, int, long, const unsigned char*, int) noexcept;
+ #endif
+ 
+ 
