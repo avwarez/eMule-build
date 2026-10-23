@@ -1,27 +1,37 @@
 diff --git a/srchybrid/UploadDiskIOThread.cpp b/srchybrid/UploadDiskIOThread.cpp
-index 5bfb746..4051e98 100644
+index 5bfb746..bc29cc2 100644
 --- a/srchybrid/UploadDiskIOThread.cpp
 +++ b/srchybrid/UploadDiskIOThread.cpp
-@@ -45,6 +45,32 @@ static char THIS_FILE[] = __FILE__;
+@@ -24,6 +24,8 @@
+ #include "partfile.h"
+ #include "log.h"
+ #include "preferences.h"
++#include "emuledlg.h"
++#include "SharedFilesWnd.h"
+ #include "safefile.h"
+ #include "listensocket.h"
+ #include "packets.h"
+@@ -45,6 +47,69 @@ static char THIS_FILE[] = __FILE__;
  #define RUN_WORK	2
  #define WAKEUP		((ULONG_PTR)(~0))
  
-+// 97p: a read that takes this long is logged, see ReadCompletionRoutine()
-+#define SLOW_READ_MS	SEC2MS(10)
++// 97p: a read that takes this long is logged and lowers the file's priority, see ReadCompletionRoutine()
++#define SLOW_READ_MS	SEC2MS(20)
 +
 +// 97p: GetQueuedCompletionStatus() also returns FALSE when the packet it hands over is a read
 +// that failed. That read is handed on as one that read nothing, so that ReadCompletionRoutine()
 +// drops the upload it was for and the thread goes on; FALSE is returned only when nothing was
 +// dequeued (the drain is over, or the port itself failed).
-+static BOOL GetNextCompletion(HANDLE hPort, DWORD &dwRead, ULONG_PTR &completionKey, OverlappedRead_Struct *&pCurIO, DWORD dwWait)
++BOOL CUploadDiskIOThread::GetNextCompletion(DWORD &dwRead, ULONG_PTR &completionKey, OverlappedRead_Struct *&pCurIO, DWORD dwWait)
 +{
 +	pCurIO = NULL;
-+	if (::GetQueuedCompletionStatus(hPort, &dwRead, &completionKey, (LPOVERLAPPED*)&pCurIO, dwWait))
++	if (::GetQueuedCompletionStatus(m_hPort, &dwRead, &completionKey, (LPOVERLAPPED*)&pCurIO, dwWait))
 +		return TRUE;
 +	const DWORD dwError = ::GetLastError();
 +	if (pCurIO != NULL) {
 +		theApp.QueueLogLineEx(LOG_ERROR, _T("Upload disk I/O: reading \"%s\" at %I64u-%I64u failed, error %lu: %s - the upload it was for is stopped, the others go on")
 +			, (LPCTSTR)pCurIO->pFile->GetFileName(), pCurIO->uStartOffset, pCurIO->uEndOffset, dwError, (LPCTSTR)GetErrorMessage(dwError, 1));
++		ReportTroubledFile(pCurIO->pFile);
 +		dwRead = 0;
 +		return TRUE;
 +	}
@@ -32,28 +42,64 @@ index 5bfb746..4051e98 100644
 +	return FALSE;
 +}
 +
++void CUploadDiskIOThread::ReportTroubledFile(const CKnownFile *pFile)
++{
++	CSingleLock lock(&m_csTroubledFiles, TRUE);
++	m_mapTroubledFiles[CSKey(pFile->GetFileHash())] = true;
++}
++
++// 97p: a file that cannot be read from its disk, or only very slowly, gets fewer upload slots from
++// then on, and the user is told, so that the disk can be looked at; the priority stays until set again
++void CUploadDiskIOThread::LowerPriorityOfTroubledFiles()
++{
++	CList<CSKey> listFiles;
++	m_csTroubledFiles.Lock();
++	for (POSITION pos = m_mapTroubledFiles.GetStartPosition(); pos != NULL;) {
++		CSKey key;
++		bool bDummy;
++		m_mapTroubledFiles.GetNextAssoc(pos, key, bDummy);
++		listFiles.AddTail(key);
++	}
++	m_mapTroubledFiles.RemoveAll();
++	m_csTroubledFiles.Unlock();
++
++	while (!listFiles.IsEmpty()) {
++		const CSKey key(listFiles.RemoveHead());
++		CKnownFile *pFile = theApp.sharedfiles->GetFileByID(key.m_key);
++		if (pFile == NULL || (pFile->GetUpPriority() == PR_VERYLOW && !pFile->IsAutoUpPriority()))
++			continue;
++		const CString strBefore(pFile->GetUpPriorityDisplayString());
++		pFile->SetAutoUpPriority(false);
++		pFile->SetUpPriority(PR_VERYLOW);
++		LogWarning(_T("Upload disk I/O: \"%s\" cannot be read reliably from its disk (see above) - its upload priority goes from %s to %s until you set it again")
++			, (LPCTSTR)pFile->GetFileName(), (LPCTSTR)strBefore, (LPCTSTR)pFile->GetUpPriorityDisplayString());
++		if (theApp.emuledlg->sharedfileswnd->m_hWnd)
++			theApp.emuledlg->sharedfileswnd->sharedfilesctrl.UpdateFile(pFile);
++	}
++}
++
  IMPLEMENT_DYNCREATE(CUploadDiskIOThread, CWinThread)
  
  CUploadDiskIOThread::CUploadDiskIOThread()
-@@ -91,7 +117,7 @@ UINT CUploadDiskIOThread::RunInternal()
+@@ -91,7 +156,7 @@ UINT CUploadDiskIOThread::RunInternal()
  	OverlappedRead_Struct *pCurIO = NULL;
  	m_Run = RUN_IDLE;
  	while (m_Run
 -			&& ::GetQueuedCompletionStatus(m_hPort, &dwRead, &completionKey, (LPOVERLAPPED*)&pCurIO, INFINITE)
-+			&& GetNextCompletion(m_hPort, dwRead, completionKey, pCurIO, INFINITE)
++			&& GetNextCompletion(dwRead, completionKey, pCurIO, INFINITE)
  			&& completionKey)
  	{
  		m_Run = RUN_WORK;
-@@ -110,7 +136,7 @@ UINT CUploadDiskIOThread::RunInternal()
+@@ -110,7 +175,7 @@ UINT CUploadDiskIOThread::RunInternal()
  				break;
  			if (completionKey != WAKEUP) //ignore wakeups
  				ReadCompletionRoutine(dwRead, pCurIO);
 -		} while (::GetQueuedCompletionStatus(m_hPort, &dwRead, &completionKey, (LPOVERLAPPED*)&pCurIO, 0));
-+		} while (GetNextCompletion(m_hPort, dwRead, completionKey, pCurIO, 0));
++		} while (GetNextCompletion(dwRead, completionKey, pCurIO, 0));
  
  		if (!completionKey) //thread termination
  			break;
-@@ -120,7 +146,8 @@ UINT CUploadDiskIOThread::RunInternal()
+@@ -120,7 +185,8 @@ UINT CUploadDiskIOThread::RunInternal()
  			theApp.uploadBandwidthThrottler->NewUploadDataAvailable();
  			m_bSignalThrottler = false;
  		}
@@ -63,7 +109,7 @@ index 5bfb746..4051e98 100644
  			PostQueuedCompletionStatus(m_hPort, 0, WAKEUP, NULL);
  	}
  	m_Run = RUN_STOP;
-@@ -238,6 +265,7 @@ void CUploadDiskIOThread::StartCreateNextBlockPackage(UploadingToClient_Struct *
+@@ -238,6 +304,7 @@ void CUploadDiskIOThread::StartCreateNextBlockPackage(UploadingToClient_Struct *
  			pOverlappedRead->uStartOffset = currentblock->StartOffset;
  			pOverlappedRead->uEndOffset = currentblock->EndOffset;
  			pOverlappedRead->pBuffer = new byte[(size_t)uTogo];
@@ -71,19 +117,21 @@ index 5bfb746..4051e98 100644
  
  			if (!::ReadFile(pFile->m_hRead, pOverlappedRead->pBuffer, (DWORD)uTogo, NULL, (LPOVERLAPPED)pOverlappedRead)) {
  				DWORD dwError = ::GetLastError();
-@@ -282,6 +310,11 @@ void CUploadDiskIOThread::ReadCompletionRoutine(DWORD dwRead, const OverlappedRe
+@@ -282,6 +349,13 @@ void CUploadDiskIOThread::ReadCompletionRoutine(DWORD dwRead, const OverlappedRe
  
  	CKnownFile *pKnownFile = pOvRead->pFile;
  	if (m_Run) {
 +		// 97p: a disk that is slow to answer, or about to fail, is worth knowing about
 +		const DWORD dwTook = ::GetTickCount() - pOvRead->dwStart;
-+		if (dwTook >= SLOW_READ_MS)
++		if (dwTook >= SLOW_READ_MS) {
 +			theApp.QueueLogLineEx(LOG_WARNING, _T("Upload disk I/O: reading \"%s\" at %I64u-%I64u took %lu ms, %lu bytes read - the disk is slow to answer")
 +				, (LPCTSTR)pOvRead->pFile->GetFileName(), pOvRead->uStartOffset, pOvRead->uEndOffset, dwTook, dwRead);
++			ReportTroubledFile(pOvRead->pFile);
++		}
  		m_listPendingIO.RemoveAt(pOvRead->pos);
  		bool bReadError = !dwRead;
  		if (bReadError)
-@@ -480,8 +513,9 @@ void CUploadDiskIOThread::CreatePackedPackets(const OverlappedRead_Struct &Overl
+@@ -480,8 +554,9 @@ void CUploadDiskIOThread::CreatePackedPackets(const OverlappedRead_Struct &Overl
  
  void CUploadDiskIOThread::WakeUpCall()
  {
@@ -96,10 +144,18 @@ index 5bfb746..4051e98 100644
  	else
  		m_bNewData.exchange(1);
 diff --git a/srchybrid/UploadDiskIOThread.h b/srchybrid/UploadDiskIOThread.h
-index 13d2bcc..d46ef32 100644
+index 13d2bcc..913fc5f 100644
 --- a/srchybrid/UploadDiskIOThread.h
 +++ b/srchybrid/UploadDiskIOThread.h
-@@ -32,6 +32,7 @@ struct OverlappedRead_Struct
+@@ -16,6 +16,7 @@
+ //Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ #pragma once
+ #include <atomic>
++#include "MapKey.h"
+ 
+ class Packet;
+ class CUpDownClient;
+@@ -32,6 +33,7 @@ struct OverlappedRead_Struct
  	uint64					uEndOffset;
  	BYTE					*pBuffer;
  	POSITION				pos;
@@ -107,3 +163,49 @@ index 13d2bcc..d46ef32 100644
  };
  
  class CUploadDiskIOThread : public CWinThread
+@@ -46,10 +48,13 @@ public:
+ 	void		EndThread();	//completionkey == 0
+ 	void		WakeUpCall();	//completionkey == WAKEUP
+ 	static void	DissociateFile(CKnownFile *pFile);
++	void		LowerPriorityOfTroubledFiles(); // 97p: main thread only
+ 
+ private:
+ 	static UINT AFX_CDECL RunProc(LPVOID pParam);
+ 	UINT		RunInternal();
++	BOOL		GetNextCompletion(DWORD &dwRead, ULONG_PTR &completionKey, OverlappedRead_Struct *&pCurIO, DWORD dwWait);
++	void		ReportTroubledFile(const CKnownFile *pFile);
+ 
+ 	bool		AssociateFile(CKnownFile *pFile);
+ 	static bool ShouldCompressBasedOnFilename(const CString &strFileName);
+@@ -61,6 +66,9 @@ private:
+ 
+ 	CEvent		m_eventThreadEnded;
+ 	CTypedPtrList<CPtrList, OverlappedRead_Struct*>	m_listPendingIO;
++	// 97p: files a read failed or was slow on, for LowerPriorityOfTroubledFiles()
++	CMap<CSKey, const CSKey&, bool, bool> m_mapTroubledFiles;
++	CCriticalSection m_csTroubledFiles;
+ 
+ 	HANDLE		m_hPort;
+ #ifdef _DEBUG
+diff --git a/srchybrid/UploadQueue.cpp b/srchybrid/UploadQueue.cpp
+index b770763..8a9c94b 100644
+--- a/srchybrid/UploadQueue.cpp
++++ b/srchybrid/UploadQueue.cpp
+@@ -44,6 +44,7 @@
+ #include "Kademlia/Kademlia/Prefs.h"
+ #include "Log.h"
+ #include "collection.h"
++#include "UploadDiskIOThread.h"
+ 
+ #ifdef _DEBUG
+ #define new DEBUG_NEW
+@@ -303,6 +304,9 @@ void CUploadQueue::Process()
+ 	const DWORD curTick = ::GetTickCount();
+ 	UpdateActiveClientsInfo(curTick);
+ 
++	if (theApp.m_pUploadDiskIOThread != NULL)
++		theApp.m_pUploadDiskIOThread->LowerPriorityOfTroubledFiles(); // 97p
++
+ 	if (ForceNewClient())
+ 		// There's not enough open uploads. Open another one.
+ 		AddUpNextClient(_T("Not enough open upload slots for the current speed"));

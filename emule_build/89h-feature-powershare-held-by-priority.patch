@@ -1,0 +1,77 @@
+diff --git a/srchybrid/KnownFile.cpp b/srchybrid/KnownFile.cpp
+index dc0512e..a94d2e4 100644
+--- a/srchybrid/KnownFile.cpp
++++ b/srchybrid/KnownFile.cpp
+@@ -88,6 +88,7 @@ CKnownFile::CKnownFile()
+ 	, m_bAICHRecoverHashSetAvailable()
+ 	, m_iPowerShareMode(-1)
+ 	, m_bPowerShareAuthorized(true)
++	, m_bPowerShareHeldByPriority()
+ {
+ 	m_iUpPriority = m_bAutoUpPriority ? PR_HIGH : PR_NORMAL;
+ 	statistic.fileParent = this;
+@@ -122,6 +123,7 @@ void CKnownFile::AssertValid() const
+ 	CHECK_BOOL(m_bAutoUpPriority);
+ 	ASSERT(m_iPowerShareMode >= -1 && m_iPowerShareMode <= 3);
+ 	CHECK_BOOL(m_bPowerShareAuthorized);
++	CHECK_BOOL(m_bPowerShareHeldByPriority);
+ 	(void)s_ShareStatusBar;
+ 	CHECK_BOOL(m_PublishedED2K);
+ 	(void)kadFileSearchID;
+@@ -1234,6 +1236,20 @@ void CKnownFile::SetUpPriority(uint8 iNewUpPriority, bool bSave)
+ 
+ 	if (IsPartFile() && bSave)
+ 		static_cast<CPartFile*>(this)->SavePartFile();
++
++	// 89h
++	const bool bHeld = IsPowerShareOn() && !IsPartFile() && IsPowerShareHeldByPriority();
++	if (bHeld != m_bPowerShareHeldByPriority) {
++		m_bPowerShareHeldByPriority = bHeld;
++		AddLogLine(false, bHeld ? _T("PowerShare: \"%s\" is out of PowerShare while its upload priority is %s")
++			: _T("PowerShare: \"%s\" is in PowerShare again, its upload priority is %s")
++			, (LPCTSTR)GetFileName(), (LPCTSTR)GetUpPriorityDisplayString());
++	}
++}
++
++bool CKnownFile::IsPowerShareHeldByPriority() const
++{
++	return !IsAutoUpPriority() && (GetUpPriority() == PR_LOW || GetUpPriority() == PR_VERYLOW);
+ }
+ 
+ void CKnownFile::SetPowerShareOn(bool bOn)
+diff --git a/srchybrid/KnownFile.h b/srchybrid/KnownFile.h
+index fa4eec9..a45ade8 100644
+--- a/srchybrid/KnownFile.h
++++ b/srchybrid/KnownFile.h
+@@ -74,7 +74,10 @@ public:
+ 	bool	IsPowerShareOn() const						{ return m_iPowerShareMode == 1; }
+ 	void	SetPowerShareOn(bool bOn);
+ 	bool	IsPowerShareAuthorized() const				{ return m_bPowerShareAuthorized; }
+-	bool	IsPowerShared() const						{ return IsPowerShareOn() && m_bPowerShareAuthorized && !IsPartFile(); }
++	bool	IsPowerShared() const						{ return IsPowerShareOn() && m_bPowerShareAuthorized && !IsPartFile() && !IsPowerShareHeldByPriority(); }
++	// 89h: a low or very low upload priority chosen for the file (not one set by auto priority)
++	// does not go with PowerShare; the mode is kept and acts again once the priority is raised
++	bool	IsPowerShareHeldByPriority() const;
+ 
+ 	// This has lost its meaning here. This is the total clients we know that want this file.
+ 	// Right now this number is used for auto priorities.
+@@ -182,4 +185,5 @@ private:
+ 	bool	m_bAICHRecoverHashSetAvailable;
+ 	sint8	m_iPowerShareMode;
+ 	bool	m_bPowerShareAuthorized;
++	bool	m_bPowerShareHeldByPriority; // 89h: as last logged by SetUpPriority()
+ };
+\ No newline at end of file
+diff --git a/srchybrid/SharedFilesCtrl.cpp b/srchybrid/SharedFilesCtrl.cpp
+index bcce1c5..dae2837 100644
+--- a/srchybrid/SharedFilesCtrl.cpp
++++ b/srchybrid/SharedFilesCtrl.cpp
+@@ -623,6 +623,8 @@ CString CSharedFilesCtrl::GetItemDisplayText(const CShareableFile *file, int iSu
+ 				CString sPowerShare(_T("PS "));
+ 				if (!pKnownFile->IsPowerShareAuthorized())
+ 					sPowerShare.Format(_T("PS denied (~%u) "), (UINT)pKnownFile->m_nCompleteSourcesCountHi);
++				else if (pKnownFile->IsPowerShareHeldByPriority())
++					sPowerShare = _T("PS held by priority "); // 89h
+ 				sText.Insert(0, sPowerShare);
+ 			}
+ 			break;
