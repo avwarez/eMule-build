@@ -1,11 +1,14 @@
 diff --git a/srchybrid/UploadDiskIOThread.cpp b/srchybrid/UploadDiskIOThread.cpp
-index 5bfb746..eeceabf 100644
+index 5bfb746..4051e98 100644
 --- a/srchybrid/UploadDiskIOThread.cpp
 +++ b/srchybrid/UploadDiskIOThread.cpp
-@@ -45,6 +45,29 @@ static char THIS_FILE[] = __FILE__;
+@@ -45,6 +45,32 @@ static char THIS_FILE[] = __FILE__;
  #define RUN_WORK	2
  #define WAKEUP		((ULONG_PTR)(~0))
  
++// 97p: a read that takes this long is logged, see ReadCompletionRoutine()
++#define SLOW_READ_MS	SEC2MS(10)
++
 +// 97p: GetQueuedCompletionStatus() also returns FALSE when the packet it hands over is a read
 +// that failed. That read is handed on as one that read nothing, so that ReadCompletionRoutine()
 +// drops the upload it was for and the thread goes on; FALSE is returned only when nothing was
@@ -32,7 +35,7 @@ index 5bfb746..eeceabf 100644
  IMPLEMENT_DYNCREATE(CUploadDiskIOThread, CWinThread)
  
  CUploadDiskIOThread::CUploadDiskIOThread()
-@@ -91,7 +114,7 @@ UINT CUploadDiskIOThread::RunInternal()
+@@ -91,7 +117,7 @@ UINT CUploadDiskIOThread::RunInternal()
  	OverlappedRead_Struct *pCurIO = NULL;
  	m_Run = RUN_IDLE;
  	while (m_Run
@@ -41,7 +44,7 @@ index 5bfb746..eeceabf 100644
  			&& completionKey)
  	{
  		m_Run = RUN_WORK;
-@@ -110,7 +133,7 @@ UINT CUploadDiskIOThread::RunInternal()
+@@ -110,7 +136,7 @@ UINT CUploadDiskIOThread::RunInternal()
  				break;
  			if (completionKey != WAKEUP) //ignore wakeups
  				ReadCompletionRoutine(dwRead, pCurIO);
@@ -50,7 +53,7 @@ index 5bfb746..eeceabf 100644
  
  		if (!completionKey) //thread termination
  			break;
-@@ -120,7 +143,8 @@ UINT CUploadDiskIOThread::RunInternal()
+@@ -120,7 +146,8 @@ UINT CUploadDiskIOThread::RunInternal()
  			theApp.uploadBandwidthThrottler->NewUploadDataAvailable();
  			m_bSignalThrottler = false;
  		}
@@ -60,7 +63,27 @@ index 5bfb746..eeceabf 100644
  			PostQueuedCompletionStatus(m_hPort, 0, WAKEUP, NULL);
  	}
  	m_Run = RUN_STOP;
-@@ -480,8 +504,9 @@ void CUploadDiskIOThread::CreatePackedPackets(const OverlappedRead_Struct &Overl
+@@ -238,6 +265,7 @@ void CUploadDiskIOThread::StartCreateNextBlockPackage(UploadingToClient_Struct *
+ 			pOverlappedRead->uStartOffset = currentblock->StartOffset;
+ 			pOverlappedRead->uEndOffset = currentblock->EndOffset;
+ 			pOverlappedRead->pBuffer = new byte[(size_t)uTogo];
++			pOverlappedRead->dwStart = ::GetTickCount();
+ 
+ 			if (!::ReadFile(pFile->m_hRead, pOverlappedRead->pBuffer, (DWORD)uTogo, NULL, (LPOVERLAPPED)pOverlappedRead)) {
+ 				DWORD dwError = ::GetLastError();
+@@ -282,6 +310,11 @@ void CUploadDiskIOThread::ReadCompletionRoutine(DWORD dwRead, const OverlappedRe
+ 
+ 	CKnownFile *pKnownFile = pOvRead->pFile;
+ 	if (m_Run) {
++		// 97p: a disk that is slow to answer, or about to fail, is worth knowing about
++		const DWORD dwTook = ::GetTickCount() - pOvRead->dwStart;
++		if (dwTook >= SLOW_READ_MS)
++			theApp.QueueLogLineEx(LOG_WARNING, _T("Upload disk I/O: reading \"%s\" at %I64u-%I64u took %lu ms, %lu bytes read - the disk is slow to answer")
++				, (LPCTSTR)pOvRead->pFile->GetFileName(), pOvRead->uStartOffset, pOvRead->uEndOffset, dwTook, dwRead);
+ 		m_listPendingIO.RemoveAt(pOvRead->pos);
+ 		bool bReadError = !dwRead;
+ 		if (bReadError)
+@@ -480,8 +513,9 @@ void CUploadDiskIOThread::CreatePackedPackets(const OverlappedRead_Struct &Overl
  
  void CUploadDiskIOThread::WakeUpCall()
  {
@@ -72,3 +95,15 @@ index 5bfb746..eeceabf 100644
  		PostQueuedCompletionStatus(m_hPort, 0, WAKEUP, NULL);
  	else
  		m_bNewData.exchange(1);
+diff --git a/srchybrid/UploadDiskIOThread.h b/srchybrid/UploadDiskIOThread.h
+index 13d2bcc..d46ef32 100644
+--- a/srchybrid/UploadDiskIOThread.h
++++ b/srchybrid/UploadDiskIOThread.h
+@@ -32,6 +32,7 @@ struct OverlappedRead_Struct
+ 	uint64					uEndOffset;
+ 	BYTE					*pBuffer;
+ 	POSITION				pos;
++	DWORD					dwStart; // 97p: tick when the read was started
+ };
+ 
+ class CUploadDiskIOThread : public CWinThread
