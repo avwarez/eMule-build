@@ -15,7 +15,7 @@ index 8d73530..a4aa3c5 100644
  		if (dwNow - pAbandoned->dwEnded < SEC2MS(1))
  			continue;
 +		// 99c
-+		theApp.QueueLogLineEx(LOG_WARNING, _T("Socket send: a send left behind by its socket ended within %lu ms, status 0x%08lx - its memory is freed now")
++		theApp.QueueDebugLogLineEx(LOG_WARNING, _T("Socket send: a send left behind by its socket ended within %lu ms, status 0x%08lx - its memory is freed now")
 +			, pAbandoned->dwEnded - pAbandoned->dwDiagAbandoned, (DWORD)pAbandoned->pOverlapped->Internal);
  		for (INT_PTR i = pAbandoned->aBuffer.GetCount(); --i >= 0;)
  			delete[] pAbandoned->aBuffer[i].buf;
@@ -45,7 +45,7 @@ index 8d73530..a4aa3c5 100644
 +			ULONGLONG uDiagBytes = 0;
 +			for (INT_PTR i = m_aBufferSend.GetCount(); --i >= 0;)
 +				uDiagBytes += m_aBufferSend[i].len;
-+			theApp.QueueLogLineEx(LOG_ERROR, _T("Socket send: a send of %I64u bytes is still in progress when %s lets go of it (started by thread %lu, cancelled from thread %lu) - kept until it ends")
++			theApp.QueueDebugLogLineEx(LOG_WARNING, _T("Socket send: a send of %I64u bytes is still in progress when %s lets go of it (started by thread %lu, cancelled from thread %lu) - kept until it ends")
 +				, uDiagBytes, byConnected == EMS_DISCONNECTED ? _T("the socket teardown") : _T("the send error handling")
 +				, m_dwDiagSendThread, ::GetCurrentThreadId());
  			m_aBufferSend.RemoveAll();
