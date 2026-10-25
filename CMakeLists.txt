@@ -322,7 +322,11 @@ target_compile_options(plum-static PRIVATE $<$<C_COMPILER_ID:MSVC>:/W3>)
 # ---------------------------------------------------------------------------
 add_subdirectory(libutp EXCLUDE_FROM_ALL)
 target_compile_features(libutp PRIVATE cxx_std_17)
-target_compile_options(libutp PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/W3 /wd4244 /wd4267>)
+target_compile_options(libutp PRIVATE
+    $<$<CXX_COMPILER_ID:MSVC>:/W3>
+    $<$<CXX_COMPILER_ID:MSVC>:/wd4244>
+    $<$<CXX_COMPILER_ID:MSVC>:/wd4267>
+)
 
 # ---------------------------------------------------------------------------
 # ResizableLib - git submodule (resizablelib/, avwarez/resizablelib pinned to
