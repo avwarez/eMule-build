@@ -330,10 +330,14 @@ target_compile_options(plum-static PRIVATE $<$<C_COMPILER_ID:MSVC>:/W3>)
 # follows BUILD_SHARED_LIBS, set OFF above. What upstream sets only when built
 # on its own is stated here: C++17 (the code uses if/switch init-statements),
 # and on MSVC the warning level - /W3, as for zlib and libplum - with the two
-# size conversion warnings upstream turns off, C4244 and C4267.
+# size conversion warnings upstream turns off, C4244 and C4267. NDEBUG in every
+# configuration: some of its assert()s fire on what a remote peer sends (a
+# spoofed SYN that times out, then utp_close), and the code after each of them
+# copes on its own - in a Debug eMule they would end the program instead.
 # ---------------------------------------------------------------------------
 add_subdirectory(libutp EXCLUDE_FROM_ALL)
 target_compile_features(libutp PRIVATE cxx_std_17)
+target_compile_definitions(libutp PRIVATE NDEBUG)
 target_compile_options(libutp PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/W3>
     $<$<CXX_COMPILER_ID:MSVC>:/wd4244>

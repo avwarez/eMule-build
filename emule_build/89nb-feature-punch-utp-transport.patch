@@ -196,10 +196,10 @@ index f6121c3..973bc4f 100644
  	delete theApp.serverlist;				theApp.serverlist = NULL;		// CServerList::SaveServermetToFile
 diff --git a/srchybrid/PunchTransport.cpp b/srchybrid/PunchTransport.cpp
 new file mode 100644
-index 0000000..667f940
+index 0000000..ce0f4a9
 --- /dev/null
 +++ b/srchybrid/PunchTransport.cpp
-@@ -0,0 +1,601 @@
+@@ -0,0 +1,608 @@
 +//this file is part of eMule
 +//Copyright (C)2002-2026 Merkur ( strEmail.Format("%s@%s", "devteam", "emule-project.net") / https://www.emule-project.net )
 +//
@@ -305,6 +305,12 @@ index 0000000..667f940
 +				pSession->dwLastRecv = ::GetTickCount();
 +				if (!pSession->bReadPosted)
 +					pSession->lPendingEvents |= FD_READ;
++				// an accepted connection takes writes from the first data of the peer on,
++				// and libutp tells nothing when it does
++				if (pSession->bWantWrite) {
++					pSession->bWantWrite = false;
++					pSession->lPendingEvents |= FD_WRITE;
++				}
 +			}
 +			break;
 +		case UTP_ON_STATE_CHANGE:
@@ -374,6 +380,7 @@ index 0000000..667f940
 +	static void OnAccept(CPunchTransport *pThis, utp_callback_arguments *a)
 +	{
 +		SPunchSession *pSession = pThis->NewSession(a->socket, IPOf(a->address), PortOf(a->address), true);
++		pSession->bConnected = true; // no UTP_STATE_CONNECT comes for an incoming connection
 +		++pThis->m_stats.uAccepts;
 +		CClientReqSocket *pSocket = new CClientReqSocket;
 +		CPunchSocketLayer *pLayer = new CPunchSocketLayer(pSession->dwIP, pSession->nPort);
