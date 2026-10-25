@@ -1,0 +1,675 @@
+diff --git a/srchybrid/BaseClient.cpp b/srchybrid/BaseClient.cpp
+index c2805f7..e27094e 100644
+--- a/srchybrid/BaseClient.cpp
++++ b/srchybrid/BaseClient.cpp
+@@ -57,6 +57,7 @@
+ #include "shahashset.h"
+ #include "Log.h"
+ #include "CaptchaGenerator.h"
++#include "PunchRegistry.h"
+ #include <atlimage.h>
+ 
+ #ifdef _DEBUG
+@@ -131,6 +132,7 @@ void CUpDownClient::Init()
+ 	md4clr(m_achUserHash);
+ 	m_nUDPPort = 0;
+ 	m_nKadPort = 0;
++	m_uPunchCaps = 0;
+ 
+ 	m_byUDPVer = 0;
+ 	m_bySourceExchange1Ver = 0;
+@@ -366,6 +368,7 @@ bool CUpDownClient::ProcessHelloTypePacket(CSafeMemFile &data)
+ 	m_bIsML = false;
+ 	m_fNoViewSharedFiles = 0;
+ 	m_bUnicodeSupport = false;
++	m_uPunchCaps = 0;
+ 
+ 	data.ReadHash16(m_achUserHash);
+ 	if (bDbgInfo)
+@@ -546,6 +549,12 @@ bool CUpDownClient::ProcessHelloTypePacket(CSafeMemFile &data)
+ 				m_strHelloInfo.AppendFormat(_T("\n  ***UnkType=%s"), (LPCTSTR)temptag.GetFullInfo());
+ 			break;
+ 		default:
++			if (temptag.GetName() && strcmp(temptag.GetName(), TAG_PUNCHCAPS) == 0 && temptag.IsInt()) {
++				m_uPunchCaps = (uint32)temptag.GetInt();
++				if (bDbgInfo)
++					m_strHelloInfo.AppendFormat(_T("\n  PunchCaps=0x%08x"), m_uPunchCaps);
++				break;
++			}
+ 			// Since eDonkeyHybrid 1.3 is no longer sending the additional Int32 at the end of
+ 			// the Hello packet, we use the "pr=1" tag to determine them.
+ 			if (temptag.GetName() && temptag.GetName()[0] == 'p' && temptag.GetName()[1] == 'r')
+@@ -657,6 +666,10 @@ bool CUpDownClient::ProcessHelloTypePacket(CSafeMemFile &data)
+ //	if (strBuffer.Find(_T("EMULE-CLIENT")) >= 0 || strBuffer.Find(_T("POWERMULE")) >= 0)
+ //		m_bGPLEvildoer = true;
+ 
++	// the Kad port is the one seen from outside when the client knows it; both share one UDP socket
++	if (m_uPunchCaps != 0 && !IsBanned())
++		theApp.punchregistry->Update(m_dwUserIP, m_nKadPort != 0 ? m_nKadPort : m_nUDPPort, m_uPunchCaps, PUNCHSRC_ED2K, true, NULL, m_achUserHash);
++
+ 	m_byInfopacketsReceived |= IP_EDONKEYPROTPACK;
+ 	// check if at least CT_EMULEVERSION was received, all other tags are optional
+ 	bool bIsMule = (dwEmuleTags & 0x04) == 0x04;
+@@ -918,7 +931,7 @@ void CUpDownClient::SendHelloTypePacket(CSafeMemFile &data)
+ 	data.WriteUInt32(theApp.GetID());
+ 	data.WriteUInt16(thePrefs.GetPort());
+ 
+-	uint32 tagcount = 6;
++	uint32 tagcount = 7;
+ 
+ 	if (theApp.clientlist->GetBuddy() && theApp.IsFirewalled())
+ 		tagcount += 2;
+@@ -1035,6 +1048,9 @@ void CUpDownClient::SendHelloTypePacket(CSafeMemFile &data)
+ 				);
+ 	tagMuleVersion.WriteTagToFile(data);
+ 
++	CTag tagPunchCaps(TAG_PUNCHCAPS, theApp.punchregistry->GetOwnCaps());
++	tagPunchCaps.WriteTagToFile(data);
++
+ 	uint32 dwIP;
+ 	uint16 nPort;
+ 	if (theApp.serverconnect->IsConnected()) {
+diff --git a/srchybrid/Emule.cpp b/srchybrid/Emule.cpp
+index ade93d9..f46f79e 100644
+--- a/srchybrid/Emule.cpp
++++ b/srchybrid/Emule.cpp
+@@ -65,6 +65,7 @@
+ #include "FirewallCheck.h"
+ #include "UploadDiskIOThread.h"
+ #include "PartFileWriteThread.h"
++#include "PunchRegistry.h"
+ 
+ #ifdef _DEBUG
+ #define new DEBUG_NEW
+@@ -525,6 +526,7 @@ BOOL CemuleApp::InitInstance()
+ 	downloadqueue = new CDownloadQueue();	// bugfix - do this before creating the upload queue
+ 	uploadqueue = new CUploadQueue();
+ 	ipfilter = new CIPFilter();
++	punchregistry = new CPunchRegistry();
+ 	webserver = new CWebServer(); // Web Server [kuchin]
+ 	scheduler = new CScheduler();
+ 
+diff --git a/srchybrid/Emule.h b/srchybrid/Emule.h
+index 6243994..769f6fe 100644
+--- a/srchybrid/Emule.h
++++ b/srchybrid/Emule.h
+@@ -50,6 +50,7 @@ class CUPnPImplWrapper;
+ class CFirewallCheck;
+ class CUploadDiskIOThread;
+ class CPartFileWriteThread;
++class CPunchRegistry;
+ 
+ struct SLogItem;
+ 
+@@ -94,6 +95,7 @@ public:
+ 	CFirewallCheck		*m_pFirewallCheck;
+ 	CUploadDiskIOThread	*m_pUploadDiskIOThread;
+ 	CPartFileWriteThread *m_pPartFileWriteThread;
++	CPunchRegistry		*punchregistry;
+ 
+ 
+ 	static const UINT	m_nVersionMjr;
+diff --git a/srchybrid/EmuleDlg.cpp b/srchybrid/EmuleDlg.cpp
+index 2db466a..f6121c3 100644
+--- a/srchybrid/EmuleDlg.cpp
++++ b/srchybrid/EmuleDlg.cpp
+@@ -71,6 +71,7 @@
+ #include "UploadBandwidthThrottler.h"
+ #include "FriendList.h"
+ #include "IPFilter.h"
++#include "PunchRegistry.h"
+ #include "Statistics.h"
+ #include "MuleToolbarCtrl.h"
+ #include "TaskbarNotifier.h"
+@@ -1754,6 +1755,7 @@ void CemuleDlg::OnClose()
+ 	delete theApp.friendlist;				theApp.friendlist = NULL;		// CFriendList::SaveList
+ 	delete theApp.scheduler;				theApp.scheduler = NULL;
+ 	delete theApp.ipfilter;					theApp.ipfilter = NULL;			// CIPFilter::SaveToDefaultFile
++	delete theApp.punchregistry;			theApp.punchregistry = NULL;	// CPunchRegistry::Save
+ 	delete theApp.webserver;				theApp.webserver = NULL;
+ 	delete theApp.uploadBandwidthThrottler;	theApp.uploadBandwidthThrottler = NULL;
+ 	delete theApp.lastCommonRouteFinder;	theApp.lastCommonRouteFinder = NULL;
+diff --git a/srchybrid/PunchRegistry.cpp b/srchybrid/PunchRegistry.cpp
+new file mode 100644
+index 0000000..c9360dd
+--- /dev/null
++++ b/srchybrid/PunchRegistry.cpp
+@@ -0,0 +1,300 @@
++//this file is part of eMule
++//Copyright (C)2002-2026 Merkur ( strEmail.Format("%s@%s", "devteam", "emule-project.net") / https://www.emule-project.net )
++//
++//This program is free software; you can redistribute it and/or
++//modify it under the terms of the GNU General Public License
++//as published by the Free Software Foundation; either
++//version 2 of the License, or (at your option) any later version.
++//
++//This program is distributed in the hope that it will be useful,
++//but WITHOUT ANY WARRANTY; without even the implied warranty of
++//MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++//GNU General Public License for more details.
++//
++//You should have received a copy of the GNU General Public License
++//along with this program; if not, write to the Free Software
++//Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
++#include "stdafx.h"
++#include "emule.h"
++#include "PunchRegistry.h"
++#include "IPFilter.h"
++#include "Preferences.h"
++#include "SafeFile.h"
++#include "opcodes.h"
++#include "OtherFunctions.h"
++#include "Log.h"
++#include "kademlia/kademlia/Kademlia.h"
++#include "kademlia/kademlia/Prefs.h"
++#include "kademlia/kademlia/UDPFirewallTester.h"
++
++#ifdef _DEBUG
++#define new DEBUG_NEW
++#undef THIS_FILE
++static char THIS_FILE[] = __FILE__;
++#endif
++
++
++#define PUNCHPEERS_FILENAME		_T("punchpeers.dat")
++#define PUNCHPEERS_VERSION		0x01
++#define PUNCH_REGISTRY_MAX		512			// entries
++#define PUNCH_REGISTRY_PER_IP	4			// entries of one IP (CGNAT, several clients behind one NAT)
++#define PUNCH_REGISTRY_EXPIRE	DAY2S(7)	// not seen for this long, dropped
++
++CPunchRegistry::CPunchRegistry()
++	: m_stats()
++	, m_uOwnCaps()
++	, m_bDirty()
++{
++	Load();
++	m_dwLastSaved = ::GetTickCount();
++}
++
++CPunchRegistry::~CPunchRegistry()
++{
++	if (m_bDirty)
++		Save();
++}
++
++uint32 CPunchRegistry::GetOwnCaps()
++{
++	uint32 uFlags = 0;
++	if (Kademlia::CKademlia::IsRunning()) {
++		if (Kademlia::CUDPFirewallTester::IsVerified() && !Kademlia::CUDPFirewallTester::IsFirewalledUDP(true))
++			uFlags |= PUNCHF_RELAY;
++		// zero until two of the three Kad nodes asked saw the same port, and again if they did not
++		if (Kademlia::CKademlia::GetPrefs()->GetExternalKadPort() != 0)
++			uFlags |= PUNCHF_PUNCHABLE;
++	}
++	if (theApp.IsFirewalled())
++		uFlags |= PUNCHF_LOWID;
++
++	const uint32 uCaps = (uFlags << 8) | PUNCH_PROTOCOL_VERSION;
++	if (uCaps != m_uOwnCaps) {
++		m_uOwnCaps = uCaps;
++		++m_stats.uOwnCapsChanges;
++	}
++	return uCaps;
++}
++
++EPunchUpdate CPunchRegistry::Update(uint32 dwIP, uint16 nUDPPort, uint32 uCaps, EPunchSource eSource, bool bVerified
++	, const uchar *pKadID, const uchar *pUserHash)
++{
++	++(eSource == PUNCHSRC_KAD ? m_stats.uKadTags : m_stats.uEd2kTags);
++	const EPunchUpdate eResult = Store(dwIP, nUDPPort, uCaps, eSource, bVerified, pKadID, pUserHash);
++	switch (eResult) {
++	case PUNCHUPD_ADDED:
++		++m_stats.uAdded;
++		break;
++	case PUNCHUPD_MOVED:
++		++m_stats.uMoved;
++		break;
++	case PUNCHUPD_CHANGED:
++		++m_stats.uChanged;
++		break;
++	case PUNCHUPD_REFRESHED:
++		++m_stats.uRefreshed;
++		break;
++	default:
++		++m_stats.uRejected;
++	}
++	return eResult;
++}
++
++EPunchUpdate CPunchRegistry::Store(uint32 dwIP, uint16 nUDPPort, uint32 uCaps, EPunchSource eSource, bool bVerified
++	, const uchar *pKadID, const uchar *pUserHash)
++{
++	const uint8 byVersion = PunchCapsVersion(uCaps);
++	const uint8 byFlags = PunchCapsFlags(uCaps);
++	if (byVersion == 0 || dwIP == 0 || nUDPPort == 0)
++		return PUNCHUPD_INVALID;
++	if (theApp.ipfilter->IsFiltered(dwIP))
++		return PUNCHUPD_FILTERED;
++
++	const uint64 uKey = Key(dwIP, nUDPPort);
++	EPunchUpdate eResult;
++	PeerMap::iterator it = m_mapPeers.find(uKey);
++	if (it != m_mapPeers.end()) {
++		// a spoofed Kad request must not rewrite what a reply or a connection proved
++		if (it->second.bVerified && !bVerified)
++			return PUNCHUPD_UNVERIFIED;
++		eResult = (it->second.byVersion != byVersion || it->second.byFlags != byFlags) ? PUNCHUPD_CHANGED : PUNCHUPD_REFRESHED;
++	} else {
++		it = FindSameIdentity(dwIP, pKadID, pUserHash);
++		if (it != m_mapPeers.end()) {
++			if (it->second.bVerified && !bVerified)
++				return PUNCHUPD_UNVERIFIED;
++			SPunchPeer peer(it->second);
++			m_mapPeers.erase(it);
++			peer.nUDPPort = nUDPPort;
++			it = m_mapPeers.emplace(uKey, peer).first;
++			eResult = PUNCHUPD_MOVED;
++		} else {
++			if (!MakeRoom(dwIP, bVerified))
++				return PUNCHUPD_NOROOM;
++			SPunchPeer peer = {};
++			peer.dwIP = dwIP;
++			peer.nUDPPort = nUDPPort;
++			it = m_mapPeers.emplace(uKey, peer).first;
++			eResult = PUNCHUPD_ADDED;
++		}
++	}
++
++	SPunchPeer &peer = it->second;
++	peer.byVersion = byVersion;
++	peer.byFlags = byFlags;
++	peer.bySources |= eSource;
++	if (bVerified)
++		peer.bVerified = true;
++	peer.tLastSeen = (uint32)time(NULL);
++	if (pKadID != NULL && !isnulmd4(pKadID))
++		md4cpy(peer.abyKadID, pKadID);
++	if (pUserHash != NULL && !isnulmd4(pUserHash))
++		md4cpy(peer.abyUserHash, pUserHash);
++	m_bDirty = true;
++	return eResult;
++}
++
++// Only on the same IP: matching an ID seen on another IP would let anyone move a peer away
++CPunchRegistry::PeerMap::iterator CPunchRegistry::FindSameIdentity(uint32 dwIP, const uchar *pKadID, const uchar *pUserHash)
++{
++	const bool bKadID = pKadID != NULL && !isnulmd4(pKadID);
++	const bool bUserHash = pUserHash != NULL && !isnulmd4(pUserHash);
++	if (bKadID || bUserHash) {
++		const PeerMap::iterator itEnd = m_mapPeers.upper_bound(Key(dwIP, 0xFFFF));
++		for (PeerMap::iterator it = m_mapPeers.lower_bound(Key(dwIP, 0)); it != itEnd; ++it)
++			if ((bKadID && md4equ(it->second.abyKadID, pKadID)) || (bUserHash && md4equ(it->second.abyUserHash, pUserHash)))
++				return it;
++	}
++	return m_mapPeers.end();
++}
++
++// Drops the entry seen longest ago, of the same IP if it has too many, else of all if the list
++// is full. Unverified entries go first, and an unverified one never pushes out a verified one:
++// spoofed Kad requests must not be able to empty the list of the peers really seen.
++bool CPunchRegistry::MakeRoom(uint32 dwIP, bool bVerified)
++{
++	PeerMap::iterator itBegin = m_mapPeers.lower_bound(Key(dwIP, 0));
++	PeerMap::iterator itEnd = m_mapPeers.upper_bound(Key(dwIP, 0xFFFF));
++	size_t nInRange = 0;
++	for (PeerMap::iterator it = itBegin; it != itEnd; ++it)
++		++nInRange;
++	uint32 *puEvicted = &m_stats.uEvictedPerIP;
++	if (nInRange < PUNCH_REGISTRY_PER_IP) {
++		if (m_mapPeers.size() < PUNCH_REGISTRY_MAX)
++			return true;
++		itBegin = m_mapPeers.begin();
++		itEnd = m_mapPeers.end();
++		puEvicted = &m_stats.uEvictedFull;
++	}
++
++	PeerMap::iterator itOldest = m_mapPeers.end();
++	for (PeerMap::iterator it = itBegin; it != itEnd; ++it)
++		if (itOldest == m_mapPeers.end()
++			|| (itOldest->second.bVerified && !it->second.bVerified)
++			|| (itOldest->second.bVerified == it->second.bVerified && it->second.tLastSeen < itOldest->second.tLastSeen))
++		{
++			itOldest = it;
++		}
++	if (itOldest == m_mapPeers.end() || (itOldest->second.bVerified && !bVerified))
++		return false;
++	m_mapPeers.erase(itOldest);
++	++*puEvicted;
++	return true;
++}
++
++void CPunchRegistry::Process()
++{
++	if (m_bDirty && ::GetTickCount() >= m_dwLastSaved + MIN2MS(23))
++		Save();
++}
++
++bool CPunchRegistry::Load()
++{
++	CSafeBufferedFile file;
++	if (!CFileOpen(file
++		, thePrefs.GetMuleDirectory(EMULE_CONFIGDIR) + PUNCHPEERS_FILENAME
++		, CFile::modeRead | CFile::osSequentialScan | CFile::typeBinary | CFile::shareDenyWrite
++		, _T("Failed to load ") PUNCHPEERS_FILENAME))
++	{
++		return false;
++	}
++
++	try {
++		if (file.ReadUInt8() != PUNCHPEERS_VERSION) {
++			file.Close();
++			return false;
++		}
++		const uint32 tExpired = (uint32)time(NULL) - PUNCH_REGISTRY_EXPIRE;
++		for (uint32 i = file.ReadUInt32(); i > 0; --i) {
++			SPunchPeer peer;
++			peer.dwIP = file.ReadUInt32();
++			peer.nUDPPort = file.ReadUInt16();
++			peer.byVersion = file.ReadUInt8();
++			peer.byFlags = file.ReadUInt8();
++			peer.bySources = file.ReadUInt8();
++			peer.bVerified = file.ReadUInt8() != 0;
++			peer.tLastSeen = file.ReadUInt32();
++			file.ReadHash16(peer.abyKadID);
++			file.ReadHash16(peer.abyUserHash);
++			++m_stats.uLoadRead;
++			if (peer.byVersion == 0 || peer.dwIP == 0 || peer.nUDPPort == 0 || peer.tLastSeen < tExpired
++				|| m_mapPeers.size() >= PUNCH_REGISTRY_MAX)
++			{
++				++m_stats.uLoadDropped;
++			} else
++				m_mapPeers.emplace(Key(peer.dwIP, peer.nUDPPort), peer);
++		}
++		file.Close();
++		return true;
++	} catch (CFileException *ex) {
++		// a damaged list is only a list to fill again; keep what was read
++		ex->Delete();
++	}
++	return false;
++}
++
++void CPunchRegistry::Save()
++{
++	m_dwLastSaved = ::GetTickCount();
++
++	const uint32 tExpired = (uint32)time(NULL) - PUNCH_REGISTRY_EXPIRE;
++	for (PeerMap::iterator it = m_mapPeers.begin(); it != m_mapPeers.end();)
++		if (it->second.tLastSeen < tExpired) {
++			it = m_mapPeers.erase(it);
++			++m_stats.uExpired;
++		} else
++			++it;
++
++	CSafeBufferedFile file;
++	if (!CFileOpen(file
++		, thePrefs.GetMuleDirectory(EMULE_CONFIGDIR) + PUNCHPEERS_FILENAME
++		, CFile::modeCreate | CFile::modeWrite | CFile::typeBinary | CFile::shareDenyWrite
++		, _T("Failed to save ") PUNCHPEERS_FILENAME))
++	{
++		return;
++	}
++
++	::setvbuf(file.m_pStream, NULL, _IOFBF, 16384);
++	try {
++		file.WriteUInt8(PUNCHPEERS_VERSION);
++		file.WriteUInt32((uint32)m_mapPeers.size());
++		for (PeerMap::const_iterator it = m_mapPeers.begin(); it != m_mapPeers.end(); ++it) {
++			const SPunchPeer &peer = it->second;
++			file.WriteUInt32(peer.dwIP);
++			file.WriteUInt16(peer.nUDPPort);
++			file.WriteUInt8(peer.byVersion);
++			file.WriteUInt8(peer.byFlags);
++			file.WriteUInt8(peer.bySources);
++			file.WriteUInt8(static_cast<uint8>(peer.bVerified));
++			file.WriteUInt32(peer.tLastSeen);
++			file.WriteHash16(peer.abyKadID);
++			file.WriteHash16(peer.abyUserHash);
++		}
++		CommitAndClose(file);
++		m_bDirty = false;
++		m_stats.uSaved = (uint32)m_mapPeers.size();
++	} catch (CFileException *ex) {
++		LogError(LOG_STATUSBAR, _T("%s%s"), _T("Failed to save ") PUNCHPEERS_FILENAME, (LPCTSTR)CExceptionStrDash(*ex));
++		ex->Delete();
++	}
++}
+diff --git a/srchybrid/PunchRegistry.h b/srchybrid/PunchRegistry.h
+new file mode 100644
+index 0000000..c953663
+--- /dev/null
++++ b/srchybrid/PunchRegistry.h
+@@ -0,0 +1,118 @@
++//this file is part of eMule
++//Copyright (C)2002-2026 Merkur ( strEmail.Format("%s@%s", "devteam", "emule-project.net") / https://www.emule-project.net )
++//
++//This program is free software; you can redistribute it and/or
++//modify it under the terms of the GNU General Public License
++//as published by the Free Software Foundation; either
++//version 2 of the License, or (at your option) any later version.
++//
++//This program is distributed in the hope that it will be useful,
++//but WITHOUT ANY WARRANTY; without even the implied warranty of
++//MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++//GNU General Public License for more details.
++//
++//You should have received a copy of the GNU General Public License
++//along with this program; if not, write to the Free Software
++//Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
++#pragma once
++#include <map>
++
++// UDP hole punching works only between clients which carry it. They tell each
++// other with one tag, sent in the Kad hello (KADEMLIA2_HELLO_REQ/RES) and in
++// the eD2K hello (OP_HELLO/OP_HELLOANSWER) under the same name; every other
++// client skips a tag it does not know. The peers seen with it are kept in
++// punchpeers.dat, to have someone to ask later on.
++#define TAG_PUNCHCAPS			"PUNCH"	// <uint32>
++
++// value of TAG_PUNCHCAPS
++// 16 reserved
++//  8 flags (PUNCHF_*)
++//  8 punch protocol version
++#define PUNCH_PROTOCOL_VERSION	1
++#define PUNCHF_RELAY			0x01	// UDP verified open: can pass on the punch requests of others
++#define PUNCHF_PUNCHABLE		0x02	// Kad found one external UDP port for all (the NAT is not symmetric)
++#define PUNCHF_LOWID			0x04	// TCP firewalled
++
++inline uint8 PunchCapsVersion(uint32 uCaps)	{ return (uint8)uCaps; }
++inline uint8 PunchCapsFlags(uint32 uCaps)	{ return (uint8)(uCaps >> 8); }
++
++enum EPunchSource : uint8
++{
++	PUNCHSRC_KAD = 0x01,
++	PUNCHSRC_ED2K = 0x02
++};
++
++enum EPunchUpdate : uint8
++{
++	PUNCHUPD_ADDED,		// endpoint not known before
++	PUNCHUPD_MOVED,		// same Kad ID or userhash on the same IP, another port: its NAT mapping changed
++	PUNCHUPD_CHANGED,	// endpoint known, version or flags changed
++	PUNCHUPD_REFRESHED,	// endpoint known, nothing changed
++	PUNCHUPD_INVALID,	// rejected: no version, no IP or no port
++	PUNCHUPD_FILTERED,	// rejected: IP filtered
++	PUNCHUPD_UNVERIFIED,	// rejected: unverified IP over a verified entry
++	PUNCHUPD_NOROOM		// rejected: unverified IP, and only verified entries to drop for it
++};
++
++struct SPunchPeer
++{
++	uint32	dwIP;			// network order
++	uint16	nUDPPort;		// the one seen from outside (Kad) or the one told (eD2K)
++	uint8	byVersion;
++	uint8	byFlags;
++	uint8	bySources;		// EPunchSource
++	bool	bVerified;		// IP proven by a TCP connection, a Kad response or a keyed Kad request
++	uint32	tLastSeen;
++	uchar	abyKadID[16];	// all zero when not known
++	uchar	abyUserHash[16];
++};
++
++struct SPunchRegistryStats
++{
++	uint32	uKadTags;		// tags received
++	uint32	uEd2kTags;
++	uint32	uAdded;			// EPunchUpdate results
++	uint32	uMoved;
++	uint32	uChanged;
++	uint32	uRefreshed;
++	uint32	uRejected;		// all the reasons
++	uint32	uEvictedPerIP;	// dropped to make room
++	uint32	uEvictedFull;
++	uint32	uExpired;
++	uint32	uOwnCapsChanges;
++	uint32	uLoadRead;		// punchpeers.dat at startup
++	uint32	uLoadDropped;
++	uint32	uSaved;			// entries in the last save
++};
++
++class CPunchRegistry
++{
++public:
++	CPunchRegistry();
++	~CPunchRegistry();
++
++	uint32	GetOwnCaps();
++	EPunchUpdate Update(uint32 dwIP, uint16 nUDPPort, uint32 uCaps, EPunchSource eSource, bool bVerified
++						, const uchar *pKadID, const uchar *pUserHash);
++	void	Process();
++	void	Save();
++	size_t	GetCount() const						{ return m_mapPeers.size(); }
++	const SPunchRegistryStats& GetStats() const		{ return m_stats; }
++
++private:
++	typedef std::map<uint64, SPunchPeer> PeerMap;
++
++	// sorted by IP first, so the entries of one IP are next to each other
++	static uint64 Key(uint32 dwIP, uint16 nUDPPort)	{ return ((uint64)dwIP << 16) | nUDPPort; }
++	bool	Load();
++	EPunchUpdate Store(uint32 dwIP, uint16 nUDPPort, uint32 uCaps, EPunchSource eSource, bool bVerified
++						, const uchar *pKadID, const uchar *pUserHash);
++	PeerMap::iterator FindSameIdentity(uint32 dwIP, const uchar *pKadID, const uchar *pUserHash);
++	bool	MakeRoom(uint32 dwIP, bool bVerified);
++
++	PeerMap	m_mapPeers;
++	SPunchRegistryStats m_stats;
++	DWORD	m_dwLastSaved;
++	uint32	m_uOwnCaps;
++	bool	m_bDirty;
++};
+diff --git a/srchybrid/UpdownClient.h b/srchybrid/UpdownClient.h
+index b5b7e51..3c826f2 100644
+--- a/srchybrid/UpdownClient.h
++++ b/srchybrid/UpdownClient.h
+@@ -468,6 +468,7 @@ protected:
+ 	uchar	m_achUserHash[MDX_DIGEST_SIZE];
+ 	uint16	m_nUDPPort;
+ 	uint16	m_nKadPort;
++	uint32	m_uPunchCaps;	// TAG_PUNCHCAPS of the last hello, 0 if none
+ 	//--group aligned to int32
+ 	uint8	m_byUDPVer;
+ 	uint8	m_bySourceExchange1Ver;
+diff --git a/srchybrid/UploadQueue.cpp b/srchybrid/UploadQueue.cpp
+index 10b7294..9fd4cad 100644
+--- a/srchybrid/UploadQueue.cpp
++++ b/srchybrid/UploadQueue.cpp
+@@ -28,6 +28,7 @@
+ #include "LastCommonRouteFinder.h"
+ #include "DownloadQueue.h"
+ #include "FriendList.h"
++#include "PunchRegistry.h"
+ #include "Statistics.h"
+ #include "UpDownClient.h"
+ #include "SharedFileList.h"
+@@ -946,6 +947,7 @@ VOID CALLBACK CUploadQueue::UploadTimer(HWND /*hwnd*/, UINT /*uMsg*/, UINT_PTR /
+ 			theApp.serverlist->Process();		// 17 minutes
+ 			theApp.knownfiles->Process();		// 11 minutes
+ 			theApp.friendlist->Process();		// 19 minutes
++			theApp.punchregistry->Process();	// 23 minutes
+ 			theApp.clientlist->Process();
+ 			theApp.sharedfiles->Process();
+ 			if (Kademlia::CKademlia::IsRunning()) {
+diff --git a/srchybrid/emule.vcxproj b/srchybrid/emule.vcxproj
+index d0c45db..0ae8743 100644
+--- a/srchybrid/emule.vcxproj
++++ b/srchybrid/emule.vcxproj
+@@ -324,6 +324,7 @@
+     <ClCompile Include="PreviewDlg.cpp" />
+     <ClCompile Include="ProgressCtrlX.cpp" />
+     <ClCompile Include="PShtWiz1.cpp" />
++    <ClCompile Include="PunchRegistry.cpp" />
+     <ClCompile Include="Quantize.cpp" />
+     <ClCompile Include="QueueListCtrl.cpp" />
+     <ClCompile Include="RARFile.cpp" />
+@@ -608,6 +609,7 @@
+     <ClInclude Include="Preview.h" />
+     <ClInclude Include="PreviewDlg.h" />
+     <ClInclude Include="ProgressCtrlX.h" />
++    <ClInclude Include="PunchRegistry.h" />
+     <ClInclude Include="QArray.h" />
+     <ClInclude Include="Quantize.h" />
+     <ClInclude Include="QueueListCtrl.h" />
+diff --git a/srchybrid/kademlia/net/KademliaUDPListener.cpp b/srchybrid/kademlia/net/KademliaUDPListener.cpp
+index 16528e4..fc3d04c 100644
+--- a/srchybrid/kademlia/net/KademliaUDPListener.cpp
++++ b/srchybrid/kademlia/net/KademliaUDPListener.cpp
+@@ -41,6 +41,7 @@ their client on the eMule forum.
+ #include "Log.h"
+ #include "opcodes.h"
+ #include "Packets.h"
++#include "PunchRegistry.h"
+ #include "Statistics.h"
+ #include "updownclient.h"
+ #include "KademliaUDPListener.h"
+@@ -112,7 +113,7 @@ void CKademliaUDPListener::SendMyDetails(byte byOpcode, uint32 uIP, uint16 uUDPP
+ 		byteIOResponse.WriteUInt8(KADEMLIA_VERSION);
+ 
+ 		// Tag Count.
+-		uint8 byTagCount = static_cast<uint8>(!CKademlia::GetPrefs()->GetUseExternKadPort());
++		uint8 byTagCount = static_cast<uint8>(1 + !CKademlia::GetPrefs()->GetUseExternKadPort()); // + TAG_PUNCHCAPS
+ 		if (byKadVersion >= KADEMLIA_VERSION8_49b
+ 			&& (bRequestAckPackage || CKademlia::GetPrefs()->GetFirewalled() || CUDPFirewallTester::IsFirewalledUDP(true)))
+ 		{
+@@ -136,6 +137,7 @@ void CKademliaUDPListener::SendMyDetails(byte byOpcode, uint32 uIP, uint16 uUDPP
+ 			const uint8 byMiscOptions = (uRequestACK << 2) | (uTCPFirewalled << 1) | (uUDPFirewalled << 0);
+ 			byteIOResponse.WriteTag(CKadTagUInt8(TAG_KADMISCOPTIONS, byMiscOptions));
+ 		}
++		byteIOResponse.WriteTag(CKadTagUInt32(TAG_PUNCHCAPS, theApp.punchregistry->GetOwnCaps()));
+ 		//byteIOResponse.WriteTag(&CKadTagUInt(TAG_USER_COUNT, CKademlia::GetPrefs()->GetKademliaUsers()));
+ 		//byteIOResponse.WriteTag(&CKadTagUInt(TAG_FILE_COUNT, CKademlia::GetPrefs()->GetKademliaFiles()));
+ 
+@@ -429,6 +431,8 @@ bool CKademliaUDPListener::AddContact_KADEMLIA2(const byte *pbyData, uint32 uLen
+ 
+ 	bool bUDPFirewalled = false;
+ 	bool bTCPFirewalled = false;
++	const uint16 uSeenUDPPort = uUDPPort; // TAG_SOURCEUPORT may replace it with the internal one
++	uint32 uPunchCaps = 0;
+ 	for (unsigned uTags = byteIO.ReadByte(); uTags > 0; --uTags) {
+ 		const CKadTag *pTag = byteIO.ReadTag();
+ 
+@@ -449,6 +453,9 @@ bool CKademliaUDPListener::AddContact_KADEMLIA2(const byte *pbyData, uint32 uLen
+ 				}
+ 			} else
+ 				ASSERT(0);
++		} else if (pTag->m_name == TAG_PUNCHCAPS) {
++			if (pTag->IsInt())
++				uPunchCaps = (uint32)pTag->GetInt();
+ 		}
+ 
+ 		delete pTag;
+@@ -476,6 +483,13 @@ bool CKademliaUDPListener::AddContact_KADEMLIA2(const byte *pbyData, uint32 uLen
+ 		CKademlia::GetPrefs()->StatsIncTCPFirewalledNodes(bTCPFirewalled);
+ 	}
+ 
++	if (uPunchCaps != 0) {
++		// a response to our request, or a request with a valid receiver key, proves the IP
++		uchar abyID[16];
++		uID.ToByteArray(abyID);
++		theApp.punchregistry->Update(htonl(uIP), uSeenUDPPort, uPunchCaps, PUNCHSRC_KAD, !bFromHelloReq || rbIPVerified, abyID, NULL);
++	}
++
+ 	if (!bUDPFirewalled) // do not add (or update) UDP firewalled sources to our routing table
+ 		return CKademlia::GetRoutingZone()->Add(uID, uIP, uUDPPort, uTCPPort, uVersion, cUDPKey, rbIPVerified, bUpdate, false, true);
+ 

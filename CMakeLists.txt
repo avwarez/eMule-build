@@ -87,6 +87,14 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          PowerShare does to the debug log, and 89g keeps a PowerShare
 #          upload going past the session limit while no other PowerShare
 #          request or friend slot is waiting for the slot.
+#          89n* are the steps of UDP hole punching between the clients that
+#          carry it (Kad only, nothing changes towards any other client).
+#          89na tells those clients apart: a "PUNCH" tag in the Kad and eD2K
+#          hellos with the punch protocol version and what this client can
+#          do (relay, punch, LowID), and the peers seen with it kept in
+#          config/punchpeers.dat (at most 512, 4 per IP, 7 days), where a
+#          Kad request with a spoofed IP can neither change nor push out an
+#          entry a reply or a connection proved.
 #   90-94  the code compiles but /Wall flags it; these bring the warning
 #          count back to zero.
 #   95-96  the code compiles and is warning-clean but is not correct on
@@ -102,6 +110,12 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #   99     reserved for temporary diagnostics - a patch that makes a build
 #          report something rather than fix it; whatever lands here is meant
 #          to be deleted once it has been read.
+#          99n* go with the 89n* of the same letter and apply on top of it:
+#          each writes what its step does to the verbose log, as PUNCH|<area>|
+#          lines and a PUNCH|SUM| line of counters every 10 minutes, silent
+#          with Verbose off. 99na: own tag changes, peers added, moved,
+#          changed or rejected (and why), entries pushed out, punchpeers.dat
+#          loaded and saved.
 # ---------------------------------------------------------------------------
 find_package(Git REQUIRED)
 

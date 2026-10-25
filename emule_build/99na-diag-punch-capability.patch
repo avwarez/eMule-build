@@ -1,0 +1,125 @@
+diff --git a/srchybrid/PunchRegistry.cpp b/srchybrid/PunchRegistry.cpp
+index c9360dd..889be56 100644
+--- a/srchybrid/PunchRegistry.cpp
++++ b/srchybrid/PunchRegistry.cpp
+@@ -45,8 +45,13 @@ CPunchRegistry::CPunchRegistry()
+ 	, m_uOwnCaps()
+ 	, m_bDirty()
+ {
+-	Load();
++	const bool bLoaded = Load();
+ 	m_dwLastSaved = ::GetTickCount();
++	m_dwDiagLastSummary = m_dwLastSaved;
++	m_dwDiagRateWindow = m_dwLastSaved;
++	m_uDiagInWindow = 0;
++	theApp.QueueDebugLogLineEx(LOG_INFO, _T("PUNCH|REG|load file=%s ok=%u read=%u dropped=%u entries=%u")
++		, PUNCHPEERS_FILENAME, static_cast<UINT>(bLoaded), m_stats.uLoadRead, m_stats.uLoadDropped, (UINT)m_mapPeers.size());
+ }
+ 
+ CPunchRegistry::~CPunchRegistry()
+@@ -72,6 +77,8 @@ uint32 CPunchRegistry::GetOwnCaps()
+ 	if (uCaps != m_uOwnCaps) {
+ 		m_uOwnCaps = uCaps;
+ 		++m_stats.uOwnCapsChanges;
++		theApp.QueueDebugLogLineEx(LOG_INFO, _T("PUNCH|CAP|own caps=0x%08x version=%u relay=%u punchable=%u lowid=%u")
++			, uCaps, PUNCH_PROTOCOL_VERSION, uFlags & 1, (uFlags >> 1) & 1, (uFlags >> 2) & 1);
+ 	}
+ 	return uCaps;
+ }
+@@ -97,9 +104,33 @@ EPunchUpdate CPunchRegistry::Update(uint32 dwIP, uint16 nUDPPort, uint32 uCaps,
+ 	default:
+ 		++m_stats.uRejected;
+ 	}
++
++	// a known endpoint seen again is only counted; rejects may come from spoofed Kad requests
++	if (eResult != PUNCHUPD_REFRESHED && (eResult < PUNCHUPD_INVALID || DiagRateOk())) {
++		static LPCTSTR const s_apszResult[] = {
++			_T("added"), _T("moved"), _T("changed"), _T("refreshed")
++			, _T("rejected-invalid"), _T("rejected-filtered"), _T("rejected-unverified"), _T("rejected-noroom")
++		};
++		theApp.QueueDebugLogLineEx(LOG_INFO, _T("PUNCH|REG|%s from=%s ip=%s:%u version=%u flags=0x%02x verified=%u kadid=%s userhash=%s entries=%u")
++			, s_apszResult[eResult], eSource == PUNCHSRC_KAD ? _T("kad") : _T("ed2k")
++			, (LPCTSTR)ipstr(dwIP), nUDPPort, PunchCapsVersion(uCaps), PunchCapsFlags(uCaps), static_cast<UINT>(bVerified)
++			, pKadID != NULL ? (LPCTSTR)md4str(pKadID) : _T("-"), pUserHash != NULL ? (LPCTSTR)md4str(pUserHash) : _T("-")
++			, (UINT)m_mapPeers.size());
++	}
+ 	return eResult;
+ }
+ 
++// at most 10 lines a minute for what a remote peer can trigger at will
++bool CPunchRegistry::DiagRateOk()
++{
++	const DWORD dwNow = ::GetTickCount();
++	if (dwNow >= m_dwDiagRateWindow + MIN2MS(1)) {
++		m_dwDiagRateWindow = dwNow;
++		m_uDiagInWindow = 0;
++	}
++	return ++m_uDiagInWindow <= 10;
++}
++
+ EPunchUpdate CPunchRegistry::Store(uint32 dwIP, uint16 nUDPPort, uint32 uCaps, EPunchSource eSource, bool bVerified
+ 	, const uchar *pKadID, const uchar *pUserHash)
+ {
+@@ -197,6 +228,11 @@ bool CPunchRegistry::MakeRoom(uint32 dwIP, bool bVerified)
+ 		}
+ 	if (itOldest == m_mapPeers.end() || (itOldest->second.bVerified && !bVerified))
+ 		return false;
++	if (DiagRateOk())
++		theApp.QueueDebugLogLineEx(LOG_INFO, _T("PUNCH|REG|evict reason=%s ip=%s:%u verified=%u age=%us")
++			, puEvicted == &m_stats.uEvictedPerIP ? _T("per-ip") : _T("full")
++			, (LPCTSTR)ipstr(itOldest->second.dwIP), itOldest->second.nUDPPort, static_cast<UINT>(itOldest->second.bVerified)
++			, (uint32)time(NULL) - itOldest->second.tLastSeen);
+ 	m_mapPeers.erase(itOldest);
+ 	++*puEvicted;
+ 	return true;
+@@ -206,6 +242,13 @@ void CPunchRegistry::Process()
+ {
+ 	if (m_bDirty && ::GetTickCount() >= m_dwLastSaved + MIN2MS(23))
+ 		Save();
++	if (::GetTickCount() >= m_dwDiagLastSummary + MIN2MS(10)) {
++		m_dwDiagLastSummary = ::GetTickCount();
++		theApp.QueueDebugLogLineEx(LOG_INFO, _T("PUNCH|SUM|reg entries=%u kadtags=%u ed2ktags=%u added=%u moved=%u changed=%u refreshed=%u rejected=%u evicted-ip=%u evicted-full=%u expired=%u capschanges=%u saved=%u")
++			, (UINT)m_mapPeers.size(), m_stats.uKadTags, m_stats.uEd2kTags, m_stats.uAdded, m_stats.uMoved, m_stats.uChanged
++			, m_stats.uRefreshed, m_stats.uRejected, m_stats.uEvictedPerIP, m_stats.uEvictedFull, m_stats.uExpired
++			, m_stats.uOwnCapsChanges, m_stats.uSaved);
++	}
+ }
+ 
+ bool CPunchRegistry::Load()
+@@ -256,6 +299,7 @@ bool CPunchRegistry::Load()
+ void CPunchRegistry::Save()
+ {
+ 	m_dwLastSaved = ::GetTickCount();
++	const uint32 uExpiredBefore = m_stats.uExpired;
+ 
+ 	const uint32 tExpired = (uint32)time(NULL) - PUNCH_REGISTRY_EXPIRE;
+ 	for (PeerMap::iterator it = m_mapPeers.begin(); it != m_mapPeers.end();)
+@@ -293,6 +337,8 @@ void CPunchRegistry::Save()
+ 		CommitAndClose(file);
+ 		m_bDirty = false;
+ 		m_stats.uSaved = (uint32)m_mapPeers.size();
++		theApp.QueueDebugLogLineEx(LOG_INFO, _T("PUNCH|REG|save file=%s entries=%u expired=%u")
++			, PUNCHPEERS_FILENAME, m_stats.uSaved, m_stats.uExpired - uExpiredBefore);
+ 	} catch (CFileException *ex) {
+ 		LogError(LOG_STATUSBAR, _T("%s%s"), _T("Failed to save ") PUNCHPEERS_FILENAME, (LPCTSTR)CExceptionStrDash(*ex));
+ 		ex->Delete();
+diff --git a/srchybrid/PunchRegistry.h b/srchybrid/PunchRegistry.h
+index c953663..539da97 100644
+--- a/srchybrid/PunchRegistry.h
++++ b/srchybrid/PunchRegistry.h
+@@ -109,10 +109,15 @@ private:
+ 						, const uchar *pKadID, const uchar *pUserHash);
+ 	PeerMap::iterator FindSameIdentity(uint32 dwIP, const uchar *pKadID, const uchar *pUserHash);
+ 	bool	MakeRoom(uint32 dwIP, bool bVerified);
++	bool	DiagRateOk();
+ 
+ 	PeerMap	m_mapPeers;
+ 	SPunchRegistryStats m_stats;
+ 	DWORD	m_dwLastSaved;
+ 	uint32	m_uOwnCaps;
+ 	bool	m_bDirty;
++	// 99na: PUNCH| lines in the verbose log
++	DWORD	m_dwDiagLastSummary;
++	DWORD	m_dwDiagRateWindow;
++	uint32	m_uDiagInWindow;
+ };
