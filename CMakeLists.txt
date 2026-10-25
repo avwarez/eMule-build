@@ -315,11 +315,14 @@ target_compile_options(plum-static PRIVATE $<$<C_COMPILER_ID:MSVC>:/W3>)
 # punching emule_build/89n* adds - LEDBAT congestion control over the one UDP
 # port eMule already has. Has its own CMakeLists.txt; as a subproject it builds
 # only the static library (no install rules, no ucat, no /WX) - LIBUTP_SHARED
-# follows BUILD_SHARED_LIBS, set OFF above. Upstream sets /W4 only when built
-# on its own: stated as /W3 here, as for zlib and libplum.
+# follows BUILD_SHARED_LIBS, set OFF above. What upstream sets only when built
+# on its own is stated here: C++17 (the code uses if/switch init-statements),
+# and on MSVC the warning level - /W3, as for zlib and libplum - with the two
+# size conversion warnings upstream turns off, C4244 and C4267.
 # ---------------------------------------------------------------------------
 add_subdirectory(libutp EXCLUDE_FROM_ALL)
-target_compile_options(libutp PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/W3>)
+target_compile_features(libutp PRIVATE cxx_std_17)
+target_compile_options(libutp PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/W3 /wd4244 /wd4267>)
 
 # ---------------------------------------------------------------------------
 # ResizableLib - git submodule (resizablelib/, avwarez/resizablelib pinned to
