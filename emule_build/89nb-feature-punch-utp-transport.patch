@@ -196,10 +196,10 @@ index f6121c3..973bc4f 100644
  	delete theApp.serverlist;				theApp.serverlist = NULL;		// CServerList::SaveServermetToFile
 diff --git a/srchybrid/PunchTransport.cpp b/srchybrid/PunchTransport.cpp
 new file mode 100644
-index 0000000..ce0f4a9
+index 0000000..1fab538
 --- /dev/null
 +++ b/srchybrid/PunchTransport.cpp
-@@ -0,0 +1,608 @@
+@@ -0,0 +1,620 @@
 +//this file is part of eMule
 +//Copyright (C)2002-2026 Merkur ( strEmail.Format("%s@%s", "devteam", "emule-project.net") / https://www.emule-project.net )
 +//
@@ -275,7 +275,19 @@ index 0000000..ce0f4a9
 +// the flags set are raised by RaiseEvents(), on the main thread.
 +struct CPunchCallbacks
 +{
-+	static uint64 OnUtp(utp_callback_arguments *a)
++	// libutp is C: no exception may go through it
++	static uint64 OnUtp(utp_callback_arguments *a) noexcept
++	{
++		try {
++			return Dispatch(a);
++		} catch (CException *ex) {
++			ex->Delete();
++		} catch (...) {
++		}
++		return 0;
++	}
++
++	static uint64 Dispatch(utp_callback_arguments *a)
 +	{
 +		CPunchTransport *pThis = static_cast<CPunchTransport*>(utp_context_get_userdata(a->context));
 +		SPunchSession *pSession = SessionOf(a->socket);

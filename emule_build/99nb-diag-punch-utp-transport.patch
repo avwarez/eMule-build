@@ -1,8 +1,8 @@
 diff --git a/srchybrid/PunchTransport.cpp b/srchybrid/PunchTransport.cpp
-index ce0f4a9..19ec4d5 100644
+index 1fab538..0bae389 100644
 --- a/srchybrid/PunchTransport.cpp
 +++ b/srchybrid/PunchTransport.cpp
-@@ -90,6 +90,11 @@ struct CPunchCallbacks
+@@ -102,6 +102,11 @@ struct CPunchCallbacks
  				|| theApp.listensocket->TooManySockets(true))
  			{
  				++pThis->m_stats.uRefused;
@@ -14,7 +14,7 @@ index ce0f4a9..19ec4d5 100644
  				return 1;
  			}
  			break;
-@@ -133,6 +138,10 @@ struct CPunchCallbacks
+@@ -145,6 +150,10 @@ struct CPunchCallbacks
  					pSession->lPendingEvents |= FD_CONNECT;
  					++pThis->m_stats.uConnectFailed;
  				}
@@ -25,7 +25,7 @@ index ce0f4a9..19ec4d5 100644
  			}
  			break;
  		case UTP_GET_READ_BUFFER_SIZE:
-@@ -151,6 +160,8 @@ struct CPunchCallbacks
+@@ -163,6 +172,8 @@ struct CPunchCallbacks
  		case UTP_STATE_CONNECT:
  			pSession->bConnected = true;
  			pSession->lPendingEvents |= FD_CONNECT;
@@ -34,7 +34,7 @@ index ce0f4a9..19ec4d5 100644
  			break;
  		case UTP_STATE_WRITABLE:
  			if (pSession->bWantWrite) {
-@@ -161,8 +172,21 @@ struct CPunchCallbacks
+@@ -173,8 +184,21 @@ struct CPunchCallbacks
  		case UTP_STATE_EOF:
  			pSession->bEof = true;
  			pSession->lPendingEvents |= FD_CLOSE;
@@ -56,7 +56,7 @@ index ce0f4a9..19ec4d5 100644
  			pSession->pUtp = NULL;
  			if (pSession->pLayer == NULL)
  				pThis->DeleteSession(pSession);
-@@ -180,10 +204,13 @@ struct CPunchCallbacks
+@@ -192,10 +216,13 @@ struct CPunchCallbacks
  		SPunchSession *pSession = pThis->NewSession(a->socket, IPOf(a->address), PortOf(a->address), true);
  		pSession->bConnected = true; // no UTP_STATE_CONNECT comes for an incoming connection
  		++pThis->m_stats.uAccepts;
@@ -70,7 +70,7 @@ index ce0f4a9..19ec4d5 100644
  			pSocket->Safe_Delete();
  			utp_close(a->socket);	// the session goes with it
  			return;
-@@ -197,7 +224,10 @@ struct CPunchCallbacks
+@@ -209,7 +236,10 @@ struct CPunchCallbacks
  
  CPunchTransport::CPunchTransport()
  	: m_stats()
@@ -81,7 +81,7 @@ index ce0f4a9..19ec4d5 100644
  	m_pCtx = utp_init(2);
  	if (m_pCtx != NULL) {
  		utp_context_set_userdata(m_pCtx, this);
-@@ -209,6 +239,30 @@ CPunchTransport::CPunchTransport()
+@@ -221,6 +251,30 @@ CPunchTransport::CPunchTransport()
  			utp_set_callback(m_pCtx, s_aiCallbacks[i], &CPunchCallbacks::OnUtp);
  	}
  	LoadBenchPeers();
@@ -112,7 +112,7 @@ index ce0f4a9..19ec4d5 100644
  }
  
  CPunchTransport::~CPunchTransport()
-@@ -284,23 +338,34 @@ void CPunchTransport::SendRaw(uint32 dwIP, uint16 nPort, BYTE byType, const BYTE
+@@ -296,23 +350,34 @@ void CPunchTransport::SendRaw(uint32 dwIP, uint16 nPort, BYTE byType, const BYTE
  	if (nLen > 0)
  		memcpy(&abyPacket[2], pData, nLen);
  	const sockaddr_in sa(SockAddr(dwIP, nPort));
@@ -148,7 +148,7 @@ index ce0f4a9..19ec4d5 100644
  	switch (pPacket[1]) {
  	case PUNCHPKT_UTP:
  		{
-@@ -315,6 +380,8 @@ void CPunchTransport::ProcessPacket(const BYTE *pPacket, int nLen, uint32 dwIP,
+@@ -327,6 +392,8 @@ void CPunchTransport::ProcessPacket(const BYTE *pPacket, int nLen, uint32 dwIP,
  		break;
  	default:
  		++m_stats.uDroppedUnknown;
@@ -157,7 +157,7 @@ index ce0f4a9..19ec4d5 100644
  	}
  	RaiseEvents();
  	m_cs.Unlock();
-@@ -341,6 +408,13 @@ void CPunchTransport::Process()
+@@ -353,6 +420,13 @@ void CPunchTransport::Process()
  		m_listDead.pop_front();
  	}
  	RaiseEvents();
@@ -171,7 +171,7 @@ index ce0f4a9..19ec4d5 100644
  	m_cs.Unlock();
  }
  
-@@ -355,8 +429,11 @@ void CPunchTransport::RaiseEvents()
+@@ -367,8 +441,11 @@ void CPunchTransport::RaiseEvents()
  		session.lPendingEvents = 0;
  		if (session.pLayer == NULL)
  			continue;
@@ -184,7 +184,7 @@ index ce0f4a9..19ec4d5 100644
  		if ((lEvents & FD_READ) && !session.bReadPosted) {
  			session.bReadPosted = true;
  			session.pLayer->RaiseEvent(FD_READ, 0);
-@@ -368,6 +445,8 @@ void CPunchTransport::RaiseEvents()
+@@ -380,6 +457,8 @@ void CPunchTransport::RaiseEvents()
  				session.lPendingEvents |= FD_CLOSE; // what arrived before the end is read first
  			else {
  				session.bClosePosted = true;
@@ -193,7 +193,7 @@ index ce0f4a9..19ec4d5 100644
  				session.pLayer->RaiseEvent(FD_CLOSE, session.bEof ? 0 : session.nPendingError);
  			}
  		}
-@@ -382,6 +461,7 @@ SPunchSession* CPunchTransport::NewSession(UTPSocket *pUtp, uint32 dwIP, uint16
+@@ -394,6 +473,7 @@ SPunchSession* CPunchTransport::NewSession(UTPSocket *pUtp, uint32 dwIP, uint16
  	pSession->nPort = nPort;
  	pSession->bIncoming = bIncoming;
  	pSession->dwStarted = pSession->dwLastSent = pSession->dwLastRecv = ::GetTickCount();
@@ -201,7 +201,7 @@ index ce0f4a9..19ec4d5 100644
  	utp_set_userdata(pUtp, pSession);
  	m_listSessions.push_back(pSession);
  	return pSession;
-@@ -409,6 +489,8 @@ SPunchSession* CPunchTransport::Connect(CPunchSocketLayer *pLayer, uint32 dwIP,
+@@ -421,6 +501,8 @@ SPunchSession* CPunchTransport::Connect(CPunchSocketLayer *pLayer, uint32 dwIP,
  			const sockaddr_in sa(SockAddr(dwIP, nPort));
  			utp_connect(pUtp, reinterpret_cast<const sockaddr*>(&sa), (socklen_t)sizeof sa);
  			++m_stats.uConnects;
@@ -210,7 +210,7 @@ index ce0f4a9..19ec4d5 100644
  		}
  	}
  	m_cs.Unlock();
-@@ -417,7 +499,9 @@ SPunchSession* CPunchTransport::Connect(CPunchSocketLayer *pLayer, uint32 dwIP,
+@@ -429,7 +511,9 @@ SPunchSession* CPunchTransport::Connect(CPunchSocketLayer *pLayer, uint32 dwIP,
  
  int CPunchTransport::Write(SPunchSession *pSession, const void *pBuf, int nLen)
  {
@@ -220,7 +220,7 @@ index ce0f4a9..19ec4d5 100644
  	if (pSession->pUtp == NULL || pSession->pLayer == NULL || !pSession->bConnected) {
  		m_cs.Unlock();
  		WSASetLastError(WSAENOTCONN);
-@@ -519,24 +603,36 @@ void CPunchSocketLayer::RaiseEvent(long lEvent, int nErrorCode)
+@@ -531,24 +615,36 @@ void CPunchSocketLayer::RaiseEvent(long lEvent, int nErrorCode)
  		TriggerEvent(lEvent, nErrorCode, TRUE);
  }
  
