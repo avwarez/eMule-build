@@ -1,0 +1,306 @@
+diff --git a/srchybrid/PunchTransport.cpp b/srchybrid/PunchTransport.cpp
+index 667f940..1f009c9 100644
+--- a/srchybrid/PunchTransport.cpp
++++ b/srchybrid/PunchTransport.cpp
+@@ -90,6 +90,11 @@ struct CPunchCallbacks
+ 				|| theApp.listensocket->TooManySockets(true))
+ 			{
+ 				++pThis->m_stats.uRefused;
++				if (pThis->DiagRateOk())
++					theApp.QueueDebugLogLineEx(LOG_INFO, _T("PUNCH|UTP|refuse ip=%s reason=%s sessions=%u")
++						, (LPCTSTR)ipstr(IPOf(a->address), PortOf(a->address))
++						, !pThis->IsAllowed(IPOf(a->address)) ? _T("gate") : pThis->m_listSessions.size() >= PUNCH_MAX_SESSIONS ? _T("sessions") : _T("sockets")
++						, (UINT)pThis->m_listSessions.size());
+ 				return 1;
+ 			}
+ 			break;
+@@ -127,6 +132,10 @@ struct CPunchCallbacks
+ 					pSession->lPendingEvents |= FD_CONNECT;
+ 					++pThis->m_stats.uConnectFailed;
+ 				}
++				theApp.QueueDebugLogLineEx(LOG_INFO, _T("PUNCH|UTP|error #%u ip=%s code=%hs connected=%u")
++					, pSession->nDiagId, (LPCTSTR)ipstr(pSession->dwIP, pSession->nPort)
++					, a->error_code >= UTP_ECONNREFUSED && a->error_code <= UTP_ETIMEDOUT ? utp_error_code_names[a->error_code] : "?"
++					, static_cast<UINT>(pSession->bConnected));
+ 			}
+ 			break;
+ 		case UTP_GET_READ_BUFFER_SIZE:
+@@ -145,6 +154,8 @@ struct CPunchCallbacks
+ 		case UTP_STATE_CONNECT:
+ 			pSession->bConnected = true;
+ 			pSession->lPendingEvents |= FD_CONNECT;
++			theApp.QueueDebugLogLineEx(LOG_INFO, _T("PUNCH|UTP|connected #%u ip=%s after=%ums")
++				, pSession->nDiagId, (LPCTSTR)ipstr(pSession->dwIP, pSession->nPort), ::GetTickCount() - pSession->dwStarted);
+ 			break;
+ 		case UTP_STATE_WRITABLE:
+ 			if (pSession->bWantWrite) {
+@@ -155,8 +166,21 @@ struct CPunchCallbacks
+ 		case UTP_STATE_EOF:
+ 			pSession->bEof = true;
+ 			pSession->lPendingEvents |= FD_CLOSE;
++			theApp.QueueDebugLogLineEx(LOG_INFO, _T("PUNCH|UTP|eof #%u ip=%s"), pSession->nDiagId, (LPCTSTR)ipstr(pSession->dwIP, pSession->nPort));
+ 			break;
+ 		case UTP_STATE_DESTROYING:
++			{
++				// libutp keeps the packet counters in its debug build only
++				const utp_socket_stats *pStats = utp_get_stats(pSession->pUtp);
++				CString strStats;
++				if (pStats != NULL)
++					strStats.Format(_T(" sent=%u resent=%u fastresent=%u recv=%u duprecv=%u mtu=%u")
++						, pStats->nxmit, pStats->rexmit, pStats->fastrexmit, pStats->nrecv, pStats->nduprecv, pStats->mtu_guess);
++				theApp.QueueDebugLogLineEx(LOG_INFO, _T("PUNCH|UTP|end #%u ip=%s role=%s duration=%us in=%I64u out=%I64u socket=%u%s")
++					, pSession->nDiagId, (LPCTSTR)ipstr(pSession->dwIP, pSession->nPort), pSession->bIncoming ? _T("in") : _T("out")
++					, (::GetTickCount() - pSession->dwStarted) / SEC2MS(1), pSession->nBytesIn, pSession->nBytesOut
++					, static_cast<UINT>(pSession->pLayer != NULL), (LPCTSTR)strStats);
++			}
+ 			pSession->pUtp = NULL;
+ 			if (pSession->pLayer == NULL)
+ 				pThis->DeleteSession(pSession);
+@@ -173,10 +197,13 @@ struct CPunchCallbacks
+ 	{
+ 		SPunchSession *pSession = pThis->NewSession(a->socket, IPOf(a->address), PortOf(a->address), true);
+ 		++pThis->m_stats.uAccepts;
++		theApp.QueueDebugLogLineEx(LOG_INFO, _T("PUNCH|UTP|accept #%u ip=%s sessions=%u")
++			, pSession->nDiagId, (LPCTSTR)ipstr(pSession->dwIP, pSession->nPort), (UINT)pThis->m_listSessions.size());
+ 		CClientReqSocket *pSocket = new CClientReqSocket;
+ 		CPunchSocketLayer *pLayer = new CPunchSocketLayer(pSession->dwIP, pSession->nPort);
+ 		pSocket->AttachPunchLayer(pLayer);
+ 		if (!pSocket->Create()) {
++			theApp.QueueDebugLogLineEx(LOG_WARNING, _T("PUNCH|UTP|accept #%u socket create failed: %s"), pSession->nDiagId, (LPCTSTR)GetErrorMessage(::WSAGetLastError(), 1));
+ 			pSocket->Safe_Delete();
+ 			utp_close(a->socket);	// the session goes with it
+ 			return;
+@@ -190,7 +217,10 @@ struct CPunchCallbacks
+ 
+ CPunchTransport::CPunchTransport()
+ 	: m_stats()
++	, m_nDiagLastId()
++	, m_uDiagInWindow()
+ {
++	m_dwDiagLastSummary = m_dwDiagRateWindow = ::GetTickCount();
+ 	m_pCtx = utp_init(2);
+ 	if (m_pCtx != NULL) {
+ 		utp_context_set_userdata(m_pCtx, this);
+@@ -202,6 +232,30 @@ CPunchTransport::CPunchTransport()
+ 			utp_set_callback(m_pCtx, s_aiCallbacks[i], &CPunchCallbacks::OnUtp);
+ 	}
+ 	LoadBenchPeers();
++	CString strAllowed;
++	for (std::map<uint32, uint16>::const_iterator it = m_mapAllowed.begin(); it != m_mapAllowed.end(); ++it)
++		strAllowed.AppendFormat(&_T(",%s")[strAllowed.IsEmpty() ? 1 : 0], (LPCTSTR)ipstr(it->first, it->second));
++	theApp.QueueDebugLogLineEx(LOG_INFO, _T("PUNCH|UTP|start libutp=%s allowed=%s")
++		, m_pCtx != NULL ? _T("ok") : _T("failed"), strAllowed.IsEmpty() ? _T("-") : (LPCTSTR)strAllowed);
++}
++
++// at most 10 lines a minute for what a remote peer can trigger at will
++bool CPunchTransport::DiagRateOk()
++{
++	const DWORD dwNow = ::GetTickCount();
++	if (dwNow >= m_dwDiagRateWindow + MIN2MS(1)) {
++		m_dwDiagRateWindow = dwNow;
++		m_uDiagInWindow = 0;
++	}
++	return ++m_uDiagInWindow <= 10;
++}
++
++// the main thread and the upload throttler share m_cs: a long wait for it stalls one of them
++void CPunchTransport::DiagLockWait(DWORD dwStart, LPCTSTR pszWhere)
++{
++	const DWORD dwWaited = ::GetTickCount() - dwStart;
++	if (dwWaited >= 50)
++		theApp.QueueDebugLogLineEx(LOG_WARNING, _T("PUNCH|UTP|lockwait %s waited=%ums"), pszWhere, dwWaited);
+ }
+ 
+ CPunchTransport::~CPunchTransport()
+@@ -277,23 +331,34 @@ void CPunchTransport::SendRaw(uint32 dwIP, uint16 nPort, BYTE byType, const BYTE
+ 	if (nLen > 0)
+ 		memcpy(&abyPacket[2], pData, nLen);
+ 	const sockaddr_in sa(SockAddr(dwIP, nPort));
+-	if (::sendto(theApp.clientudp->m_hSocket, reinterpret_cast<const char*>(abyPacket), (int)(2 + nLen), 0, reinterpret_cast<const sockaddr*>(&sa), (int)sizeof sa) == SOCKET_ERROR)
++	if (::sendto(theApp.clientudp->m_hSocket, reinterpret_cast<const char*>(abyPacket), (int)(2 + nLen), 0, reinterpret_cast<const sockaddr*>(&sa), (int)sizeof sa) == SOCKET_ERROR) {
+ 		++m_stats.uSendFailed;
++		const int iError = ::WSAGetLastError();
++		if (iError != WSAEWOULDBLOCK && DiagRateOk())
++			theApp.QueueDebugLogLineEx(LOG_WARNING, _T("PUNCH|UTP|sendfail ip=%s type=0x%02x len=%u: %s")
++				, (LPCTSTR)ipstr(dwIP, nPort), byType, (UINT)nLen, (LPCTSTR)GetErrorMessage((DWORD)iError, 1));
++	}
+ }
+ 
+ void CPunchTransport::ProcessPacket(const BYTE *pPacket, int nLen, uint32 dwIP, uint16 nPort)
+ {
+ 	if (nLen < 2) {
+ 		++m_stats.uDroppedShort;
++		if (DiagRateOk())
++			theApp.QueueDebugLogLineEx(LOG_INFO, _T("PUNCH|UTP|drop reason=short ip=%s len=%d"), (LPCTSTR)ipstr(dwIP, nPort), nLen);
+ 		return;
+ 	}
+ 	// libutp parses nothing that did not come from a peer let in
+ 	if (m_pCtx == NULL || !IsAllowed(dwIP)) {
+ 		++m_stats.uDroppedGate;
++		if (DiagRateOk())
++			theApp.QueueDebugLogLineEx(LOG_INFO, _T("PUNCH|UTP|drop reason=gate ip=%s type=0x%02x len=%d"), (LPCTSTR)ipstr(dwIP, nPort), pPacket[1], nLen);
+ 		return;
+ 	}
+ 
++	const DWORD dwLockStart = ::GetTickCount();
+ 	m_cs.Lock();
++	DiagLockWait(dwLockStart, _T("receive"));
+ 	switch (pPacket[1]) {
+ 	case PUNCHPKT_UTP:
+ 		{
+@@ -308,6 +373,8 @@ void CPunchTransport::ProcessPacket(const BYTE *pPacket, int nLen, uint32 dwIP,
+ 		break;
+ 	default:
+ 		++m_stats.uDroppedUnknown;
++		if (DiagRateOk())
++			theApp.QueueDebugLogLineEx(LOG_INFO, _T("PUNCH|UTP|drop reason=type ip=%s type=0x%02x len=%d"), (LPCTSTR)ipstr(dwIP, nPort), pPacket[1], nLen);
+ 	}
+ 	RaiseEvents();
+ 	m_cs.Unlock();
+@@ -334,6 +401,13 @@ void CPunchTransport::Process()
+ 		m_listDead.pop_front();
+ 	}
+ 	RaiseEvents();
++	if (dwNow >= m_dwDiagLastSummary + MIN2MS(10)) {
++		m_dwDiagLastSummary = dwNow;
++		theApp.QueueDebugLogLineEx(LOG_INFO, _T("PUNCH|SUM|utp sessions=%u connects=%u accepts=%u refused=%u connectfailed=%u closed=%u pktin=%u pktout=%u kain=%u kaout=%u drop-gate=%u drop-short=%u drop-type=%u sendfail=%u")
++			, (UINT)m_listSessions.size(), m_stats.uConnects, m_stats.uAccepts, m_stats.uRefused, m_stats.uConnectFailed, m_stats.uClosed
++			, m_stats.uPacketsIn, m_stats.uPacketsOut, m_stats.uKeepalivesIn, m_stats.uKeepalivesOut
++			, m_stats.uDroppedGate, m_stats.uDroppedShort, m_stats.uDroppedUnknown, m_stats.uSendFailed);
++	}
+ 	m_cs.Unlock();
+ }
+ 
+@@ -348,8 +422,11 @@ void CPunchTransport::RaiseEvents()
+ 		session.lPendingEvents = 0;
+ 		if (session.pLayer == NULL)
+ 			continue;
+-		if (lEvents & FD_CONNECT)
++		if (lEvents & FD_CONNECT) {
++			if (!session.bConnected)
++				theApp.QueueDebugLogLineEx(LOG_INFO, _T("PUNCH|UTP|connectfail #%u ip=%s error=%d"), session.nDiagId, (LPCTSTR)ipstr(session.dwIP, session.nPort), session.nPendingError);
+ 			session.pLayer->RaiseEvent(FD_CONNECT, session.bConnected ? 0 : session.nPendingError);
++		}
+ 		if ((lEvents & FD_READ) && !session.bReadPosted) {
+ 			session.bReadPosted = true;
+ 			session.pLayer->RaiseEvent(FD_READ, 0);
+@@ -361,6 +438,8 @@ void CPunchTransport::RaiseEvents()
+ 				session.lPendingEvents |= FD_CLOSE; // what arrived before the end is read first
+ 			else {
+ 				session.bClosePosted = true;
++				theApp.QueueDebugLogLineEx(LOG_INFO, _T("PUNCH|UTP|close #%u ip=%s error=%d in=%I64u out=%I64u"), session.nDiagId, (LPCTSTR)ipstr(session.dwIP, session.nPort)
++					, session.bEof ? 0 : session.nPendingError, session.nBytesIn, session.nBytesOut);
+ 				session.pLayer->RaiseEvent(FD_CLOSE, session.bEof ? 0 : session.nPendingError);
+ 			}
+ 		}
+@@ -375,6 +454,7 @@ SPunchSession* CPunchTransport::NewSession(UTPSocket *pUtp, uint32 dwIP, uint16
+ 	pSession->nPort = nPort;
+ 	pSession->bIncoming = bIncoming;
+ 	pSession->dwStarted = pSession->dwLastSent = pSession->dwLastRecv = ::GetTickCount();
++	pSession->nDiagId = ++m_nDiagLastId;
+ 	utp_set_userdata(pUtp, pSession);
+ 	m_listSessions.push_back(pSession);
+ 	return pSession;
+@@ -402,6 +482,8 @@ SPunchSession* CPunchTransport::Connect(CPunchSocketLayer *pLayer, uint32 dwIP,
+ 			const sockaddr_in sa(SockAddr(dwIP, nPort));
+ 			utp_connect(pUtp, reinterpret_cast<const sockaddr*>(&sa), (socklen_t)sizeof sa);
+ 			++m_stats.uConnects;
++			theApp.QueueDebugLogLineEx(LOG_INFO, _T("PUNCH|UTP|connect #%u ip=%s sessions=%u")
++				, pSession->nDiagId, (LPCTSTR)ipstr(dwIP, nPort), (UINT)m_listSessions.size());
+ 		}
+ 	}
+ 	m_cs.Unlock();
+@@ -410,7 +492,9 @@ SPunchSession* CPunchTransport::Connect(CPunchSocketLayer *pLayer, uint32 dwIP,
+ 
+ int CPunchTransport::Write(SPunchSession *pSession, const void *pBuf, int nLen)
+ {
++	const DWORD dwLockStart = ::GetTickCount();
+ 	m_cs.Lock();
++	DiagLockWait(dwLockStart, _T("send"));
+ 	if (pSession->pUtp == NULL || pSession->pLayer == NULL || !pSession->bConnected) {
+ 		m_cs.Unlock();
+ 		WSASetLastError(WSAENOTCONN);
+@@ -512,24 +596,36 @@ void CPunchSocketLayer::RaiseEvent(long lEvent, int nErrorCode)
+ 		TriggerEvent(lEvent, nErrorCode, TRUE);
+ }
+ 
+-void CPunchSocketLayer::OnAccept(int)
++void CPunchSocketLayer::OnAccept(int nErrorCode)
++{
++	DiagHandleEvent(_T("FD_ACCEPT"), nErrorCode);
++}
++
++void CPunchSocketLayer::OnClose(int nErrorCode)
+ {
++	DiagHandleEvent(_T("FD_CLOSE"), nErrorCode);
+ }
+ 
+-void CPunchSocketLayer::OnClose(int)
++void CPunchSocketLayer::OnConnect(int nErrorCode)
+ {
++	DiagHandleEvent(_T("FD_CONNECT"), nErrorCode);
+ }
+ 
+-void CPunchSocketLayer::OnConnect(int)
++void CPunchSocketLayer::OnReceive(int nErrorCode)
+ {
++	DiagHandleEvent(_T("FD_READ"), nErrorCode);
+ }
+ 
+-void CPunchSocketLayer::OnReceive(int)
++void CPunchSocketLayer::OnSend(int nErrorCode)
+ {
++	DiagHandleEvent(_T("FD_WRITE"), nErrorCode);
+ }
+ 
+-void CPunchSocketLayer::OnSend(int)
++// the handle under the layer is meant to stay silent; whether it does under Wine is to be seen
++void CPunchSocketLayer::DiagHandleEvent(LPCTSTR pszEvent, int nErrorCode)
+ {
++	theApp.QueueDebugLogLineEx(LOG_WARNING, _T("PUNCH|UTP|handle-event %s error=%d #%u ip=%s (ignored)")
++		, pszEvent, nErrorCode, m_pSession != NULL ? m_pSession->nDiagId : 0, (LPCTSTR)ipstr(m_dwIP, m_nPort));
+ }
+ 
+ void CPunchSocketLayer::Close()
+diff --git a/srchybrid/PunchTransport.h b/srchybrid/PunchTransport.h
+index 5a7b1c5..ab54446 100644
+--- a/srchybrid/PunchTransport.h
++++ b/srchybrid/PunchTransport.h
+@@ -58,6 +58,7 @@ struct SPunchSession
+ 	DWORD				dwLastRecv;
+ 	uint64				nBytesIn;		// stream bytes
+ 	uint64				nBytesOut;
++	uint32				nDiagId;		// 99nb: session number in the PUNCH|UTP| lines
+ };
+ 
+ struct SPunchTransportStats
+@@ -105,6 +106,8 @@ private:
+ 	void	RaiseEvents();
+ 	SPunchSession* NewSession(UTPSocket *pUtp, uint32 dwIP, uint16 nPort, bool bIncoming);
+ 	void	DeleteSession(SPunchSession *pSession);
++	bool	DiagRateOk();
++	void	DiagLockWait(DWORD dwStart, LPCTSTR pszWhere);
+ 
+ 	struct_utp_context	*m_pCtx;
+ 	CCriticalSection	m_cs;		// every libutp call, and the sessions
+@@ -112,6 +115,11 @@ private:
+ 	std::list<std::pair<SPunchSession*, DWORD>> m_listDead;	// ended, freed after PUNCH_DEAD_DELAY
+ 	std::map<uint32, uint16> m_mapAllowed;	// IP -> UDP port to reach it (PunchBenchPeers)
+ 	SPunchTransportStats m_stats;
++	// 99nb: PUNCH| lines in the verbose log
++	uint32	m_nDiagLastId;
++	DWORD	m_dwDiagLastSummary;
++	DWORD	m_dwDiagRateWindow;
++	uint32	m_uDiagInWindow;
+ };
+ 
+ class CPunchSocketLayer : public CAsyncSocketExLayer
+@@ -144,6 +152,8 @@ protected:
+ 	virtual BOOL ShutDown(int nHow = CAsyncSocket::sends);
+ 
+ private:
++	void	DiagHandleEvent(LPCTSTR pszEvent, int nErrorCode);
++
+ 	SPunchSession	*m_pSession;
+ 	uint32			m_dwIP;		// network order
+ 	uint16			m_nPort;	// host order

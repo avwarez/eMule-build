@@ -95,6 +95,15 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          config/punchpeers.dat (at most 512, 4 per IP, 7 days), where a
 #          Kad request with a spoofed IP can neither change nor push out an
 #          entry a reply or a connection proved.
+#          89nb carries the eD2K stream over uTP (libutp, below) on the
+#          client UDP port: a CPunchSocketLayer under the CClientReqSocket,
+#          on a socket handle that is never connected, in datagrams marked
+#          with OP_UDPRESERVEDPROT1, the header byte eMule reserved for later
+#          UDP protocols, and a keepalive every 20 s. libutp sees only the
+#          datagrams of the peers let in; until the rendez-vous exists those
+#          are the ones named by hand in preferences.ini, [eMule]
+#          PunchBenchPeers=<IP>:<UDP port>,..., and a connection to one of
+#          them goes over uTP.
 #   90-94  the code compiles but /Wall flags it; these bring the warning
 #          count back to zero.
 #   95-96  the code compiles and is warning-clean but is not correct on
@@ -115,7 +124,10 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          lines and a PUNCH|SUM| line of counters every 10 minutes, silent
 #          with Verbose off. 99na: own tag changes, peers added, moved,
 #          changed or rejected (and why), entries pushed out, punchpeers.dat
-#          loaded and saved.
+#          loaded and saved. 99nb: uTP sessions opened, accepted, refused,
+#          connected, failed and ended (bytes, duration), datagrams dropped
+#          and why, long waits on the transport lock, and any event of the
+#          socket handle under the layer, which should never come.
 # ---------------------------------------------------------------------------
 find_package(Git REQUIRED)
 

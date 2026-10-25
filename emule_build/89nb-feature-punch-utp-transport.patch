@@ -1,0 +1,999 @@
+diff --git a/srchybrid/AsyncSocketExLayer.h b/srchybrid/AsyncSocketExLayer.h
+index 683f556..bc7d017 100644
+--- a/srchybrid/AsyncSocketExLayer.h
++++ b/srchybrid/AsyncSocketExLayer.h
+@@ -126,6 +126,11 @@ protected:
+ 	AsyncSocketExState GetLayerState() const		{ return m_nLayerState; }
+ 	BOOL TriggerEvent(long lEvent, int nErrorCode, BOOL bPassThrough = FALSE);
+ 
++	// for a layer that is the transport itself (CPunchSocketLayer): no socket below it
++	// moves the states, the layer does
++	void SetLayerState(AsyncSocketExState nLayerState);
++	void SetOwnerSocketState(AsyncSocketExState nState)	{ m_pOwnerSocket->SetState(nState); }
++
+ 	//Gets the socket family
+ 	ADDRESS_FAMILY GetFamily() const				{ return m_nFamily; }
+ 
+@@ -136,8 +141,6 @@ protected:
+ 	bool TryNextProtocol();
+ 
+ private:
+-	//Layer state can't be set directly from derived classes
+-	void SetLayerState(AsyncSocketExState nLayerState);
+ 	AsyncSocketExState m_nLayerState;
+ 
+ 	ADDRESS_FAMILY m_nFamily;
+diff --git a/srchybrid/BaseClient.cpp b/srchybrid/BaseClient.cpp
+index e27094e..2d5e6b5 100644
+--- a/srchybrid/BaseClient.cpp
++++ b/srchybrid/BaseClient.cpp
+@@ -58,6 +58,7 @@
+ #include "Log.h"
+ #include "CaptchaGenerator.h"
+ #include "PunchRegistry.h"
++#include "PunchTransport.h"
+ #include <atlimage.h>
+ 
+ #ifdef _DEBUG
+@@ -1406,6 +1407,8 @@ bool CUpDownClient::TryToConnect(bool bIgnoreMaxCon, bool bNoCallbacks, CRuntime
+ 			pClassSocket = RUNTIME_CLASS(CClientReqSocket);
+ 		socket = static_cast<CClientReqSocket*>(pClassSocket->CreateObject());
+ 		socket->SetClient(this);
++		if (pClassSocket == RUNTIME_CLASS(CClientReqSocket))
++			theApp.punchtransport->AttachOutgoing(socket, GetConnectIP()); // uTP instead of TCP, if allowed for that IP
+ 		if (socket->Create())
+ 			Connect();
+ 		else {
+diff --git a/srchybrid/ClientUDPSocket.cpp b/srchybrid/ClientUDPSocket.cpp
+index 2688299..0678440 100644
+--- a/srchybrid/ClientUDPSocket.cpp
++++ b/srchybrid/ClientUDPSocket.cpp
+@@ -30,6 +30,7 @@
+ #include "IPFilter.h"
+ #include "Listensocket.h"
+ #include "Log.h"
++#include "PunchTransport.h"
+ #include "SafeFile.h"
+ #include "kademlia/kademlia/Kademlia.h"
+ #include "kademlia/io/IOException.h"
+@@ -135,6 +136,9 @@ void CClientUDPSocket::OnReceive(int nErrorCode)
+ 						, (Kademlia::CPrefs::GetUDPVerifyKey(sockAddr.sin_addr.s_addr) == nReceiverVerifyKey)
+ 						, Kademlia::CKadUDPKey(nSenderVerifyKey, theApp.GetPublicIP()));
+ 				break;
++			case OP_UDPRESERVEDPROT1: // hole punching (see PunchTransport.h)
++				theApp.punchtransport->ProcessPacket(pBuffer, nPacketLen, sockAddr.sin_addr.s_addr, ntohs(sockAddr.sin_port));
++				break;
+ 			default:
+ 				strError.Format(_T("Unknown protocol 0x%02x"), pBuffer[0]);
+ 			}
+diff --git a/srchybrid/EMSocket.cpp b/srchybrid/EMSocket.cpp
+index 749f251..31e1dc7 100644
+--- a/srchybrid/EMSocket.cpp
++++ b/srchybrid/EMSocket.cpp
+@@ -22,6 +22,7 @@
+ #include <timeapi.h>
+ #include "emsocket.h"
+ #include "AsyncProxySocketLayer.h"
++#include "PunchTransport.h"
+ #include "Packets.h"
+ #include "OtherFunctions.h"
+ #include "UploadBandwidthThrottler.h"
+@@ -157,6 +158,8 @@ BOOL CEMSocket::Connect(const LPSOCKADDR pSockAddr, int iSockAddrLen)
+ void CEMSocket::InitProxySupport()
+ {
+ 	m_bProxyConnectFailed = false;
++	if (m_pPunchLayer != NULL)
++		return; // uTP goes over UDP, which no proxy here carries
+ 
+ 	// Proxy Initialization
+ 	const ProxySettings &settings = thePrefs.GetProxySettings();
+@@ -964,6 +967,17 @@ void CEMSocket::RemoveAllLayers()
+ 	CEncryptedStreamSocket::RemoveAllLayers();
+ 	delete m_pProxyLayer;
+ 	m_pProxyLayer = NULL;
++	delete m_pPunchLayer;
++	m_pPunchLayer = NULL;
++}
++
++// Before Create(): the layer then makes the socket handle, which stays unconnected and silent,
++// and carries the stream itself. Sends go through Send(), never overlapped on that handle.
++void CEMSocket::AttachPunchLayer(CPunchSocketLayer *pLayer)
++{
++	m_bUseOverlappedSend = false;
++	m_pPunchLayer = pLayer;
++	AddLayer(pLayer);
+ }
+ 
+ int CEMSocket::OnLayerCallback(std::vector<t_callbackMsg> &callbacks)
+diff --git a/srchybrid/EMSocket.h b/srchybrid/EMSocket.h
+index 3875a13..5057859 100644
+--- a/srchybrid/EMSocket.h
++++ b/srchybrid/EMSocket.h
+@@ -20,6 +20,7 @@
+ #include "ThrottledSocket.h" // ZZ:UploadBandWithThrottler (UDP)
+ 
+ class CAsyncProxySocketLayer;
++class CPunchSocketLayer;
+ 
+ #define EMS_DISCONNECTED	0xFF
+ #define EMS_NOTCONNECTED	0x00
+@@ -66,6 +67,8 @@ public:
+ 
+ 	void InitProxySupport();
+ 	virtual void RemoveAllLayers();
++	void AttachPunchLayer(CPunchSocketLayer *pLayer);
++	bool IsPunched() const									{ return m_pPunchLayer != NULL; }
+ 	const CString GetLastProxyError() const					{ return m_strLastProxyError; }
+ 	bool GetProxyConnectFailed() const						{ return m_bProxyConnectFailed; }
+ 
+@@ -95,6 +98,7 @@ protected:
+ 	virtual bool	PacketReceived(Packet *packet) = 0;
+ 	virtual void	OnError(int nErrorCode) = 0;
+ 	CAsyncProxySocketLayer *m_pProxyLayer;
++	CPunchSocketLayer *m_pPunchLayer = NULL;	// uTP over the client UDP port instead of TCP
+ 	CString m_strLastProxyError;
+ 	UINT	m_uTimeOut;
+ 	uint8	byConnected;
+diff --git a/srchybrid/Emule.cpp b/srchybrid/Emule.cpp
+index f46f79e..3886303 100644
+--- a/srchybrid/Emule.cpp
++++ b/srchybrid/Emule.cpp
+@@ -66,6 +66,7 @@
+ #include "UploadDiskIOThread.h"
+ #include "PartFileWriteThread.h"
+ #include "PunchRegistry.h"
++#include "PunchTransport.h"
+ 
+ #ifdef _DEBUG
+ #define new DEBUG_NEW
+@@ -527,6 +528,7 @@ BOOL CemuleApp::InitInstance()
+ 	uploadqueue = new CUploadQueue();
+ 	ipfilter = new CIPFilter();
+ 	punchregistry = new CPunchRegistry();
++	punchtransport = new CPunchTransport();
+ 	webserver = new CWebServer(); // Web Server [kuchin]
+ 	scheduler = new CScheduler();
+ 
+diff --git a/srchybrid/Emule.h b/srchybrid/Emule.h
+index 769f6fe..caf9850 100644
+--- a/srchybrid/Emule.h
++++ b/srchybrid/Emule.h
+@@ -51,6 +51,7 @@ class CFirewallCheck;
+ class CUploadDiskIOThread;
+ class CPartFileWriteThread;
+ class CPunchRegistry;
++class CPunchTransport;
+ 
+ struct SLogItem;
+ 
+@@ -96,6 +97,7 @@ public:
+ 	CUploadDiskIOThread	*m_pUploadDiskIOThread;
+ 	CPartFileWriteThread *m_pPartFileWriteThread;
+ 	CPunchRegistry		*punchregistry;
++	CPunchTransport		*punchtransport;
+ 
+ 
+ 	static const UINT	m_nVersionMjr;
+diff --git a/srchybrid/EmuleDlg.cpp b/srchybrid/EmuleDlg.cpp
+index f6121c3..973bc4f 100644
+--- a/srchybrid/EmuleDlg.cpp
++++ b/srchybrid/EmuleDlg.cpp
+@@ -72,6 +72,7 @@
+ #include "FriendList.h"
+ #include "IPFilter.h"
+ #include "PunchRegistry.h"
++#include "PunchTransport.h"
+ #include "Statistics.h"
+ #include "MuleToolbarCtrl.h"
+ #include "TaskbarNotifier.h"
+@@ -1743,6 +1744,7 @@ void CemuleDlg::OnClose()
+ 	// after we have closed the main window -> crash!
+ 	delete theApp.listensocket;				theApp.listensocket = NULL;
+ 	delete theApp.clientudp;				theApp.clientudp = NULL;
++	delete theApp.punchtransport;			theApp.punchtransport = NULL;	// after every socket with a CPunchSocketLayer
+ 	delete theApp.sharedfiles;				theApp.sharedfiles = NULL;
+ 	delete theApp.serverconnect;			theApp.serverconnect = NULL;
+ 	delete theApp.serverlist;				theApp.serverlist = NULL;		// CServerList::SaveServermetToFile
+diff --git a/srchybrid/PunchTransport.cpp b/srchybrid/PunchTransport.cpp
+new file mode 100644
+index 0000000..667f940
+--- /dev/null
++++ b/srchybrid/PunchTransport.cpp
+@@ -0,0 +1,601 @@
++//this file is part of eMule
++//Copyright (C)2002-2026 Merkur ( strEmail.Format("%s@%s", "devteam", "emule-project.net") / https://www.emule-project.net )
++//
++//This program is free software; you can redistribute it and/or
++//modify it under the terms of the GNU General Public License
++//as published by the Free Software Foundation; either
++//version 2 of the License, or (at your option) any later version.
++//
++//This program is distributed in the hope that it will be useful,
++//but WITHOUT ANY WARRANTY; without even the implied warranty of
++//MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++//GNU General Public License for more details.
++//
++//You should have received a copy of the GNU General Public License
++//along with this program; if not, write to the Free Software
++//Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
++#include "stdafx.h"
++#include <algorithm>
++#include "emule.h"
++#include "PunchTransport.h"
++#include "ClientUDPSocket.h"
++#include "ListenSocket.h"
++#include "Preferences.h"
++#include "OtherFunctions.h"
++#include "opcodes.h"
++#include "Log.h"
++#include "cryptopp/osrng.h"
++#include "libutp/utp.h"
++
++#ifdef _DEBUG
++#define new DEBUG_NEW
++#undef THIS_FILE
++static char THIS_FILE[] = __FILE__;
++#endif
++
++
++#define PUNCH_MAX_SESSIONS		64
++#define PUNCH_KEEPALIVE			SEC2MS(20)	// NAT mappings of UDP often last 30 s only
++#define PUNCH_UDP_MTU			(1402 - 2)	// libutp's IPv4 default, less our two header bytes
++#define PUNCH_DEAD_DELAY		SEC2MS(10)	// a session freed this long after its end
++
++namespace
++{
++	uint32 IPOf(const struct sockaddr *pAddr)
++	{
++		return reinterpret_cast<const sockaddr_in*>(pAddr)->sin_addr.s_addr;
++	}
++
++	uint16 PortOf(const struct sockaddr *pAddr)
++	{
++		return ntohs(reinterpret_cast<const sockaddr_in*>(pAddr)->sin_port);
++	}
++
++	sockaddr_in SockAddr(uint32 dwIP, uint16 nPort)
++	{
++		sockaddr_in sa = {};
++		sa.sin_family = AF_INET;
++		sa.sin_addr.s_addr = dwIP;
++		sa.sin_port = htons(nPort);
++		return sa;
++	}
++
++	SPunchSession* SessionOf(utp_socket *pUtp)
++	{
++		return pUtp != NULL ? static_cast<SPunchSession*>(utp_get_userdata(pUtp)) : NULL;
++	}
++
++	CryptoPP::AutoSeededRandomPool s_random;
++}
++
++// libutp calls back from inside utp_process_udp, utp_check_timeouts, utp_write, utp_close,
++// that is with CPunchTransport::m_cs held. Nothing here raises a socket event directly:
++// the flags set are raised by RaiseEvents(), on the main thread.
++struct CPunchCallbacks
++{
++	static uint64 OnUtp(utp_callback_arguments *a)
++	{
++		CPunchTransport *pThis = static_cast<CPunchTransport*>(utp_context_get_userdata(a->context));
++		SPunchSession *pSession = SessionOf(a->socket);
++		switch (a->callback_type) {
++		case UTP_SENDTO:
++			pThis->SendRaw(IPOf(a->address), PortOf(a->address), PUNCHPKT_UTP, a->buf, a->len);
++			++pThis->m_stats.uPacketsOut;
++			if (pSession != NULL)
++				pSession->dwLastSent = ::GetTickCount();
++			break;
++		case UTP_ON_FIREWALL:
++			// nonzero refuses the incoming connection
++			if (!pThis->IsAllowed(IPOf(a->address)) || pThis->m_listSessions.size() >= PUNCH_MAX_SESSIONS
++				|| theApp.listensocket->TooManySockets(true))
++			{
++				++pThis->m_stats.uRefused;
++				return 1;
++			}
++			break;
++		case UTP_ON_ACCEPT:
++			OnAccept(pThis, a);
++			break;
++		case UTP_ON_READ:
++			if (pSession != NULL) {
++				pSession->rx.insert(pSession->rx.end(), a->buf, a->buf + a->len);
++				pSession->nBytesIn += a->len;
++				pSession->dwLastRecv = ::GetTickCount();
++				if (!pSession->bReadPosted)
++					pSession->lPendingEvents |= FD_READ;
++			}
++			break;
++		case UTP_ON_STATE_CHANGE:
++			if (pSession != NULL)
++				OnStateChange(pThis, pSession, a->state);
++			break;
++		case UTP_ON_ERROR:
++			if (pSession != NULL) {
++				switch (a->error_code) {
++				case UTP_ECONNREFUSED:
++					pSession->nPendingError = WSAECONNREFUSED;
++					break;
++				case UTP_ETIMEDOUT:
++					pSession->nPendingError = WSAETIMEDOUT;
++					break;
++				default:
++					pSession->nPendingError = WSAECONNRESET;
++				}
++				if (pSession->bConnected)
++					pSession->lPendingEvents |= FD_CLOSE;
++				else {
++					pSession->lPendingEvents |= FD_CONNECT;
++					++pThis->m_stats.uConnectFailed;
++				}
++			}
++			break;
++		case UTP_GET_READ_BUFFER_SIZE:
++			return pSession != NULL ? pSession->rx.size() - pSession->nRxRead : 0;
++		case UTP_GET_UDP_MTU:
++			return PUNCH_UDP_MTU;
++		case UTP_GET_RANDOM:
++			return s_random.GenerateWord32();
++		}
++		return 0;
++	}
++
++	static void OnStateChange(CPunchTransport *pThis, SPunchSession *pSession, int iState)
++	{
++		switch (iState) {
++		case UTP_STATE_CONNECT:
++			pSession->bConnected = true;
++			pSession->lPendingEvents |= FD_CONNECT;
++			break;
++		case UTP_STATE_WRITABLE:
++			if (pSession->bWantWrite) {
++				pSession->bWantWrite = false;
++				pSession->lPendingEvents |= FD_WRITE;
++			}
++			break;
++		case UTP_STATE_EOF:
++			pSession->bEof = true;
++			pSession->lPendingEvents |= FD_CLOSE;
++			break;
++		case UTP_STATE_DESTROYING:
++			pSession->pUtp = NULL;
++			if (pSession->pLayer == NULL)
++				pThis->DeleteSession(pSession);
++			else if (!pSession->bEof && pSession->nPendingError == 0) {
++				pSession->nPendingError = WSAECONNRESET;
++				pSession->lPendingEvents |= pSession->bConnected ? FD_CLOSE : FD_CONNECT;
++			}
++		}
++	}
++
++	// Same steps as an accepted TCP connection in CListenSocket::OnAccept, but the socket has
++	// no TCP connection under it: the layer is the connection.
++	static void OnAccept(CPunchTransport *pThis, utp_callback_arguments *a)
++	{
++		SPunchSession *pSession = pThis->NewSession(a->socket, IPOf(a->address), PortOf(a->address), true);
++		++pThis->m_stats.uAccepts;
++		CClientReqSocket *pSocket = new CClientReqSocket;
++		CPunchSocketLayer *pLayer = new CPunchSocketLayer(pSession->dwIP, pSession->nPort);
++		pSocket->AttachPunchLayer(pLayer);
++		if (!pSocket->Create()) {
++			pSocket->Safe_Delete();
++			utp_close(a->socket);	// the session goes with it
++			return;
++		}
++		pLayer->Accepted(pSession);
++	}
++};
++
++///////////////////////////////////////////////////////////////////////////////
++// CPunchTransport
++
++CPunchTransport::CPunchTransport()
++	: m_stats()
++{
++	m_pCtx = utp_init(2);
++	if (m_pCtx != NULL) {
++		utp_context_set_userdata(m_pCtx, this);
++		static const int s_aiCallbacks[] = {
++			UTP_SENDTO, UTP_ON_FIREWALL, UTP_ON_ACCEPT, UTP_ON_READ, UTP_ON_STATE_CHANGE, UTP_ON_ERROR
++			, UTP_GET_READ_BUFFER_SIZE, UTP_GET_UDP_MTU, UTP_GET_RANDOM
++		};
++		for (unsigned i = 0; i < _countof(s_aiCallbacks); ++i)
++			utp_set_callback(m_pCtx, s_aiCallbacks[i], &CPunchCallbacks::OnUtp);
++	}
++	LoadBenchPeers();
++}
++
++CPunchTransport::~CPunchTransport()
++{
++	m_cs.Lock();
++	for (std::list<SPunchSession*>::const_iterator it = m_listSessions.begin(); it != m_listSessions.end(); ++it)
++		if ((*it)->pLayer != NULL) {
++			(*it)->pLayer->Orphan();
++			(*it)->pLayer = NULL;
++		}
++	if (m_pCtx != NULL)
++		utp_destroy(m_pCtx);
++	m_pCtx = NULL;
++	while (!m_listSessions.empty()) {
++		delete m_listSessions.front();
++		m_listSessions.pop_front();
++	}
++	while (!m_listDead.empty()) {
++		delete m_listDead.front().first;
++		m_listDead.pop_front();
++	}
++	m_cs.Unlock();
++}
++
++// Until the rendez-vous exists (89nf), uTP is used only with the peers named by hand in
++// preferences.ini, [eMule] PunchBenchPeers=<IP>:<UDP port>[,<IP>:<UDP port>...]: an outgoing
++// connection to one of those IPs goes over uTP to that port, and only those IPs get past the gate.
++void CPunchTransport::LoadBenchPeers()
++{
++	TCHAR szPeers[1024];
++	::GetPrivateProfileString(_T("eMule"), _T("PunchBenchPeers"), _T(""), szPeers, _countof(szPeers), thePrefs.GetConfigFile());
++	CString strPeers(szPeers);
++	for (int iPos = 0; iPos >= 0;) {
++		CString strPeer(strPeers.Tokenize(_T(",; "), iPos));
++		if (strPeer.IsEmpty())
++			continue;
++		int iColon = strPeer.Find(_T(':'));
++		if (iColon <= 0)
++			continue;
++		const uint32 dwIP = inet_addr(CStringA(strPeer.Left(iColon)));
++		const int iPort = _tstoi(strPeer.Mid(iColon + 1));
++		if (dwIP != INADDR_NONE && dwIP != 0 && iPort > 0 && iPort <= 0xFFFF)
++			m_mapAllowed[dwIP] = (uint16)iPort;
++	}
++}
++
++bool CPunchTransport::IsAllowed(uint32 dwIP) const
++{
++	return m_mapAllowed.find(dwIP) != m_mapAllowed.end();
++}
++
++bool CPunchTransport::AttachOutgoing(CClientReqSocket *pSocket, uint32 dwIP)
++{
++	const std::map<uint32, uint16>::const_iterator it = m_mapAllowed.find(dwIP);
++	if (m_pCtx == NULL || it == m_mapAllowed.end())
++		return false;
++	pSocket->AttachPunchLayer(new CPunchSocketLayer(dwIP, it->second));
++	return true;
++}
++
++// Straight to the socket: the stream above was already paced by the upload throttler, and
++// uTP keeps its own congestion control. A datagram the socket cannot take now is dropped;
++// uTP sends it again.
++void CPunchTransport::SendRaw(uint32 dwIP, uint16 nPort, BYTE byType, const BYTE *pData, size_t nLen)
++{
++	BYTE abyPacket[2 + 1500];
++	if (nLen > sizeof abyPacket - 2 || theApp.clientudp == NULL || theApp.clientudp->m_hSocket == INVALID_SOCKET) {
++		++m_stats.uSendFailed;
++		return;
++	}
++	abyPacket[0] = OP_UDPRESERVEDPROT1;
++	abyPacket[1] = byType;
++	if (nLen > 0)
++		memcpy(&abyPacket[2], pData, nLen);
++	const sockaddr_in sa(SockAddr(dwIP, nPort));
++	if (::sendto(theApp.clientudp->m_hSocket, reinterpret_cast<const char*>(abyPacket), (int)(2 + nLen), 0, reinterpret_cast<const sockaddr*>(&sa), (int)sizeof sa) == SOCKET_ERROR)
++		++m_stats.uSendFailed;
++}
++
++void CPunchTransport::ProcessPacket(const BYTE *pPacket, int nLen, uint32 dwIP, uint16 nPort)
++{
++	if (nLen < 2) {
++		++m_stats.uDroppedShort;
++		return;
++	}
++	// libutp parses nothing that did not come from a peer let in
++	if (m_pCtx == NULL || !IsAllowed(dwIP)) {
++		++m_stats.uDroppedGate;
++		return;
++	}
++
++	m_cs.Lock();
++	switch (pPacket[1]) {
++	case PUNCHPKT_UTP:
++		{
++			const sockaddr_in sa(SockAddr(dwIP, nPort));
++			++m_stats.uPacketsIn;
++			utp_process_udp(m_pCtx, pPacket + 2, (size_t)(nLen - 2), reinterpret_cast<const sockaddr*>(&sa), (socklen_t)sizeof sa);
++			utp_issue_deferred_acks(m_pCtx);
++		}
++		break;
++	case PUNCHPKT_KEEPALIVE:
++		++m_stats.uKeepalivesIn;
++		break;
++	default:
++		++m_stats.uDroppedUnknown;
++	}
++	RaiseEvents();
++	m_cs.Unlock();
++}
++
++// main thread, every 100 ms
++void CPunchTransport::Process()
++{
++	if (m_pCtx == NULL)
++		return;
++	m_cs.Lock();
++	utp_check_timeouts(m_pCtx); // does its work every 500 ms
++	const DWORD dwNow = ::GetTickCount();
++	for (std::list<SPunchSession*>::const_iterator it = m_listSessions.begin(); it != m_listSessions.end(); ++it) {
++		SPunchSession &session = **it;
++		if (session.pUtp != NULL && dwNow >= session.dwLastSent + PUNCH_KEEPALIVE) {
++			SendRaw(session.dwIP, session.nPort, PUNCHPKT_KEEPALIVE, NULL, 0);
++			++m_stats.uKeepalivesOut;
++			session.dwLastSent = dwNow;
++		}
++	}
++	while (!m_listDead.empty() && dwNow >= m_listDead.front().second + PUNCH_DEAD_DELAY) {
++		delete m_listDead.front().first;
++		m_listDead.pop_front();
++	}
++	RaiseEvents();
++	m_cs.Unlock();
++}
++
++// main thread, m_cs held
++void CPunchTransport::RaiseEvents()
++{
++	for (std::list<SPunchSession*>::const_iterator it = m_listSessions.begin(); it != m_listSessions.end(); ++it) {
++		SPunchSession &session = **it;
++		if (session.lPendingEvents == 0)
++			continue;
++		const long lEvents = session.lPendingEvents;
++		session.lPendingEvents = 0;
++		if (session.pLayer == NULL)
++			continue;
++		if (lEvents & FD_CONNECT)
++			session.pLayer->RaiseEvent(FD_CONNECT, session.bConnected ? 0 : session.nPendingError);
++		if ((lEvents & FD_READ) && !session.bReadPosted) {
++			session.bReadPosted = true;
++			session.pLayer->RaiseEvent(FD_READ, 0);
++		}
++		if (lEvents & FD_WRITE)
++			session.pLayer->RaiseEvent(FD_WRITE, 0);
++		if ((lEvents & FD_CLOSE) && !session.bClosePosted) {
++			if (session.rx.size() > session.nRxRead)
++				session.lPendingEvents |= FD_CLOSE; // what arrived before the end is read first
++			else {
++				session.bClosePosted = true;
++				session.pLayer->RaiseEvent(FD_CLOSE, session.bEof ? 0 : session.nPendingError);
++			}
++		}
++	}
++}
++
++SPunchSession* CPunchTransport::NewSession(UTPSocket *pUtp, uint32 dwIP, uint16 nPort, bool bIncoming)
++{
++	SPunchSession *pSession = new SPunchSession();
++	pSession->pUtp = pUtp;
++	pSession->dwIP = dwIP;
++	pSession->nPort = nPort;
++	pSession->bIncoming = bIncoming;
++	pSession->dwStarted = pSession->dwLastSent = pSession->dwLastRecv = ::GetTickCount();
++	utp_set_userdata(pUtp, pSession);
++	m_listSessions.push_back(pSession);
++	return pSession;
++}
++
++// The upload throttler may still hold the pointer for the length of one Write(): freed later
++void CPunchTransport::DeleteSession(SPunchSession *pSession)
++{
++	m_listSessions.remove(pSession);
++	m_listDead.push_back(std::make_pair(pSession, ::GetTickCount()));
++	++m_stats.uClosed;
++}
++
++SPunchSession* CPunchTransport::Connect(CPunchSocketLayer *pLayer, uint32 dwIP, uint16 nPort)
++{
++	if (m_pCtx == NULL)
++		return NULL;
++	m_cs.Lock();
++	SPunchSession *pSession = NULL;
++	if (m_listSessions.size() < PUNCH_MAX_SESSIONS) {
++		UTPSocket *pUtp = utp_create_socket(m_pCtx);
++		if (pUtp != NULL) {
++			pSession = NewSession(pUtp, dwIP, nPort, false);
++			pSession->pLayer = pLayer;
++			const sockaddr_in sa(SockAddr(dwIP, nPort));
++			utp_connect(pUtp, reinterpret_cast<const sockaddr*>(&sa), (socklen_t)sizeof sa);
++			++m_stats.uConnects;
++		}
++	}
++	m_cs.Unlock();
++	return pSession;
++}
++
++int CPunchTransport::Write(SPunchSession *pSession, const void *pBuf, int nLen)
++{
++	m_cs.Lock();
++	if (pSession->pUtp == NULL || pSession->pLayer == NULL || !pSession->bConnected) {
++		m_cs.Unlock();
++		WSASetLastError(WSAENOTCONN);
++		return SOCKET_ERROR;
++	}
++	const ssize_t nWritten = utp_write(pSession->pUtp, const_cast<void*>(pBuf), (size_t)nLen);
++	if (nWritten <= 0) {
++		pSession->bWantWrite = true;
++		m_cs.Unlock();
++		WSASetLastError(WSAEWOULDBLOCK);
++		return SOCKET_ERROR;
++	}
++	pSession->nBytesOut += (uint64)nWritten;
++	m_cs.Unlock();
++	return (int)nWritten;
++}
++
++int CPunchTransport::Read(SPunchSession *pSession, void *pBuf, int nLen)
++{
++	m_cs.Lock();
++	pSession->bReadPosted = false;
++	const size_t nAvail = pSession->rx.size() - pSession->nRxRead;
++	if (nAvail == 0 || nLen <= 0) {
++		const bool bEnd = pSession->bEof || pSession->pUtp == NULL;
++		RaiseEvents();
++		m_cs.Unlock();
++		if (bEnd)
++			return 0;
++		WSASetLastError(WSAEWOULDBLOCK);
++		return SOCKET_ERROR;
++	}
++	const size_t nRead = (std::min)(nAvail, (size_t)nLen);
++	memcpy(pBuf, &pSession->rx[pSession->nRxRead], nRead);
++	pSession->nRxRead += nRead;
++	if (pSession->nRxRead == pSession->rx.size()) {
++		pSession->rx.clear();
++		pSession->nRxRead = 0;
++	} else {
++		if (pSession->nRxRead >= 64 * 1024) {
++			pSession->rx.erase(pSession->rx.begin(), pSession->rx.begin() + (ptrdiff_t)pSession->nRxRead);
++			pSession->nRxRead = 0;
++		}
++		pSession->lPendingEvents |= FD_READ;
++	}
++	if (pSession->pUtp != NULL)
++		utp_read_drained(pSession->pUtp); // the receive window may open again
++	RaiseEvents();
++	m_cs.Unlock();
++	return (int)nRead;
++}
++
++// main thread: the layer goes away
++void CPunchTransport::Detach(SPunchSession *pSession)
++{
++	m_cs.Lock();
++	pSession->pLayer = NULL;
++	if (pSession->pUtp != NULL)
++		utp_close(pSession->pUtp); // UTP_STATE_DESTROYING deletes the session, maybe at once
++	else
++		DeleteSession(pSession);
++	m_cs.Unlock();
++}
++
++///////////////////////////////////////////////////////////////////////////////
++// CPunchSocketLayer
++
++CPunchSocketLayer::CPunchSocketLayer(uint32 dwIP, uint16 nPort)
++	: m_pSession()
++	, m_dwIP(dwIP)
++	, m_nPort(nPort)
++{
++}
++
++CPunchSocketLayer::~CPunchSocketLayer()
++{
++	if (m_pSession != NULL && theApp.punchtransport != NULL)
++		theApp.punchtransport->Detach(m_pSession);
++}
++
++// incoming connection: the socket starts as an accepted one, and the first event makes it connected
++void CPunchSocketLayer::Accepted(SPunchSession *pSession)
++{
++	m_pSession = pSession;
++	pSession->pLayer = this;
++	SetLayerState(connected);
++	SetOwnerSocketState(attached);
++	TriggerEvent(FD_WRITE, 0, TRUE);
++}
++
++void CPunchSocketLayer::RaiseEvent(long lEvent, int nErrorCode)
++{
++	if (lEvent == FD_CONNECT) {
++		if (nErrorCode == 0)
++			SetLayerState(connected);
++		TriggerEvent(FD_CONNECT, nErrorCode, TRUE);
++		if (nErrorCode == 0)
++			TriggerEvent(FD_WRITE, 0, TRUE);
++	} else
++		TriggerEvent(lEvent, nErrorCode, TRUE);
++}
++
++void CPunchSocketLayer::OnAccept(int)
++{
++}
++
++void CPunchSocketLayer::OnClose(int)
++{
++}
++
++void CPunchSocketLayer::OnConnect(int)
++{
++}
++
++void CPunchSocketLayer::OnReceive(int)
++{
++}
++
++void CPunchSocketLayer::OnSend(int)
++{
++}
++
++void CPunchSocketLayer::Close()
++{
++	if (m_pSession != NULL && theApp.punchtransport != NULL)
++		theApp.punchtransport->Detach(m_pSession);
++	m_pSession = NULL;
++	CloseNext();
++}
++
++// The address is the one of the TCP port; uTP goes to the UDP port this layer was made for
++BOOL CPunchSocketLayer::Connect(const LPSOCKADDR, int)
++{
++	m_pSession = theApp.punchtransport->Connect(this, m_dwIP, m_nPort);
++	if (m_pSession == NULL) {
++		WSASetLastError(WSAECONNREFUSED);
++		return FALSE;
++	}
++	SetLayerState(connecting);
++	WSASetLastError(WSAEWOULDBLOCK);
++	return FALSE;
++}
++
++bool CPunchSocketLayer::Connect(const CString&, UINT)
++{
++	return Connect(NULL, 0) != FALSE;
++}
++
++BOOL CPunchSocketLayer::GetPeerName(CString &rPeerAddress, UINT &rPeerPort)
++{
++	rPeerAddress = ipstr(m_dwIP);
++	rPeerPort = m_nPort;
++	return TRUE;
++}
++
++BOOL CPunchSocketLayer::GetPeerName(LPSOCKADDR lpPeerAddr, int *lpPeerAddrLen)
++{
++	if (lpPeerAddr == NULL || lpPeerAddrLen == NULL || *lpPeerAddrLen < (int)sizeof(sockaddr_in)) {
++		WSASetLastError(WSAEFAULT);
++		return FALSE;
++	}
++	*reinterpret_cast<sockaddr_in*>(lpPeerAddr) = SockAddr(m_dwIP, m_nPort);
++	*lpPeerAddrLen = (int)sizeof(sockaddr_in);
++	return TRUE;
++}
++
++int CPunchSocketLayer::Receive(void *lpBuf, int nBufLen, int)
++{
++	if (m_pSession == NULL) {
++		WSASetLastError(WSAENOTCONN);
++		return SOCKET_ERROR;
++	}
++	return theApp.punchtransport->Read(m_pSession, lpBuf, nBufLen);
++}
++
++int CPunchSocketLayer::Send(const void *lpBuf, int nBufLen, int)
++{
++	SPunchSession *pSession = m_pSession;
++	if (pSession == NULL) {
++		WSASetLastError(WSAENOTCONN);
++		return SOCKET_ERROR;
++	}
++	return theApp.punchtransport->Write(pSession, lpBuf, nBufLen);
++}
++
++BOOL CPunchSocketLayer::ShutDown(int)
++{
++	return TRUE;
++}
+diff --git a/srchybrid/PunchTransport.h b/srchybrid/PunchTransport.h
+new file mode 100644
+index 0000000..5a7b1c5
+--- /dev/null
++++ b/srchybrid/PunchTransport.h
+@@ -0,0 +1,150 @@
++//this file is part of eMule
++//Copyright (C)2002-2026 Merkur ( strEmail.Format("%s@%s", "devteam", "emule-project.net") / https://www.emule-project.net )
++//
++//This program is free software; you can redistribute it and/or
++//modify it under the terms of the GNU General Public License
++//as published by the Free Software Foundation; either
++//version 2 of the License, or (at your option) any later version.
++//
++//This program is distributed in the hope that it will be useful,
++//but WITHOUT ANY WARRANTY; without even the implied warranty of
++//MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++//GNU General Public License for more details.
++//
++//You should have received a copy of the GNU General Public License
++//along with this program; if not, write to the Free Software
++//Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
++#pragma once
++#include <list>
++#include <map>
++#include <vector>
++#include "AsyncSocketExLayer.h"
++
++// The eD2K stream between two clients that carry hole punching, over uTP (libutp) on the
++// client UDP port instead of over TCP. A CClientReqSocket gets a CPunchSocketLayer before
++// Create(): above it nothing changes, below it there is no TCP connection, only a uTP one.
++//
++// Every punch datagram starts with OP_UDPRESERVEDPROT1, the header byte eMule reserved for
++// later UDP protocols: UDP obfuscation never picks it as its random first byte, and other
++// clients drop it as an unknown protocol. The second byte tells what follows.
++#define PUNCHPKT_UTP			0x01	// a uTP packet
++#define PUNCHPKT_KEEPALIVE		0x02	// nothing; keeps the NAT mapping of a session open
++
++class CClientReqSocket;
++class CPunchSocketLayer;
++struct UTPSocket;
++struct struct_utp_context;
++struct CPunchCallbacks;
++
++// One uTP connection. Owned by CPunchTransport; outlives its layer until libutp is done with it.
++struct SPunchSession
++{
++	UTPSocket			*pUtp;			// NULL once libutp destroyed it
++	CPunchSocketLayer	*pLayer;		// NULL once the socket is gone
++	uint32				dwIP;			// network order
++	uint16				nPort;			// host order, the UDP port of the peer
++	bool				bIncoming;
++	bool				bConnected;
++	bool				bEof;			// the peer closed its side
++	bool				bWantWrite;		// a Send() found the window full
++	bool				bReadPosted;	// an FD_READ is on its way to the socket
++	bool				bClosePosted;
++	long				lPendingEvents;	// FD_* raised by libutp, raised to the socket by the main thread
++	int					nPendingError;
++	std::vector<BYTE>	rx;				// received, not yet read by the socket
++	size_t				nRxRead;
++	DWORD				dwStarted;
++	DWORD				dwLastSent;
++	DWORD				dwLastRecv;
++	uint64				nBytesIn;		// stream bytes
++	uint64				nBytesOut;
++};
++
++struct SPunchTransportStats
++{
++	uint32	uPacketsIn;			// uTP datagrams passed to libutp
++	uint32	uPacketsOut;
++	uint32	uKeepalivesIn;
++	uint32	uKeepalivesOut;
++	uint32	uDroppedGate;		// from an endpoint not allowed
++	uint32	uDroppedShort;
++	uint32	uDroppedUnknown;	// unknown punch packet type
++	uint32	uSendFailed;
++	uint32	uConnects;			// sessions opened by us
++	uint32	uAccepts;			// sessions opened by the peer
++	uint32	uRefused;			// incoming sessions refused (gate, limits)
++	uint32	uConnectFailed;
++	uint32	uClosed;
++};
++
++class CPunchTransport
++{
++	friend CPunchCallbacks;
++public:
++	CPunchTransport();
++	~CPunchTransport();
++
++	// main thread
++	void	ProcessPacket(const BYTE *pPacket, int nLen, uint32 dwIP, uint16 nPort);
++	void	Process();
++	bool	AttachOutgoing(CClientReqSocket *pSocket, uint32 dwIP);
++	bool	IsAllowed(uint32 dwIP) const;
++
++	// CPunchSocketLayer; Write() also from the upload throttler thread
++	SPunchSession* Connect(CPunchSocketLayer *pLayer, uint32 dwIP, uint16 nPort);
++	int		Write(SPunchSession *pSession, const void *pBuf, int nLen);
++	int		Read(SPunchSession *pSession, void *pBuf, int nLen);
++	void	Detach(SPunchSession *pSession);
++
++	const SPunchTransportStats& GetStats() const	{ return m_stats; }
++	size_t	GetSessionCount() const					{ return m_listSessions.size(); }
++
++private:
++	void	LoadBenchPeers();
++	void	SendRaw(uint32 dwIP, uint16 nPort, BYTE byType, const BYTE *pData, size_t nLen);
++	void	RaiseEvents();
++	SPunchSession* NewSession(UTPSocket *pUtp, uint32 dwIP, uint16 nPort, bool bIncoming);
++	void	DeleteSession(SPunchSession *pSession);
++
++	struct_utp_context	*m_pCtx;
++	CCriticalSection	m_cs;		// every libutp call, and the sessions
++	std::list<SPunchSession*> m_listSessions;
++	std::list<std::pair<SPunchSession*, DWORD>> m_listDead;	// ended, freed after PUNCH_DEAD_DELAY
++	std::map<uint32, uint16> m_mapAllowed;	// IP -> UDP port to reach it (PunchBenchPeers)
++	SPunchTransportStats m_stats;
++};
++
++class CPunchSocketLayer : public CAsyncSocketExLayer
++{
++public:
++	CPunchSocketLayer(uint32 dwIP, uint16 nPort);
++	virtual	~CPunchSocketLayer();
++
++	void	Accepted(SPunchSession *pSession);
++	void	RaiseEvent(long lEvent, int nErrorCode);
++	void	Orphan()								{ m_pSession = NULL; }
++	SPunchSession* GetSession() const				{ return m_pSession; }
++
++protected:
++	// Events of the socket handle under this layer: there is no connection on it, so there are none
++	// to pass on. The events of the uTP connection skip the layer (RaiseEvent).
++	virtual void OnAccept(int nErrorCode);
++	virtual void OnClose(int nErrorCode);
++	virtual void OnConnect(int nErrorCode);
++	virtual void OnReceive(int nErrorCode);
++	virtual void OnSend(int nErrorCode);
++
++	virtual void Close();
++	virtual BOOL Connect(const LPSOCKADDR lpSockAddr, int nSockAddrLen);
++	virtual bool Connect(const CString &sHostAddress, UINT nHostPort);
++	virtual BOOL GetPeerName(CString &rPeerAddress, UINT &rPeerPort);
++	virtual BOOL GetPeerName(LPSOCKADDR lpPeerAddr, int *lpPeerAddrLen);
++	virtual int Receive(void *lpBuf, int nBufLen, int nFlags = 0);
++	virtual int Send(const void *lpBuf, int nBufLen, int nFlags = 0);
++	virtual BOOL ShutDown(int nHow = CAsyncSocket::sends);
++
++private:
++	SPunchSession	*m_pSession;
++	uint32			m_dwIP;		// network order
++	uint16			m_nPort;	// host order
++};
+diff --git a/srchybrid/UploadQueue.cpp b/srchybrid/UploadQueue.cpp
+index 9fd4cad..d55c040 100644
+--- a/srchybrid/UploadQueue.cpp
++++ b/srchybrid/UploadQueue.cpp
+@@ -29,6 +29,7 @@
+ #include "DownloadQueue.h"
+ #include "FriendList.h"
+ #include "PunchRegistry.h"
++#include "PunchTransport.h"
+ #include "Statistics.h"
+ #include "UpDownClient.h"
+ #include "SharedFileList.h"
+@@ -933,6 +934,7 @@ VOID CALLBACK CUploadQueue::UploadTimer(HWND /*hwnd*/, UINT /*uMsg*/, UINT_PTR /
+ 
+ 		theApp.uploadqueue->Process();
+ 		theApp.downloadqueue->Process();
++		theApp.punchtransport->Process();
+ 		if (thePrefs.ShowOverhead()) {
+ 			theStats.CompUpDatarateOverhead();
+ 			theStats.CompDownDatarateOverhead();
+diff --git a/srchybrid/emule.vcxproj b/srchybrid/emule.vcxproj
+index 0ae8743..38f90d3 100644
+--- a/srchybrid/emule.vcxproj
++++ b/srchybrid/emule.vcxproj
+@@ -325,6 +325,7 @@
+     <ClCompile Include="ProgressCtrlX.cpp" />
+     <ClCompile Include="PShtWiz1.cpp" />
+     <ClCompile Include="PunchRegistry.cpp" />
++    <ClCompile Include="PunchTransport.cpp" />
+     <ClCompile Include="Quantize.cpp" />
+     <ClCompile Include="QueueListCtrl.cpp" />
+     <ClCompile Include="RARFile.cpp" />
+@@ -610,6 +611,7 @@
+     <ClInclude Include="PreviewDlg.h" />
+     <ClInclude Include="ProgressCtrlX.h" />
+     <ClInclude Include="PunchRegistry.h" />
++    <ClInclude Include="PunchTransport.h" />
+     <ClInclude Include="QArray.h" />
+     <ClInclude Include="Quantize.h" />
+     <ClInclude Include="QueueListCtrl.h" />
