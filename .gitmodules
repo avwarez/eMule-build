@@ -23,3 +23,7 @@
 	path = libplum
 	url = https://github.com/avwarez/libplum.git
 	branch = v0.6.0-emule
+[submodule "libutp"]
+	path = libutp
+	url = https://github.com/transmission/libutp.git
+	branch = post-3.4-transmission

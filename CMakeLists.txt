@@ -6,7 +6,7 @@ project(eMule VERSION 0.72 LANGUAGES CXX RC)
 # srchybrid/emule.vcxproj (MSVC + static MFC/ATL). It is Windows-only.
 #
 # All third-party dependencies (mbedtls, cryptopp, id3lib, zlib, libplum,
-# resizablelib) are vendored as vanilla git submodules - see each
+# libutp, resizablelib) are vendored as vanilla git submodules - see each
 # add_subdirectory() below and the corresponding *_build/CMakeLists.txt for
 # the ones with no CMake support of their own.
 # ---------------------------------------------------------------------------
@@ -307,6 +307,19 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "Every vendored library is built static" FO
 set(PLUM_NO_EXAMPLE ON CACHE BOOL "Don't build libplum's own example program" FORCE)
 add_subdirectory(libplum EXCLUDE_FROM_ALL)
 target_compile_options(plum-static PRIVATE $<$<C_COMPILER_ID:MSVC>:/W3>)
+
+# ---------------------------------------------------------------------------
+# libutp - vanilla git submodule (libutp/, transmission/libutp pinned to
+# 490874c on branch post-3.4-transmission: BitTorrent's uTP library, MIT
+# license, kept up by the Transmission project), the transport of the UDP hole
+# punching emule_build/89n* adds - LEDBAT congestion control over the one UDP
+# port eMule already has. Has its own CMakeLists.txt; as a subproject it builds
+# only the static library (no install rules, no ucat, no /WX) - LIBUTP_SHARED
+# follows BUILD_SHARED_LIBS, set OFF above. Upstream sets /W4 only when built
+# on its own: stated as /W3 here, as for zlib and libplum.
+# ---------------------------------------------------------------------------
+add_subdirectory(libutp EXCLUDE_FROM_ALL)
+target_compile_options(libutp PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/W3>)
 
 # ---------------------------------------------------------------------------
 # ResizableLib - git submodule (resizablelib/, avwarez/resizablelib pinned to

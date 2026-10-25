@@ -213,6 +213,7 @@ target_link_libraries(emule PRIVATE
     id3lib
     zlibstatic
     LibPlum::LibPlumStatic
+    libutp::libutp
     resizablelib
 )
 

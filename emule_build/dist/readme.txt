@@ -294,6 +294,9 @@ within our distribution. You need the following libs:
         https://github.com/paullouisageneau/libplum
         https://github.com/avwarez/libplum/tree/v0.6.0-emule
 
+*) libutp, Transmission's fork (MIT license, Copyright (c) 2010-2013 BitTorrent, Inc.)
+        https://github.com/transmission/libutp
+
 *) ResizableLib 1.5.3
         https://github.com/ppescher/resizablelib
 
