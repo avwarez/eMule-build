@@ -1,8 +1,27 @@
 diff --git a/srchybrid/PartFile.cpp b/srchybrid/PartFile.cpp
-index 15a6712..11e616e 100644
+index 15a6712..f233aab 100644
 --- a/srchybrid/PartFile.cpp
 +++ b/srchybrid/PartFile.cpp
-@@ -3334,6 +3334,7 @@ void CPartFile::ResumeFile(bool resort)
+@@ -2187,8 +2187,17 @@ uint32 CPartFile::Process(uint32 factor, UINT icounter)
+ 		FlushBuffer();
+ 	//If data keeps arriving, flush to disk sometimes for extra safety
+ 	if (m_nFileFlushTime && curTick >= m_nFileFlushTime + SEC2MS(31) && m_hWrite != INVALID_HANDLE_VALUE) {
+-		::FlushFileBuffers(m_hWrite);
+ 		m_nFileFlushTime = 0;
++		// 97q: a write the system took but could not put on the disk is reported here only, and only once;
++		// that data is lost by then, so the download is paused like for a failed write
++		if (!::FlushFileBuffers(m_hWrite)) {
++			DWORD dwError = ::GetLastError();
++			if (!dwError)
++				dwError = ERROR_WRITE_FAULT;
++			LogError(LOG_STATUSBAR, _T("Download disk I/O: flushing \"%s\" to disk failed, error %lu - data received since the last flush may be lost")
++				, (LPCTSTR)GetFileName(), dwError);
++			FlushBuffersExceptionHandler(new CFileException(CFileException::OsErrorToException((LONG)dwError), (LONG)dwError, m_hpartfile.GetFilePath()));
++		}
+ 	}
+ 
+ 	m_datarate = 0;
+@@ -3334,6 +3343,7 @@ void CPartFile::ResumeFile(bool resort)
  			ASSERT(0);
  	} else {
  		m_paused = m_stopped = false;
@@ -10,7 +29,7 @@ index 15a6712..11e616e 100644
  		SetActive(theApp.IsConnected());
  		m_LastSearchTime = 0;
  		if (resort) {
-@@ -3352,6 +3353,7 @@ void CPartFile::ResumeFileInsufficient()
+@@ -3352,6 +3362,7 @@ void CPartFile::ResumeFileInsufficient()
  	if (status != PS_COMPLETE && status != PS_COMPLETING && m_insufficient) {
  		AddLogLine(false, GetResString(IDS_DL_RESUMED), (LPCTSTR)GetFileName());
  		m_insufficient = false;
@@ -18,7 +37,7 @@ index 15a6712..11e616e 100644
  		SetActive(theApp.IsConnected());
  		m_LastSearchTime = 0;
  		UpdateDisplayedInfo(true);
-@@ -4074,6 +4076,10 @@ void CPartFile::FlushBuffer(bool bForceICH, bool bNoAICH)
+@@ -4074,6 +4085,10 @@ void CPartFile::FlushBuffer(bool bForceICH, bool bNoAICH)
  		}
  
  		//process data from the writing thread
@@ -29,7 +48,7 @@ index 15a6712..11e616e 100644
  		for (POSITION pos = m_BufferedData_list.GetHeadPosition(); pos != NULL;) {
  			POSITION pos2 = pos;
  			PartFileBufferedData *item = m_BufferedData_list.GetNext(pos);
-@@ -4085,12 +4091,16 @@ void CPartFile::FlushBuffer(bool bForceICH, bool bNoAICH)
+@@ -4085,12 +4100,16 @@ void CPartFile::FlushBuffer(bool bForceICH, bool bNoAICH)
  				continue;
  			case PB_ERROR:
  				item->flushed = PB_READY; //prepare for resend
@@ -47,7 +66,7 @@ index 15a6712..11e616e 100644
  
  		// Partfile should never be too large
  		if (m_hpartfile.GetLength() > m_nFileSize) {
-@@ -4234,6 +4244,71 @@ void CPartFile::FlushBuffer(bool bForceICH, bool bNoAICH)
+@@ -4234,6 +4253,71 @@ void CPartFile::FlushBuffer(bool bForceICH, bool bNoAICH)
  	}
  }
  
@@ -119,7 +138,7 @@ index 15a6712..11e616e 100644
  void CPartFile::FlushBuffersExceptionHandler(CFileException *ex)
  {
  	if (thePrefs.IsCheckDiskspaceEnabled() && ex->m_cause == CFileException::diskFull) {
-@@ -4260,15 +4335,25 @@ void CPartFile::FlushBuffersExceptionHandler(CFileException *ex)
+@@ -4260,15 +4344,25 @@ void CPartFile::FlushBuffersExceptionHandler(CFileException *ex)
  			// may be called during shutdown!
  			if (thePrefs.GetNotifierOnImportantError() && !theApp.IsClosing())
  				theApp.emuledlg->ShowNotifier(msg, TBN_IMPORTANTEVENT);
