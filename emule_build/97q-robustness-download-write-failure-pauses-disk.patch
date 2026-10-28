@@ -227,10 +227,10 @@ index e8d27d2..c9b1da0 100644
  	DWORD	m_random_update_wait;
  	UINT	m_anStates[STATES_COUNT];
 diff --git a/srchybrid/PartFileWriteThread.cpp b/srchybrid/PartFileWriteThread.cpp
-index 91e41d5..70ad64e 100644
+index 91e41d5..7a1d772 100644
 --- a/srchybrid/PartFileWriteThread.cpp
 +++ b/srchybrid/PartFileWriteThread.cpp
-@@ -32,6 +32,48 @@ static char THIS_FILE[] = __FILE__;
+@@ -32,6 +32,60 @@ static char THIS_FILE[] = __FILE__;
  #define RUN_WORK	2
  #define WAKEUP		((ULONG_PTR)(~0))
  
@@ -240,12 +240,17 @@ index 91e41d5..70ad64e 100644
 +// 97q: a periodic flush, see StartFlush()
 +struct FlushJob
 +{
++	explicit FlushJob(const CString &strFileName)
++		: hFile(INVALID_HANDLE_VALUE), strName(strFileName), dwStart(::GetTickCount()), dwError(0), bDone(false), nRefs(2)
++	{
++	}
++
 +	HANDLE	hFile;		// a duplicate of CPartFile::m_hWrite, closed by the job
 +	CString	strName;
 +	DWORD	dwStart;
-+	DWORD	dwError;
-+	bool	bDone;
-+	bool	bForgotten;	// the download is gone; the job deletes itself
++	DWORD	dwError;	// set before bDone
++	std::atomic<bool> bDone;
++	std::atomic<int> nRefs;	// the pool thread and the job list, so that the pool thread needs no lock
 +};
 +
 +static CCriticalSection s_lockHandle; // CPartFile::m_hWrite is closed by either thread and duplicated by the main thread
@@ -253,6 +258,13 @@ index 91e41d5..70ad64e 100644
 +static CMap<uint32, uint32, FlushJob*, FlushJob*> s_mapFlushJobs;
 +static uint32 s_uLastFlushJob;
 +static std::atomic<int> s_nFlushesRunning;
++static std::atomic<bool> s_bFlushesEnding; // the application is closing: theApp may be gone by the time a flush ends
++
++static void ReleaseFlushJob(FlushJob *pJob)
++{
++	if (--pJob->nRefs == 0)
++		delete pJob;
++}
 +
 +// 97q: GetQueuedCompletionStatus() also returns FALSE when the packet it hands over is a write
 +// that failed. That write is handed on with its error, so that the download it was for is told
@@ -279,13 +291,14 @@ index 91e41d5..70ad64e 100644
  IMPLEMENT_DYNCREATE(CPartFileWriteThread, CWinThread)
  
  CPartFileWriteThread::CPartFileWriteThread()
-@@ -60,6 +102,22 @@ void CPartFileWriteThread::EndThread()
+@@ -60,6 +114,20 @@ void CPartFileWriteThread::EndThread()
  	m_Run = RUN_STOP;
  	PostQueuedCompletionStatus(m_hPort, 0, 0, NULL);
  	m_eventThreadEnded.Lock();
 +
 +	// 97q: a periodic flush still running is given some time to end; one stuck on a disk that
 +	// does not answer is left to delete itself
++	s_bFlushesEnding = true;
 +	for (int i = 0; s_nFlushesRunning > 0 && i < 100; ++i)
 +		::Sleep(50);
 +	CSingleLock lock(&s_lockFlushJobs, TRUE);
@@ -293,16 +306,13 @@ index 91e41d5..70ad64e 100644
 +		uint32 uJob;
 +		FlushJob *pJob;
 +		s_mapFlushJobs.GetNextAssoc(pos, uJob, pJob);
-+		if (pJob->bDone)
-+			delete pJob;
-+		else
-+			pJob->bForgotten = true;
++		ReleaseFlushJob(pJob);
 +	}
 +	s_mapFlushJobs.RemoveAll();
  }
  
  UINT CPartFileWriteThread::RunInternal()
-@@ -69,11 +127,12 @@ UINT CPartFileWriteThread::RunInternal()
+@@ -69,11 +137,12 @@ UINT CPartFileWriteThread::RunInternal()
  		return ::GetLastError();
  
  	DWORD dwWrite = 0;
@@ -316,7 +326,7 @@ index 91e41d5..70ad64e 100644
  		&& completionKey)
  	{
  		m_Run = RUN_WORK;
-@@ -92,13 +151,14 @@ UINT CPartFileWriteThread::RunInternal()
+@@ -92,13 +161,14 @@ UINT CPartFileWriteThread::RunInternal()
  			if (!completionKey)
  				break;
  			if (completionKey != WAKEUP) //ignore wakeups
@@ -334,7 +344,7 @@ index 91e41d5..70ad64e 100644
  			PostQueuedCompletionStatus(m_hPort, 0, WAKEUP, NULL);
  	}
  	m_Run = RUN_STOP;
-@@ -106,7 +166,7 @@ UINT CPartFileWriteThread::RunInternal()
+@@ -106,7 +176,7 @@ UINT CPartFileWriteThread::RunInternal()
  	//Improper termination of asynchronous I/O follows...
  	//close file handles to release I/O completion port
  	while (!m_listPendingIO.IsEmpty())
@@ -343,7 +353,7 @@ index 91e41d5..70ad64e 100644
  
  	::CloseHandle(m_hPort);
  	m_hPort = 0;
-@@ -135,29 +195,45 @@ void CPartFileWriteThread::WriteBuffers()
+@@ -135,29 +205,45 @@ void CPartFileWriteThread::WriteBuffers()
  			pOvWrite->oOverlap.hEvent = 0;
  			pOvWrite->pFile = pFile;
  			pOvWrite->pBuffer = pBuffer;
@@ -398,7 +408,7 @@ index 91e41d5..70ad64e 100644
  {
  	if (pOvWrite == NULL) {
  		ASSERT(0);
-@@ -168,11 +244,20 @@ void CPartFileWriteThread::WriteCompletionRoutine(DWORD dwBytesWritten, const Ov
+@@ -168,11 +254,20 @@ void CPartFileWriteThread::WriteCompletionRoutine(DWORD dwBytesWritten, const Ov
  		PartFileBufferedData *pBuffer = pOvWrite->pBuffer;
  		const DWORD dwWrite = (DWORD)(pBuffer->end - pBuffer->start + 1);
  
@@ -420,7 +430,7 @@ index 91e41d5..70ad64e 100644
  				if (pBuffer->data) { //write data
  					ASSERT(pBuffer->flushed == PB_PENDING && pFile->m_iWrites >= 0);
  					pBuffer->flushed = PB_WRITTEN;
-@@ -186,8 +271,9 @@ void CPartFileWriteThread::WriteCompletionRoutine(DWORD dwBytesWritten, const Ov
+@@ -186,8 +281,9 @@ void CPartFileWriteThread::WriteCompletionRoutine(DWORD dwBytesWritten, const Ov
  				}
  			}
  		} else {
@@ -432,7 +442,7 @@ index 91e41d5..70ad64e 100644
  		}
  	} else if (pFile)
  		RemFile(pFile);
-@@ -201,15 +287,19 @@ bool CPartFileWriteThread::AddFile(CPartFile *pFile)
+@@ -201,15 +297,19 @@ bool CPartFileWriteThread::AddFile(CPartFile *pFile)
  	if (pFile && pFile->m_hWrite == INVALID_HANDLE_VALUE) {
  		const CString sPartFile(RemoveFileExtension(pFile->GetFullName()));
  		pFile->m_hWrite = ::CreateFile(sPartFile, GENERIC_WRITE, FILE_SHARE_WRITE | FILE_SHARE_READ | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, NULL);
@@ -456,7 +466,7 @@ index 91e41d5..70ad64e 100644
  			return false;
  		}
  	}
-@@ -219,16 +309,106 @@ bool CPartFileWriteThread::AddFile(CPartFile *pFile)
+@@ -219,16 +319,98 @@ bool CPartFileWriteThread::AddFile(CPartFile *pFile)
  void CPartFileWriteThread::RemFile(CPartFile *pFile)
  {
  	ASSERT(pFile);
@@ -473,7 +483,7 @@ index 91e41d5..70ad64e 100644
 +// the main thread takes its result later (see CPartFile::Process()). Returns 0 if nothing was started.
 +uint32 CPartFileWriteThread::StartFlush(CPartFile *pFile)
 +{
-+	FlushJob *pJob = new FlushJob{INVALID_HANDLE_VALUE, pFile->GetFileName(), ::GetTickCount(), 0, false, false};
++	FlushJob *pJob = new FlushJob(pFile->GetFileName());
 +	s_lockHandle.Lock();
 +	const bool bDuplicated = pFile->m_hWrite != INVALID_HANDLE_VALUE
 +		&& ::DuplicateHandle(::GetCurrentProcess(), pFile->m_hWrite, ::GetCurrentProcess(), &pJob->hFile, 0, FALSE, DUPLICATE_SAME_ACCESS);
@@ -510,19 +520,14 @@ index 91e41d5..70ad64e 100644
 +	VERIFY(::CloseHandle(pJob->hFile));
 +
 +	const DWORD dwTook = ::GetTickCount() - pJob->dwStart;
-+	if (dwTook >= SLOW_WRITE_MS)
++	if (dwTook >= SLOW_WRITE_MS && !s_bFlushesEnding) //set before EndThread() waits, so it waits for this line
 +		theApp.QueueLogLineEx(LOG_WARNING, _T("Download disk I/O: flushing \"%s\" to disk took %lu ms - the disk is slow to answer")
 +			, (LPCTSTR)pJob->strName, dwTook);
 +
-+	s_lockFlushJobs.Lock();
-+	if (pJob->bForgotten)
-+		delete pJob;
-+	else {
-+		pJob->dwError = dwError;
-+		pJob->bDone = true;
-+	}
-+	s_lockFlushJobs.Unlock();
++	pJob->dwError = dwError;
++	pJob->bDone = true;
 +	--s_nFlushesRunning;
++	ReleaseFlushJob(pJob);
 +}
 +
 +// 97q: true once the flush is over, with its error; the job is gone after that
@@ -537,7 +542,7 @@ index 91e41d5..70ad64e 100644
 +		return false;
 +	dwError = pJob->dwError;
 +	s_mapFlushJobs.RemoveKey(uJob);
-+	delete pJob;
++	ReleaseFlushJob(pJob);
 +	return true;
 +}
 +
@@ -548,10 +553,7 @@ index 91e41d5..70ad64e 100644
 +	FlushJob *pJob;
 +	if (s_mapFlushJobs.Lookup(uJob, pJob)) {
 +		s_mapFlushJobs.RemoveKey(uJob);
-+		if (pJob->bDone)
-+			delete pJob;
-+		else
-+			pJob->bForgotten = true;
++		ReleaseFlushJob(pJob);
 +	}
 +}
 +
