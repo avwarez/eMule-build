@@ -227,7 +227,7 @@ index e8d27d2..c9b1da0 100644
  	DWORD	m_random_update_wait;
  	UINT	m_anStates[STATES_COUNT];
 diff --git a/srchybrid/PartFileWriteThread.cpp b/srchybrid/PartFileWriteThread.cpp
-index 91e41d5..24546a0 100644
+index 91e41d5..70ad64e 100644
 --- a/srchybrid/PartFileWriteThread.cpp
 +++ b/srchybrid/PartFileWriteThread.cpp
 @@ -32,6 +32,48 @@ static char THIS_FILE[] = __FILE__;
@@ -496,7 +496,7 @@ index 91e41d5..24546a0 100644
 +	return uJob;
 +}
 +
-+VOID CALLBACK CPartFileWriteThread::FlushProc(PTP_CALLBACK_INSTANCE pInstance, PVOID pParam)
++VOID CALLBACK CPartFileWriteThread::FlushProc(PTP_CALLBACK_INSTANCE pInstance, PVOID pParam) noexcept
 +{
 +	if (pInstance)
 +		::CallbackMayRunLong(pInstance); //a slow disk may keep this thread for long
@@ -566,7 +566,7 @@ index 91e41d5..24546a0 100644
  	else
  		m_bNewData.exchange(1);
 diff --git a/srchybrid/PartFileWriteThread.h b/srchybrid/PartFileWriteThread.h
-index d16a5b5..5fbd766 100644
+index d16a5b5..91740f2 100644
 --- a/srchybrid/PartFileWriteThread.h
 +++ b/srchybrid/PartFileWriteThread.h
 @@ -31,6 +31,7 @@ struct OverlappedWrite_Struct
@@ -597,7 +597,7 @@ index d16a5b5..5fbd766 100644
 -	void	WriteCompletionRoutine(DWORD dwBytesWritten, const OverlappedWrite_Struct *pOvWrite);
 +	static void	FailWrite(const ToWrite &item, DWORD dwError);
 +	void	WriteCompletionRoutine(DWORD dwBytesWritten, DWORD dwError, const OverlappedWrite_Struct *pOvWrite);
-+	static VOID CALLBACK FlushProc(PTP_CALLBACK_INSTANCE pInstance, PVOID pParam);
++	static VOID CALLBACK FlushProc(PTP_CALLBACK_INSTANCE pInstance, PVOID pParam) noexcept;
  
  	CList<ToWrite>	m_listToWrite;
  	CTypedPtrList<CPtrList, OverlappedWrite_Struct*>	m_listPendingIO;
