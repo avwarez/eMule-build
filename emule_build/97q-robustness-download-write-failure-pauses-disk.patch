@@ -227,7 +227,7 @@ index e8d27d2..c9b1da0 100644
  	DWORD	m_random_update_wait;
  	UINT	m_anStates[STATES_COUNT];
 diff --git a/srchybrid/PartFileWriteThread.cpp b/srchybrid/PartFileWriteThread.cpp
-index 91e41d5..ba0b808 100644
+index 91e41d5..24546a0 100644
 --- a/srchybrid/PartFileWriteThread.cpp
 +++ b/srchybrid/PartFileWriteThread.cpp
 @@ -32,6 +32,48 @@ static char THIS_FILE[] = __FILE__;
@@ -456,7 +456,7 @@ index 91e41d5..ba0b808 100644
  			return false;
  		}
  	}
-@@ -219,16 +309,105 @@ bool CPartFileWriteThread::AddFile(CPartFile *pFile)
+@@ -219,16 +309,106 @@ bool CPartFileWriteThread::AddFile(CPartFile *pFile)
  void CPartFileWriteThread::RemFile(CPartFile *pFile)
  {
  	ASSERT(pFile);
@@ -491,13 +491,15 @@ index 91e41d5..ba0b808 100644
 +	s_lockFlushJobs.Unlock();
 +
 +	++s_nFlushesRunning;
-+	if (!::QueueUserWorkItem(FlushProc, pJob, WT_EXECUTELONGFUNCTION))
-+		FlushProc(pJob); //no pool thread to be had: flush here, as before
++	if (!::TrySubmitThreadpoolCallback(FlushProc, pJob, NULL))
++		FlushProc(NULL, pJob); //no pool thread to be had: flush here, as before
 +	return uJob;
 +}
 +
-+DWORD WINAPI CPartFileWriteThread::FlushProc(LPVOID pParam)
++VOID CALLBACK CPartFileWriteThread::FlushProc(PTP_CALLBACK_INSTANCE pInstance, PVOID pParam)
 +{
++	if (pInstance)
++		::CallbackMayRunLong(pInstance); //a slow disk may keep this thread for long
 +	FlushJob *pJob = static_cast<FlushJob*>(pParam);
 +	DWORD dwError = 0;
 +	if (!::FlushFileBuffers(pJob->hFile)) {
@@ -521,7 +523,6 @@ index 91e41d5..ba0b808 100644
 +	}
 +	s_lockFlushJobs.Unlock();
 +	--s_nFlushesRunning;
-+	return 0;
 +}
 +
 +// 97q: true once the flush is over, with its error; the job is gone after that
@@ -565,7 +566,7 @@ index 91e41d5..ba0b808 100644
  	else
  		m_bNewData.exchange(1);
 diff --git a/srchybrid/PartFileWriteThread.h b/srchybrid/PartFileWriteThread.h
-index d16a5b5..4d572bb 100644
+index d16a5b5..5fbd766 100644
 --- a/srchybrid/PartFileWriteThread.h
 +++ b/srchybrid/PartFileWriteThread.h
 @@ -31,6 +31,7 @@ struct OverlappedWrite_Struct
@@ -596,7 +597,7 @@ index d16a5b5..4d572bb 100644
 -	void	WriteCompletionRoutine(DWORD dwBytesWritten, const OverlappedWrite_Struct *pOvWrite);
 +	static void	FailWrite(const ToWrite &item, DWORD dwError);
 +	void	WriteCompletionRoutine(DWORD dwBytesWritten, DWORD dwError, const OverlappedWrite_Struct *pOvWrite);
-+	static DWORD WINAPI FlushProc(LPVOID pParam);
++	static VOID CALLBACK FlushProc(PTP_CALLBACK_INSTANCE pInstance, PVOID pParam);
  
  	CList<ToWrite>	m_listToWrite;
  	CTypedPtrList<CPtrList, OverlappedWrite_Struct*>	m_listPendingIO;
