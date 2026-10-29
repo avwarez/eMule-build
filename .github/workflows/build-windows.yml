@@ -198,11 +198,33 @@ jobs:
         # and avwarez/libplum to the branch v0.6.0-emule -
         # fall back to any remote branch pointing at the same commit, and
         # only fall back further to the bare short SHA if neither exists.
+        #
+        # Before the versions, the changes from CHANGELOG.md. "What's new" is
+        # the entries added since this branch's previous release: the newest
+        # tag named <branch>-<timestamp>, the way the release step below names
+        # them. A release whose previous one had no CHANGELOG.md gets the full
+        # list only.
         run: |
           {
             echo "Automated build from commit ${{ github.sha }}."
             echo
-            echo "### Submodule versions"
+            ref="${{ github.ref_name }}"
+            ref="${ref//\//-}"
+            prev=$(git tag -l "$ref-[0-9]*" | sort | tail -1)
+            if [ -n "$prev" ] && git cat-file -e "$prev:CHANGELOG.md" 2>/dev/null; then
+              added=$(git diff -U0 "$prev" HEAD -- CHANGELOG.md | grep '^+- ' | cut -c2- || true)
+              if [ -n "$added" ]; then
+                echo "## What's new since $prev"
+                echo
+                echo "$added"
+                echo
+              fi
+            fi
+            echo "## Changes from eMule 0.72a"
+            echo
+            cat CHANGELOG.md
+            echo
+            echo "## Submodule versions"
             echo
             git submodule foreach --quiet '
               ref=$(git describe --tags --exact-match 2>/dev/null)

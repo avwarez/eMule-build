@@ -1,5 +1,5 @@
 diff --git a/srchybrid/UploadDiskIOThread.cpp b/srchybrid/UploadDiskIOThread.cpp
-index 5bfb746..bc29cc2 100644
+index 5bfb746..723f9f4 100644
 --- a/srchybrid/UploadDiskIOThread.cpp
 +++ b/srchybrid/UploadDiskIOThread.cpp
 @@ -24,6 +24,8 @@
@@ -11,7 +11,7 @@ index 5bfb746..bc29cc2 100644
  #include "safefile.h"
  #include "listensocket.h"
  #include "packets.h"
-@@ -45,6 +47,69 @@ static char THIS_FILE[] = __FILE__;
+@@ -45,6 +47,75 @@ static char THIS_FILE[] = __FILE__;
  #define RUN_WORK	2
  #define WAKEUP		((ULONG_PTR)(~0))
  
@@ -29,9 +29,15 @@ index 5bfb746..bc29cc2 100644
 +		return TRUE;
 +	const DWORD dwError = ::GetLastError();
 +	if (pCurIO != NULL) {
-+		theApp.QueueLogLineEx(LOG_ERROR, _T("Upload disk I/O: reading \"%s\" at %I64u-%I64u failed, error %lu: %s - the upload it was for is stopped, the others go on")
-+			, (LPCTSTR)pCurIO->pFile->GetFileName(), pCurIO->uStartOffset, pCurIO->uEndOffset, dwError, (LPCTSTR)GetErrorMessage(dwError, 1));
-+		ReportTroubledFile(pCurIO->pFile);
++		// a read that eMule cancelled itself, by closing the file under it (DissociateFile()), says nothing about the disk
++		if (dwError == ERROR_OPERATION_ABORTED || pCurIO->pFile->m_hRead == INVALID_HANDLE_VALUE)
++			theApp.QueueDebugLogLineEx(LOG_INFO, _T("Upload disk I/O: reading \"%s\" at %I64u-%I64u was cancelled, error %lu")
++				, (LPCTSTR)pCurIO->pFile->GetFileName(), pCurIO->uStartOffset, pCurIO->uEndOffset, dwError);
++		else {
++			theApp.QueueLogLineEx(LOG_ERROR, _T("Upload disk I/O: reading \"%s\" at %I64u-%I64u failed, error %lu: %s - the upload it was for is stopped, the others go on")
++				, (LPCTSTR)pCurIO->pFile->GetFileName(), pCurIO->uStartOffset, pCurIO->uEndOffset, dwError, (LPCTSTR)GetErrorMessage(dwError, 1));
++			ReportTroubledFile(pCurIO->pFile);
++		}
 +		dwRead = 0;
 +		return TRUE;
 +	}
@@ -81,7 +87,7 @@ index 5bfb746..bc29cc2 100644
  IMPLEMENT_DYNCREATE(CUploadDiskIOThread, CWinThread)
  
  CUploadDiskIOThread::CUploadDiskIOThread()
-@@ -91,7 +156,7 @@ UINT CUploadDiskIOThread::RunInternal()
+@@ -91,7 +162,7 @@ UINT CUploadDiskIOThread::RunInternal()
  	OverlappedRead_Struct *pCurIO = NULL;
  	m_Run = RUN_IDLE;
  	while (m_Run
@@ -90,7 +96,7 @@ index 5bfb746..bc29cc2 100644
  			&& completionKey)
  	{
  		m_Run = RUN_WORK;
-@@ -110,7 +175,7 @@ UINT CUploadDiskIOThread::RunInternal()
+@@ -110,7 +181,7 @@ UINT CUploadDiskIOThread::RunInternal()
  				break;
  			if (completionKey != WAKEUP) //ignore wakeups
  				ReadCompletionRoutine(dwRead, pCurIO);
@@ -99,7 +105,7 @@ index 5bfb746..bc29cc2 100644
  
  		if (!completionKey) //thread termination
  			break;
-@@ -120,7 +185,8 @@ UINT CUploadDiskIOThread::RunInternal()
+@@ -120,7 +191,8 @@ UINT CUploadDiskIOThread::RunInternal()
  			theApp.uploadBandwidthThrottler->NewUploadDataAvailable();
  			m_bSignalThrottler = false;
  		}
@@ -109,7 +115,7 @@ index 5bfb746..bc29cc2 100644
  			PostQueuedCompletionStatus(m_hPort, 0, WAKEUP, NULL);
  	}
  	m_Run = RUN_STOP;
-@@ -238,6 +304,7 @@ void CUploadDiskIOThread::StartCreateNextBlockPackage(UploadingToClient_Struct *
+@@ -238,6 +310,7 @@ void CUploadDiskIOThread::StartCreateNextBlockPackage(UploadingToClient_Struct *
  			pOverlappedRead->uStartOffset = currentblock->StartOffset;
  			pOverlappedRead->uEndOffset = currentblock->EndOffset;
  			pOverlappedRead->pBuffer = new byte[(size_t)uTogo];
@@ -117,7 +123,7 @@ index 5bfb746..bc29cc2 100644
  
  			if (!::ReadFile(pFile->m_hRead, pOverlappedRead->pBuffer, (DWORD)uTogo, NULL, (LPOVERLAPPED)pOverlappedRead)) {
  				DWORD dwError = ::GetLastError();
-@@ -282,6 +349,13 @@ void CUploadDiskIOThread::ReadCompletionRoutine(DWORD dwRead, const OverlappedRe
+@@ -282,6 +355,13 @@ void CUploadDiskIOThread::ReadCompletionRoutine(DWORD dwRead, const OverlappedRe
  
  	CKnownFile *pKnownFile = pOvRead->pFile;
  	if (m_Run) {
@@ -131,7 +137,7 @@ index 5bfb746..bc29cc2 100644
  		m_listPendingIO.RemoveAt(pOvRead->pos);
  		bool bReadError = !dwRead;
  		if (bReadError)
-@@ -480,8 +554,9 @@ void CUploadDiskIOThread::CreatePackedPackets(const OverlappedRead_Struct &Overl
+@@ -480,8 +560,9 @@ void CUploadDiskIOThread::CreatePackedPackets(const OverlappedRead_Struct &Overl
  
  void CUploadDiskIOThread::WakeUpCall()
  {
