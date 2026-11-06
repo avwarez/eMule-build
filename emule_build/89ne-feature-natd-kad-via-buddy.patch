@@ -1,0 +1,1034 @@
+diff --git a/srchybrid/ClientUDPSocket.cpp b/srchybrid/ClientUDPSocket.cpp
+index ac8b79e..172864a 100644
+--- a/srchybrid/ClientUDPSocket.cpp
++++ b/srchybrid/ClientUDPSocket.cpp
+@@ -394,8 +394,9 @@ bool CClientUDPSocket::ProcessPacket(const BYTE *packet, UINT size, uint8 opcode
+ 				pRequester->SetDirectUDPCallbackSupport(false);
+ 				DEBUG_ONLY(DebugLog(_T("Accepting incoming DirectCallbackRequest from %s"), (LPCTSTR)pRequester->DbgGetClientInfo()));
+ 				// a LowID that asks for a punch too (89nc): towards the endpoint it sent from
++				uint8 byMarker;
+ 				uint64 nNonce;
+-				if (CNatTraversal::ReadMarker(data, nNonce))
++				if (CNatTraversal::ReadMarker(data, byMarker, nNonce) && byMarker == NATD_MARKER_PUNCH)
+ 					theApp.nattraversal->StartIncoming(ip, port, uchUserHash, nNonce);
+ 				pRequester->TryToConnect();
+ 			} else
+diff --git a/srchybrid/ListenSocket.cpp b/srchybrid/ListenSocket.cpp
+index 2e1c2eb..41fa6d6 100644
+--- a/srchybrid/ListenSocket.cpp
++++ b/srchybrid/ListenSocket.cpp
+@@ -1406,6 +1406,15 @@ void CClientReqSocket::ProcessExtPacket(const BYTE *packet, uint32 size, UINT op
+ 			data_in.ReadHash16(reqfilehash);
+ 			if (thePrefs.GetDebugClientTCPLevel() > 0)
+ 				DebugRecv("OP_ReaskCallbackTCP", client, reqfilehash);
++			// the natd marker: a punch request (89nc) or a relayed Kad packet (D1); nothing else
++			// of such a packet is for us
++			uint8 byMarker = 0;
++			uint64 nNonce = 0;
++			const bool bMarked = CNatTraversal::ReadMarker(data_in, byMarker, nNonce);
++			if (bMarked && byMarker == NATD_MARKER_MESSAGE) {
++				theApp.nattraversal->OnRelay(data_in, destip, destport);
++				return;
++			}
+ 			CKnownFile *reqfile = theApp.sharedfiles->GetFileByID(reqfilehash);
+ 
+ 			bool bSenderMultipleIpUnknown = false;
+@@ -1422,11 +1431,10 @@ void CClientReqSocket::ProcessExtPacket(const BYTE *packet, uint32 size, UINT op
+ 				return;
+ 			}
+ 
+-			// a LowID asks us to punch towards it (89nc): the endpoint is the one our buddy
+-			// saw the request come from, and nothing else of this packet is for us
+-			uint64 nNonce;
+-			if (CNatTraversal::ReadMarker(data_in, nNonce)) {
+-				if (theApp.IsFirewalled())
++			// a LowID asks us to punch towards it (89nc), towards the endpoint our buddy saw
++			// the request come from
++			if (bMarked) {
++				if (byMarker == NATD_MARKER_PUNCH && theApp.IsFirewalled())
+ 					theApp.nattraversal->StartIncoming(destip, destport, reqfilehash, nNonce);
+ 				return;
+ 			}
+diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
+index 0479d75..7812e5f 100644
+--- a/srchybrid/NatTraversal.cpp
++++ b/srchybrid/NatTraversal.cpp
+@@ -37,7 +37,15 @@
+ #include "Statistics.h"
+ #include "UpDownClient.h"
+ #include "Log.h"
++#include "kademlia/io/IOException.h"
+ #include "kademlia/kademlia/Kademlia.h"
++#include "kademlia/kademlia/Prefs.h"
++#include "kademlia/kademlia/UDPFirewallTester.h"
++#include "kademlia/net/KademliaUDPListener.h"
++#include "kademlia/routing/Contact.h"
++#include "kademlia/utils/KadUDPKey.h"
++#include "kademlia/utils/UInt128.h"
++#include "zlib/zlib.h"
+ #include "natd/natd.hpp"
+ #include "natd/winsock_io.hpp"
+ 
+@@ -54,6 +62,13 @@ static char THIS_FILE[] = __FILE__;
+ #define NATD_STREAM_KEEPALIVE	SEC2MS(20)
+ #define NATD_LINGER				((DWORD)SEC2MS(10))	// a stream closed by eMule, until its FIN is through
+ #define NATD_CHECK_REUSE		((DWORD)MIN2MS(1))	// an endpoint check stands this long: the STUN servers are someone else's
++#define D1_MAX_CONTACTS			500		// Kad contacts via buddy
++#define D1_MAX_ROUTES			256		// the way back to LowIDs whose Kad packets came through the relay
++#define D1_ROUTE_LIFETIME		((DWORD)MIN2MS(10))
++#define D1_UNVERIFIED_LIFETIME	((DWORD)MIN2MS(15))	// a contact learned from a KADEMLIA2_NATD_RES that never said hello
++#define D1_CHECK_AFTER			((DWORD)MIN2MS(55))	// a verified contact not heard from this long gets a hello
++#define D1_LIFETIME				((DWORD)MIN2MS(65))	// and goes, not heard from this long
++#define D1_RECHECK				((DWORD)MIN2MS(2))
+ 
+ namespace
+ {
+@@ -86,15 +101,57 @@ namespace
+ 		return natd::sessionTokenFrom(abyInput, sizeof abyInput);
+ 	}
+ 
+-	void WriteMarker(CSafeMemFile &data, uint64 nNonce)
++	void WriteMarker(CSafeMemFile &data, uint8 byType, uint64 nNonce)
+ 	{
+ 		static const BYTE s_abyMagic[4] = {'N', 'A', 'T', 'D'};
+ 		data.Write(s_abyMagic, sizeof s_abyMagic);
+ 		data.WriteUInt8(NATD_MARKER_VERSION);
+-		data.WriteUInt8(NATD_MARKER_PUNCH);
++		data.WriteUInt8(byType);
+ 		data.WriteUInt64(nNonce);
+ 	}
+ 
++	uint64 RandomUInt64()
++	{
++		return ((uint64)GetRandomUInt32() << 32) | GetRandomUInt32();
++	}
++
++	uint64 EndpointKey(uint32 uIP, uint16 nPort)
++	{
++		return ((uint64)uIP << 16) | nPort;
++	}
++
++	// The checks eMule makes on the address of a Kad contact (IsGoodIPPort, the IP filter),
++	// and on a buddy's address in a source record (banned clients). Host order IP.
++	bool KadAddressOk(uint32 uIP, uint16 nPort)
++	{
++		const uint32 dwNetIP = htonl(uIP);
++		return IsGoodIPPort(dwNetIP, nPort) && !theApp.ipfilter->IsFiltered(dwNetIP) && !theApp.clientlist->IsBannedClient(dwNetIP);
++	}
++
++	// A Kad contact reached through its buddy (D1). Host order IPs.
++	struct SViaBuddy
++	{
++		uint32	uIP;
++		uint16	uUDPPort;
++		uint16	uTCPPort;
++		uint8	uVersion;
++		uint32	uBuddyIP;
++		uint16	uBuddyPort;
++		bool	bVerified;		// it said hello
++		DWORD	dwAdded;
++		DWORD	dwHeard;
++		DWORD	dwChecked;		// last hello sent to it
++	};
++
++	// The way back to a LowID whose Kad packet came through the relay
++	struct SRoute
++	{
++		uint32	uBuddyIP;
++		uint16	uBuddyPort;
++		uchar	abyBuddyID[MDX_DIGEST_SIZE];
++		DWORD	dwSeen;
++	};
++
+ 	// The STUN servers, resolved off the main thread (getaddrinfo blocks). The thread owns a
+ 	// reference: it may still run when eMule closes, and then writes to nobody.
+ 	struct SStunList
+@@ -212,6 +269,14 @@ struct CNatTraversal::Impl
+ 	bool bCheckedOnce = false;
+ 	bool bCloseIfChanged = false;	// what the check is for: the buddy was lost
+ 
++	// D1, main thread only
++	std::map<Kademlia::CUInt128, SViaBuddy> kadContacts;
++	std::map<uint64, SRoute> kadRoutes;
++	std::deque<std::pair<uint32, DWORD>> kadRequests;	// IP, sent at
++	bool bKadFromRelay = false;
++	DWORD dwLastKadTimer = 0;
++	void KadTimer();
++
+ 	CCriticalSection cs;	// the sessions; Write() comes from the upload throttler thread too
+ 	std::map<uint32, std::unique_ptr<SSession>> sessions;
+ 	std::deque<uint32> waiting;	// sessions without a punch session yet, oldest first
+@@ -572,6 +637,287 @@ void CNatTraversal::Process()
+ 		impl.Deliver(id, from, pData, nLen, now, bUsed);
+ 	});
+ 	impl.Poll(now);
++	if (::GetTickCount() - impl.dwLastKadTimer >= (DWORD)MIN2MS(1)) {
++		impl.dwLastKadTimer = ::GetTickCount();
++		impl.KadTimer();
++	}
++}
++
++///////////////////////////////////////////////////////////////////////////////
++// D1
++
++// Once a minute, as CRoutingZone::OnSmallTimer for the routing bins: a hello to the contacts
++// due for one (at most one in ten of them), and away with those that did not answer.
++void CNatTraversal::Impl::KadTimer()
++{
++	if (!Kademlia::CKademlia::IsRunning()) {
++		kadContacts.clear();
++		kadRoutes.clear();
++		return;
++	}
++	const DWORD dwNow = ::GetTickCount();
++	for (std::map<uint64, SRoute>::iterator it = kadRoutes.begin(); it != kadRoutes.end();)
++		if (dwNow - it->second.dwSeen >= D1_ROUTE_LIFETIME)
++			it = kadRoutes.erase(it);
++		else
++			++it;
++	size_t nChecks = (std::max)((size_t)1, kadContacts.size() / 10);
++	for (std::map<Kademlia::CUInt128, SViaBuddy>::iterator it = kadContacts.begin(); it != kadContacts.end();) {
++		SViaBuddy &c = it->second;
++		if (c.bVerified ? dwNow - c.dwHeard >= D1_LIFETIME : dwNow - c.dwAdded >= D1_UNVERIFIED_LIFETIME) {
++			it = kadContacts.erase(it);
++			continue;
++		}
++		const bool bDue = c.bVerified ? (dwNow - c.dwHeard >= D1_CHECK_AFTER) : (c.dwChecked == 0);
++		if (bDue && nChecks > 0 && (c.dwChecked == 0 || dwNow - c.dwChecked >= D1_RECHECK)) {
++			--nChecks;
++			c.dwChecked = dwNow;
++			const Kademlia::CUInt128 uID(it->first);
++			Kademlia::CKademlia::GetUDPListener()->SendMyDetails(KADEMLIA2_HELLO_REQ, c.uIP, c.uUDPPort, c.uVersion, Kademlia::CKadUDPKey(), &uID, false);
++		}
++		++it;
++	}
++}
++
++void CNatTraversal::KadAddViaBuddy(const Kademlia::CUInt128 &uID, uint32 uIP, uint16 uUDPPort, uint16 uTCPPort, uint8 uVersion, uint32 uBuddyIP, uint16 uBuddyPort, bool bVerified)
++{
++	if (!Kademlia::CKademlia::IsRunning() || uID == Kademlia::CKademlia::GetPrefs()->GetKadID() || uVersion < KADEMLIA_VERSION6_49aBETA)
++		return;
++	// the same checks eMule makes on a contact's address, on the buddy's too: the packets go there
++	if (!KadAddressOk(uIP, uUDPPort) || !KadAddressOk(uBuddyIP, uBuddyPort))
++		return;
++	Impl &impl = *m_pImpl;
++	const DWORD dwNow = ::GetTickCount();
++	std::map<Kademlia::CUInt128, SViaBuddy>::iterator it = impl.kadContacts.find(uID);
++	if (it != impl.kadContacts.end()) {
++		// as CRoutingZone::Add: a contact is updated only by its own hello
++		if (!bVerified)
++			return;
++		SViaBuddy &c = it->second;
++		c.uIP = uIP;
++		c.uUDPPort = uUDPPort;
++		c.uTCPPort = uTCPPort;
++		c.uVersion = uVersion;
++		c.uBuddyIP = uBuddyIP;
++		c.uBuddyPort = uBuddyPort;
++		c.bVerified = true;
++		c.dwHeard = dwNow;
++		return;
++	}
++	if (impl.kadContacts.size() >= D1_MAX_CONTACTS)
++		return;
++	const SViaBuddy c = {uIP, uUDPPort, uTCPPort, uVersion, uBuddyIP, uBuddyPort, bVerified, dwNow, bVerified ? dwNow : 0, 0};
++	impl.kadContacts[uID] = c;
++}
++
++void CNatTraversal::KadRemoveViaBuddy(const Kademlia::CUInt128 &uID)
++{
++	m_pImpl->kadContacts.erase(uID);
++}
++
++bool CNatTraversal::KadIsViaBuddy(uint32 uIP, uint16 uUDPPort) const
++{
++	for (std::map<Kademlia::CUInt128, SViaBuddy>::const_iterator it = m_pImpl->kadContacts.begin(); it != m_pImpl->kadContacts.end(); ++it)
++		if (it->second.uIP == uIP && it->second.uUDPPort == uUDPPort)
++			return true;
++	return false;
++}
++
++void CNatTraversal::KadGetClosest(const Kademlia::CUInt128 &uTarget, uint32 uMax, bool bOnlyVerified, std::vector<Kademlia::CContact*> &rResults) const
++{
++	std::map<Kademlia::CUInt128, std::map<Kademlia::CUInt128, SViaBuddy>::const_iterator> mapByDistance;
++	for (std::map<Kademlia::CUInt128, SViaBuddy>::const_iterator it = m_pImpl->kadContacts.begin(); it != m_pImpl->kadContacts.end(); ++it)
++		if (it->second.bVerified || !bOnlyVerified) {
++			Kademlia::CUInt128 uDistance(it->first);
++			uDistance.Xor(uTarget);
++			mapByDistance[uDistance] = it;
++		}
++	for (std::map<Kademlia::CUInt128, std::map<Kademlia::CUInt128, SViaBuddy>::const_iterator>::const_iterator it = mapByDistance.begin(); it != mapByDistance.end() && rResults.size() < uMax; ++it) {
++		const SViaBuddy &c = it->second->second;
++		Kademlia::CContact *pContact = new Kademlia::CContact(it->second->first, c.uIP, c.uUDPPort, c.uTCPPort, uTarget, c.uVersion, Kademlia::CKadUDPKey(), c.bVerified);
++		pContact->SetViaBuddy(c.uBuddyIP, c.uBuddyPort);
++		rResults.push_back(pContact);
++	}
++}
++
++// Only with an endpoint-independent mapping (the simple case): our answers then leave from the
++// port our hello came from, and whoever asked knows them by IP and port, as any Kad answer.
++bool CNatTraversal::KadGetMyBuddy(uint32 &dwBuddyIP, uint16 &nBuddyPort) const
++{
++	if (!m_pImpl->bPunchable || !Kademlia::CUDPFirewallTester::IsFirewalledUDP(true) || theApp.clientlist->GetBuddyStatus() != Connected)
++		return false;
++	const CUpDownClient *pBuddy = theApp.clientlist->GetBuddy();
++	if (pBuddy == NULL || pBuddy->GetIP() == 0 || pBuddy->GetUDPPort() == 0)
++		return false;
++	dwBuddyIP = pBuddy->GetIP();
++	nBuddyPort = pBuddy->GetUDPPort();
++	return true;
++}
++
++bool CNatTraversal::IsKadFromRelay() const
++{
++	return m_pImpl->bKadFromRelay;
++}
++
++void CNatTraversal::KadNoteRequest(uint32 uIP)
++{
++	std::deque<std::pair<uint32, DWORD>> &requests = m_pImpl->kadRequests;
++	const DWORD dwNow = ::GetTickCount();
++	while (!requests.empty() && (requests.size() >= 512 || dwNow - requests.front().second >= (DWORD)SEC2MS(180)))
++		requests.pop_front();
++	requests.emplace_back(uIP, dwNow);
++}
++
++bool CNatTraversal::KadTakeRequest(uint32 uIP)
++{
++	std::deque<std::pair<uint32, DWORD>> &requests = m_pImpl->kadRequests;
++	const DWORD dwNow = ::GetTickCount();
++	for (std::deque<std::pair<uint32, DWORD>>::iterator it = requests.begin(); it != requests.end(); ++it)
++		if (it->first == uIP && dwNow - it->second < (DWORD)SEC2MS(180)) {
++			requests.erase(it);
++			return true;
++		}
++	return false;
++}
++
++// The relay: OP_REASKCALLBACKUDP to the buddy, with the buddy ID it checks and a file hash it does
++// not read, then the marker, who sends and the way back to it (1: through its buddy, with the
++// buddy's IP, port and ID; 0: directly), and the Kad packet. The buddy forwards the rest as it is.
++bool CNatTraversal::KadRelay(Packet *pPacket, uint32 uIP, uint16 uUDPPort)
++{
++	Impl &impl = *m_pImpl;
++	uint32 uBuddyIP = 0;
++	uint16 uBuddyPort = 0;
++	uchar abyBuddyID[MDX_DIGEST_SIZE];
++	for (std::map<Kademlia::CUInt128, SViaBuddy>::const_iterator it = impl.kadContacts.begin(); it != impl.kadContacts.end(); ++it)
++		if (it->second.uIP == uIP && it->second.uUDPPort == uUDPPort) {
++			uBuddyIP = it->second.uBuddyIP;
++			uBuddyPort = it->second.uBuddyPort;
++			Kademlia::CUInt128 uBuddyID(true);
++			uBuddyID.Xor(it->first);
++			uBuddyID.ToByteArray(abyBuddyID);
++			break;
++		}
++	if (uBuddyIP == 0) {
++		const std::map<uint64, SRoute>::const_iterator it = impl.kadRoutes.find(EndpointKey(uIP, uUDPPort));
++		if (it == impl.kadRoutes.end())
++			return false;
++		uBuddyIP = it->second.uBuddyIP;
++		uBuddyPort = it->second.uBuddyPort;
++		md4cpy(abyBuddyID, it->second.abyBuddyID);
++	}
++
++	CSafeMemFile data(128 + pPacket->size);
++	static const uchar s_abyNoFile[MDX_DIGEST_SIZE] = {};
++	data.WriteHash16(abyBuddyID);
++	data.WriteHash16(s_abyNoFile);
++	WriteMarker(data, NATD_MARKER_MESSAGE, RandomUInt64());
++	data.WriteHash16(thePrefs.GetUserHash());
++	uint32 dwMyBuddyIP;
++	uint16 nMyBuddyPort;
++	if (KadGetMyBuddy(dwMyBuddyIP, nMyBuddyPort)) {
++		data.WriteUInt8(1);
++		data.WriteUInt32(dwMyBuddyIP);
++		data.WriteUInt16(nMyBuddyPort);
++		Kademlia::CUInt128 uMyBuddyID(true);
++		uMyBuddyID.Xor(Kademlia::CKademlia::GetPrefs()->GetKadID());
++		uchar abyMyBuddyID[MDX_DIGEST_SIZE];
++		uMyBuddyID.ToByteArray(abyMyBuddyID);
++		data.WriteHash16(abyMyBuddyID);
++	} else {
++		data.WriteUInt8(0);
++		data.WriteUInt16(thePrefs.GetPort());
++	}
++	data.WriteUInt8(pPacket->prot);
++	data.WriteUInt8(pPacket->opcode);
++	if (pPacket->size > 0)
++		data.Write(pPacket->pBuffer, pPacket->size);
++	delete pPacket;
++
++	Packet *pRelay = new Packet(data, OP_EMULEPROT);
++	pRelay->opcode = OP_REASKCALLBACKUDP;
++	theStats.AddUpDataOverheadKad(pRelay->size);
++	theApp.clientudp->SendPacket(pRelay, htonl(uBuddyIP), uBuddyPort, false, NULL, false, 0);
++	return true;
++}
++
++// Whatever goes wrong in a relayed packet stays here: the buddy connection it came over is not
++// to blame for it.
++void CNatTraversal::OnRelay(CSafeMemFile &data, uint32 dwIP, uint16 nPort)
++{
++	CString strError;
++	try {
++		RelayToKad(data, dwIP, nPort);
++	} catch (CFileException *ex) {
++		ex->Delete();
++		strError = _T("Invalid packet received");
++	} catch (CMemoryException *ex) {
++		ex->Delete();
++		strError = _T("Memory exception");
++	} catch (const CString &ex) {
++		strError = ex;
++	} catch (Kademlia::CIOException *ex) {
++		ex->Delete();
++		strError = _T("Invalid packet received");
++	} catch (CException *ex) {
++		ex->Delete();
++		strError = _T("General packet error");
++	}
++	m_pImpl->bKadFromRelay = false;
++	if (thePrefs.GetVerbose() && !strError.IsEmpty())
++		DebugLogWarning(_T("NAT traversal: Kad packet relayed from %s:%u: %s"), (LPCTSTR)ipstr(dwIP), nPort, (LPCTSTR)strError);
++}
++
++void CNatTraversal::RelayToKad(CSafeMemFile &data, uint32 dwIP, uint16 nPort)
++{
++	Impl &impl = *m_pImpl;
++	if (!Kademlia::CKademlia::IsRunning())
++		return;
++	uchar abySender[MDX_DIGEST_SIZE];
++	data.ReadHash16(abySender);
++	if (md4equ(abySender, thePrefs.GetUserHash()))
++		return;
++	const uint32 uIP = ntohl(dwIP);
++	if (data.ReadUInt8() == 1) {
++		SRoute route;
++		route.uBuddyIP = ntohl(data.ReadUInt32());
++		route.uBuddyPort = data.ReadUInt16();
++		data.ReadHash16(route.abyBuddyID);
++		route.dwSeen = ::GetTickCount();
++		if (!KadAddressOk(route.uBuddyIP, route.uBuddyPort))
++			return;
++		if (impl.kadRoutes.size() < D1_MAX_ROUTES || impl.kadRoutes.find(EndpointKey(uIP, nPort)) != impl.kadRoutes.end())
++			impl.kadRoutes[EndpointKey(uIP, nPort)] = route;
++	} else
++		(void)data.ReadUInt16();
++
++	// the Kad packet, as CClientUDPSocket::OnReceive takes it; nothing else goes on the relay
++	const UINT nLen = (UINT)(data.GetLength() - data.GetPosition());
++	if (nLen < 2)
++		return;
++	std::vector<BYTE> packet(nLen);
++	data.Read(packet.data(), nLen);
++	if (packet[0] == OP_KADEMLIAPACKEDPROT) {
++		std::vector<BYTE> unpacked;
++		uLongf nUnpacked = 0;
++		int iResult = Z_BUF_ERROR;
++		for (uLongf nSize = nLen * 10 + 300; iResult == Z_BUF_ERROR && nSize < 250000; nSize *= 2) {
++			unpacked.resize(nSize + 2);
++			nUnpacked = nSize;
++			iResult = uncompress(&unpacked[2], &nUnpacked, &packet[2], nLen - 2);
++		}
++		if (iResult != Z_OK)
++			return;
++		unpacked[0] = OP_KADEMLIAHEADER;
++		unpacked[1] = packet[1];
++		unpacked.resize(nUnpacked + 2);
++		packet.swap(unpacked);
++	} else if (packet[0] != OP_KADEMLIAHEADER)
++		return;
++	theStats.AddDownDataOverheadKad((uint32)packet.size());
++	impl.bKadFromRelay = true;
++	Kademlia::CKademlia::ProcessPacket(packet.data(), (uint32)packet.size(), uIP, nPort, false, Kademlia::CKadUDPKey());
++	impl.bKadFromRelay = false;
+ }
+ 
+ bool CNatTraversal::IsPunchable() const
+@@ -625,7 +971,7 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
+ {
+ 	if (!CanPunchTo(client))
+ 		return false;
+-	const uint64 nNonce = ((uint64)GetRandomUInt32() << 32) | GetRandomUInt32();
++	const uint64 nNonce = RandomUInt64();
+ 	natd::TxId token;
+ 	CSafeMemFile data(64);
+ 	if (client.HasValidBuddyID() && client.GetBuddyIP() != 0 && client.GetBuddyPort() != 0) {
+@@ -633,7 +979,7 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
+ 		const uchar *pFileHash = client.GetRequestFile()->GetFileHash();
+ 		data.WriteHash16(client.GetBuddyID());
+ 		data.WriteHash16(pFileHash);
+-		WriteMarker(data, nNonce);
++		WriteMarker(data, NATD_MARKER_PUNCH, nNonce);
+ 		token = TokenFrom(pFileHash, nNonce);
+ 		Packet *packet = new Packet(data, OP_EMULEPROT);
+ 		packet->opcode = OP_REASKCALLBACKUDP;
+@@ -646,7 +992,7 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
+ 		data.WriteUInt16(thePrefs.GetPort());
+ 		data.WriteHash16(thePrefs.GetUserHash());
+ 		data.WriteUInt8(GetMyConnectOptions(true, false));
+-		WriteMarker(data, nNonce);
++		WriteMarker(data, NATD_MARKER_PUNCH, nNonce);
+ 		token = TokenFrom(thePrefs.GetUserHash(), nNonce);
+ 		Packet *packet = new Packet(data, OP_EMULEPROT);
+ 		packet->opcode = OP_DIRECTCALLBACKREQ;
+@@ -659,17 +1005,18 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
+ 	return true;
+ }
+ 
+-bool CNatTraversal::ReadMarker(CSafeMemFile &data, uint64 &nNonce)
++bool CNatTraversal::ReadMarker(CSafeMemFile &data, uint8 &byType, uint64 &nNonce)
+ {
+ 	if (data.GetLength() - data.GetPosition() < NATD_MARKER_SIZE)
+ 		return false;
+ 	const ULONGLONG nPos = data.GetPosition();
+ 	BYTE abyMagic[4];
+ 	data.Read(abyMagic, sizeof abyMagic);
+-	if (memcmp(abyMagic, "NATD", 4) != 0 || data.ReadUInt8() != NATD_MARKER_VERSION || data.ReadUInt8() != NATD_MARKER_PUNCH) {
++	if (memcmp(abyMagic, "NATD", 4) != 0 || data.ReadUInt8() != NATD_MARKER_VERSION) {
+ 		data.Seek((LONGLONG)nPos, CFile::begin);	// not ours: the rest of the packet is read as before
+ 		return false;
+ 	}
++	byType = data.ReadUInt8();
+ 	nNonce = data.ReadUInt64();
+ 	return true;
+ }
+diff --git a/srchybrid/NatTraversal.h b/srchybrid/NatTraversal.h
+index 6e6b338..d64b358 100644
+--- a/srchybrid/NatTraversal.h
++++ b/srchybrid/NatTraversal.h
+@@ -16,6 +16,7 @@
+ //Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ #pragma once
+ #include <memory>
++#include <vector>
+ #include "AsyncSocketExLayer.h"
+ 
+ // UDP hole punching between two LowIDs, with natd (the natd submodule): NAT discovery on the
+@@ -39,11 +40,18 @@ class CClientReqSocket;
+ class CNatdSocketLayer;
+ class CSafeMemFile;
+ class CUpDownClient;
++class Packet;
++namespace Kademlia
++{
++	class CContact;
++	class CUInt128;
++}
+ 
+ // The natd marker, at the end of a callback request: "NATD", version, type, nonce.
+ #define NATD_MARKER_SIZE		14
+ #define NATD_MARKER_VERSION		1
+ #define NATD_MARKER_PUNCH		1
++#define NATD_MARKER_MESSAGE		2	// a Kad packet relayed by a buddy (D1)
+ 
+ class CNatTraversal
+ {
+@@ -79,11 +87,34 @@ public:
+ 	bool	AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &client);
+ 
+ 	// Source side: the marker at the current position of a callback request, if there is one.
+-	static bool ReadMarker(CSafeMemFile &data, uint64 &nNonce);
++	static bool ReadMarker(CSafeMemFile &data, uint8 &byType, uint64 &nNonce);
+ 	// A marked request arrived: punch towards the endpoint it came from (network order IP).
+ 	// The token comes from the 16 bytes both peers know (file or user hash) and the nonce.
+ 	void	StartIncoming(uint32 dwIP, uint16 nPort, const uchar *pKey16, uint64 nNonce);
+ 
++	// D1, the LowIDs in Kad through their buddies. A UDP firewalled LowID, punchable, with a buddy
++	// puts the buddy's IP and UDP port in its Kad hellos; the patched nodes keep it in a table of
++	// their own (the routing bins stay as they are) and reach it through the buddy, which
++	// forwards OP_REASKCALLBACKUDP to it as OP_REASKCALLBACKTCP. Kad IPs in host order.
++	void	KadAddViaBuddy(const Kademlia::CUInt128 &uID, uint32 uIP, uint16 uUDPPort, uint16 uTCPPort, uint8 uVersion, uint32 uBuddyIP, uint16 uBuddyPort, bool bVerified);
++	void	KadRemoveViaBuddy(const Kademlia::CUInt128 &uID);
++	bool	KadIsViaBuddy(uint32 uIP, uint16 uUDPPort) const;
++	// The closest contacts via buddy, new objects the caller owns.
++	void	KadGetClosest(const Kademlia::CUInt128 &uTarget, uint32 uMax, bool bOnlyVerified, std::vector<Kademlia::CContact*> &rResults) const;
++	// What our hellos carry: our buddy's IP (network order) and UDP port, when D1 applies to us.
++	bool	KadGetMyBuddy(uint32 &dwBuddyIP, uint16 &nBuddyPort) const;
++	// CKademliaUDPListener::SendPacket: a packet to a contact via buddy, or an answer to one that
++	// came through the relay, goes through the buddy. True when it did (pPacket is then gone).
++	bool	KadRelay(Packet *pPacket, uint32 uIP, uint16 uUDPPort);
++	// A relayed Kad packet, the data positioned after the marker; dwIP in network order.
++	void	OnRelay(CSafeMemFile &data, uint32 dwIP, uint16 nPort);
++	// Kad is processing a packet that came through our buddy
++	bool	IsKadFromRelay() const;
++	// A KADEMLIA2_REQ asking for contacts via buddy went to this IP; a KADEMLIA2_NATD_RES from it is
++	// then expected (once, within 3 minutes, as CPacketTracking does for the other answers)
++	void	KadNoteRequest(uint32 uIP);
++	bool	KadTakeRequest(uint32 uIP);
++
+ 	// CNatdSocketLayer; Write() also from the upload throttler thread
+ 	bool	Connect(CNatdSocketLayer *pLayer);
+ 	int		Write(uint32 nSession, const void *pBuf, int nLen);
+@@ -91,6 +122,8 @@ public:
+ 	void	Detach(uint32 nSession);
+ 
+ private:
++	void	RelayToKad(CSafeMemFile &data, uint32 dwIP, uint16 nPort);
++
+ 	struct Impl;
+ 	std::unique_ptr<Impl> m_pImpl;
+ };
+diff --git a/srchybrid/Opcodes.h b/srchybrid/Opcodes.h
+index 0de3554..c44221a 100644
+--- a/srchybrid/Opcodes.h
++++ b/srchybrid/Opcodes.h
+@@ -429,6 +429,8 @@
+ #define TAG_SOURCETYPE			"\xFF"	// <uint8>
+ // A string name, unlike the eMule tags above: a mod with tags of its own uses one-byte names.
+ #define TAG_NATDCLIENT			"natd"	// <uint8> NAT traversal version; the source can be punched to
++#define TAG_NATDBUDDYIP			"natdbuddyip"	// <uint32> Kad hello of a LowID reached through its buddy (D1)
++#define TAG_NATDBUDDYPORT		"natdbuddyport"	// <uint16>
+ 
+ #define	TAGTYPE_NONE			0x00
+ #define	TAGTYPE_HASH			0x01
+@@ -632,12 +634,16 @@
+ #define KADEMLIA2_PONG					0x61	// (null)
+ 
+ #define KADEMLIA2_FIREWALLUDP			0x62	// <errorcode [1]><UDPPort_Used [2]>
++// D1: the contacts via buddy, after KADEMLIA2_RES, to a KADEMLIA2_REQ with KADEMLIA_REQ_VIA_BUDDY
++#define KADEMLIA2_NATD_RES				0xD5	// <HASH (target) [16]> <CNT [1]> (<HASH [16]> <IP [4]> <UDP [2]> <TCP [2]> <VER [1]> <BUDDY IP [4]> <BUDDY UDP [2]>)*CNT
+ 
+ // KADEMLIA (parameter)
+ #define KADEMLIA_FIND_VALUE				0x02
+ #define KADEMLIA_STORE					0x04
+ #define KADEMLIA_FIND_NODE				0x0B
+ #define KADEMLIA_FIND_VALUE_MORE		KADEMLIA_FIND_NODE
++// D1: in the type byte of KADEMLIA2_REQ, which eMule and aMule read as type & 0x1F
++#define KADEMLIA_REQ_VIA_BUDDY			0x80
+ 
+ // searchspam.met Tags
+ #define SP_FILEFULLNAME					0x01u
+diff --git a/srchybrid/kademlia/kademlia/Search.cpp b/srchybrid/kademlia/kademlia/Search.cpp
+index b972afc..5cad09f 100644
+--- a/srchybrid/kademlia/kademlia/Search.cpp
++++ b/srchybrid/kademlia/kademlia/Search.cpp
+@@ -184,6 +184,18 @@ void CSearch::Go()
+ 
+ 		ASSERT(m_mapPossible.size() == m_mapInUse.size());
+ 
++		// D1: the closest contacts via buddy too, owned by the search
++		std::vector<CContact*> viaBuddy;
++		theApp.nattraversal->KadGetClosest(m_uTarget, 10, false, viaBuddy);
++		for (std::vector<CContact*>::const_iterator it = viaBuddy.begin(); it != viaBuddy.end(); ++it) {
++			CUInt128 uDistance((*it)->GetClientID());
++			uDistance.Xor(m_uTarget);
++			if (m_mapPossible.insert(std::make_pair(uDistance, *it)).second)
++				m_listDelete.push_back(*it);
++			else
++				delete *it;
++		}
++
+ 		// Take top ALPHA_QUERY to start search with.
+ 		int iCount = (m_uType == NODE) ? 1 : min(ALPHA_QUERY, (int)m_mapPossible.size());
+ 
+@@ -384,6 +396,10 @@ void CSearch::ProcessResponse(uint32 uFromIP, uint16 uFromPort, const ContactArr
+ 		std::map<uint32, uint32> mapReceivedSubnets;
+ 		mapReceivedIPs[uFromIP] = 1; // A node is not allowed to answer with contacts to itself
+ 		mapReceivedSubnets[uFromIP & ~0xFF] = 1;
++		// D1: for a contact via buddy, the same rules apply to its buddy's address; its own IP may
++		// be a CGNAT's, which many LowIDs share. A buddy has one LowID, so its IP is unique too.
++		std::map<uint32, uint32> mapReceivedBuddyIPs;
++		std::map<uint32, uint32> mapReceivedBuddySubnets;
+ 		// Loop through their responses
+ 		for (ContactArray::const_iterator itContact = rlistResults.begin(); itContact != rlistResults.end(); ++itContact) {
+ 			// Get next result
+@@ -402,6 +418,14 @@ void CSearch::ProcessResponse(uint32 uFromIP, uint16 uFromPort, const ContactArr
+ 			// Ignore this contact if already know or tried it.
+ 			if (m_mapPossible.find(uDistance) != m_mapPossible.end() || m_mapTried.find(uDistance) != m_mapTried.end())
+ 				continue;
++			if (pContact->IsViaBuddy()) {
++				if (!mapReceivedBuddyIPs.insert(std::make_pair(pContact->GetBuddyIP(), 1u)).second)
++					continue;
++				uint32 &nInSubnet = mapReceivedBuddySubnets[pContact->GetBuddyIP() & ~0xFF];
++				if (nInSubnet >= 2)
++					continue;
++				++nInSubnet;
++			} else {
+ 			// we only accept unique IPs in the answer, having multiple IDs pointing to one IP in the routing tables
+ 			// is no longer allowed since 0.49a anyway
+ 			if (mapReceivedIPs.find(pContact->GetIPAddress()) != mapReceivedIPs.end()) {
+@@ -425,6 +449,7 @@ void CSearch::ProcessResponse(uint32 uFromIP, uint16 uFromPort, const ContactArr
+ 				}
+ 				++it->second;
+ 			}
++			}
+ 
+ 			// Add to possible
+ 			m_mapPossible[uDistance] = pContact;
+@@ -484,6 +509,9 @@ void CSearch::StorePacket()
+ 	// Make sure this is a valid Node to store too.
+ 	if (uFromDistance.Get32BitChunk(0) > SEARCHTOLERANCE && !IsLANIP(pFromContact->GetNetIP()))
+ 		return;
++	// D1: a contact via buddy is asked for sources and given source records, nothing else
++	if (pFromContact->IsViaBuddy() && m_uType != FILE && m_uType != STOREFILE)
++		return;
+ 	m_pLookupHistory->ContactAskedKeyword(pFromContact);
+ 	theApp.emuledlg->kademliawnd->UpdateSearchGraph(m_pLookupHistory);
+ 	// What kind of search are we doing?
+@@ -621,6 +649,13 @@ void CSearch::StorePacket()
+ 				PrepareToStop();
+ 				break;
+ 			}
++			// D1: the closest nodes eMule reaches get the record as they do today; a LowID via buddy
++			// gets it too when it is closer than the last of them
++			if (pFromContact->IsViaBuddy()) {
++				if (m_uStoresHigh >= SEARCHSTOREFILE_TOTAL)
++					break;
++			} else
++				++m_uStoresHigh;
+ 
+ 			// Find the file we are trying to store as a source too.
+ 			uchar ucharFileid[MDX_DIGEST_SIZE];
+@@ -1261,7 +1296,8 @@ void CSearch::SendFindValue(CContact *pContact, bool bReAskMore)
+ 			if (byContactCount <= 0)
+ 				return;
+ 
+-			fileIO.WriteUInt8(byContactCount);
++			// D1: asks a patched node for its contacts via buddy too (eMule reads the type & 0x1F)
++			fileIO.WriteUInt8(byContactCount | KADEMLIA_REQ_VIA_BUDDY);
+ 			// Put the target we want into the packet.
+ 			fileIO.WriteUInt128(m_uTarget);
+ 			// Add the ID of the contact we are contacting for sanity checks on the other end.
+@@ -1272,6 +1308,7 @@ void CSearch::SendFindValue(CContact *pContact, bool bReAskMore)
+ 			theApp.emuledlg->kademliawnd->searchList->SearchRef(this);
+ 
+ 			if (pContact->GetVersion() >= KADEMLIA_VERSION2_47a) {
++				theApp.nattraversal->KadNoteRequest(pContact->GetIPAddress());
+ 				m_pLookupHistory->ContactAskedKad(pContact);
+ 				theApp.emuledlg->kademliawnd->UpdateSearchGraph(m_pLookupHistory);
+ 				if (pContact->GetVersion() >= KADEMLIA_VERSION6_49aBETA) {
+diff --git a/srchybrid/kademlia/kademlia/Search.h b/srchybrid/kademlia/kademlia/Search.h
+index 1673d2d..61805a8 100644
+--- a/srchybrid/kademlia/kademlia/Search.h
++++ b/srchybrid/kademlia/kademlia/Search.h
+@@ -113,6 +113,7 @@ namespace Kademlia
+ 		ContactMap m_mapBest;
+ 		ContactMap m_mapInUse;
+ 		ContactArray m_listDelete;
++		uint32 m_uStoresHigh = 0;	// D1: source records stored on the nodes eMule reaches
+ 		CUInt128 m_uTarget;
+ 		CUInt128 m_uClosestDistantFound; // not used for the search itself, but for statistical data collecting
+ 		SSearchTerm *m_pSearchTerm; // cached from m_pucSearchTermsData, used for verifying results later on
+diff --git a/srchybrid/kademlia/kademlia/SearchManager.cpp b/srchybrid/kademlia/kademlia/SearchManager.cpp
+index e4ccd84..e77842b 100644
+--- a/srchybrid/kademlia/kademlia/SearchManager.cpp
++++ b/srchybrid/kademlia/kademlia/SearchManager.cpp
+@@ -443,6 +443,15 @@ void CSearchManager::ProcessResponse(const CUInt128 &uTarget, uint32 uFromIP, ui
+ 	}
+ }
+ 
++bool CSearchManager::TakesViaBuddyContacts(const CUInt128 &uTarget)
++{
++	SearchMap::const_iterator itSearchMap = m_mapSearches.find(uTarget);
++	if (itSearchMap == m_mapSearches.end() || itSearchMap->second == NULL)
++		return false;
++	const uint32 uType = itSearchMap->second->GetSearchType();
++	return uType != CSearch::NODE && uType != CSearch::NODEFWCHECKUDP;
++}
++
+ uint8 CSearchManager::GetExpectedResponseContactCount(const CUInt128 &uTarget)
+ {
+ 	SearchMap::const_iterator itSearchMap = m_mapSearches.find(uTarget);
+diff --git a/srchybrid/kademlia/kademlia/SearchManager.h b/srchybrid/kademlia/kademlia/SearchManager.h
+index 0367e86..dd4a474 100644
+--- a/srchybrid/kademlia/kademlia/SearchManager.h
++++ b/srchybrid/kademlia/kademlia/SearchManager.h
+@@ -56,6 +56,8 @@ namespace Kademlia
+ 		static bool StartSearch(CSearch *pSearch);
+ 		static void ProcessResponse(const CUInt128 &uTarget, uint32 uFromIP, uint16 uFromPort, ContactArray &rlistResults);
+ 		static uint8 GetExpectedResponseContactCount(const CUInt128 &uTarget);
++		// D1: a lookup that takes contacts via buddy (not one that only counts answers)
++		static bool TakesViaBuddyContacts(const CUInt128 &uTarget);
+ 		static void ProcessResult(const CUInt128 &uTarget, const CUInt128 &uAnswer, TagList &rlistInfo, uint32 uFromIP, uint16 uFromPort);
+ 		static void ProcessPublishResult(const CUInt128 &uTarget, const uint8 uLoad, const bool bLoadResponse);
+ 		static void GetWords(LPCWSTR sz, WordList &rlistWords);
+diff --git a/srchybrid/kademlia/net/KademliaUDPListener.cpp b/srchybrid/kademlia/net/KademliaUDPListener.cpp
+index 16528e4..a63556c 100644
+--- a/srchybrid/kademlia/net/KademliaUDPListener.cpp
++++ b/srchybrid/kademlia/net/KademliaUDPListener.cpp
+@@ -55,6 +55,7 @@ their client on the eMule forum.
+ #include "kademlia/routing/RoutingZone.h"
+ #include "kademlia/utils/KadUDPKey.h"
+ #include "kademlia/utils/KadClientSearcher.h"
++#include "NatTraversal.h"
+ 
+ #ifdef _DEBUG
+ #define new DEBUG_NEW
+@@ -118,6 +119,12 @@ void CKademliaUDPListener::SendMyDetails(byte byOpcode, uint32 uIP, uint16 uUDPP
+ 		{
+ 			++byTagCount;
+ 		}
++		// D1: UDP firewalled with a buddy, how to reach us through it
++		uint32 dwBuddyIP;
++		uint16 nBuddyPort;
++		const bool bViaBuddy = theApp.nattraversal->KadGetMyBuddy(dwBuddyIP, nBuddyPort);
++		if (bViaBuddy)
++			byTagCount += 2;
+ 		byteIOResponse.WriteUInt8(byTagCount);
+ 		if (!CKademlia::GetPrefs()->GetUseExternKadPort())
+ 			byteIOResponse.WriteTag(CKadTagUInt16(TAG_SOURCEUPORT, CKademlia::GetPrefs()->GetInternKadPort()));
+@@ -136,6 +143,10 @@ void CKademliaUDPListener::SendMyDetails(byte byOpcode, uint32 uIP, uint16 uUDPP
+ 			const uint8 byMiscOptions = (uRequestACK << 2) | (uTCPFirewalled << 1) | (uUDPFirewalled << 0);
+ 			byteIOResponse.WriteTag(CKadTagUInt8(TAG_KADMISCOPTIONS, byMiscOptions));
+ 		}
++		if (bViaBuddy) {
++			byteIOResponse.WriteTag(CKadTagUInt32(TAG_NATDBUDDYIP, dwBuddyIP));
++			byteIOResponse.WriteTag(CKadTagUInt16(TAG_NATDBUDDYPORT, nBuddyPort));
++		}
+ 		//byteIOResponse.WriteTag(&CKadTagUInt(TAG_USER_COUNT, CKademlia::GetPrefs()->GetKademliaUsers()));
+ 		//byteIOResponse.WriteTag(&CKadTagUInt(TAG_FILE_COUNT, CKademlia::GetPrefs()->GetKademliaFiles()));
+ 
+@@ -283,6 +294,11 @@ void CKademliaUDPListener::ProcessPacket(const byte *pbyData, uint32 uLenData, u
+ 			DebugRecv("KADEMLIA2_RES", uIP, uUDPPort);
+ 		Process_KADEMLIA2_RES(pbyPacketData, uLenData, uIP, uUDPPort, senderUDPKey);
+ 		break;
++	case KADEMLIA2_NATD_RES:
++		if (thePrefs.GetDebugClientKadUDPLevel() > 0)
++			DebugRecv("KADEMLIA2_NATD_RES", uIP, uUDPPort);
++		Process_KADEMLIA2_NATD_RES(pbyPacketData, uLenData, uIP, uUDPPort);
++		break;
+ 	case KADEMLIA2_SEARCH_NOTES_REQ:
+ 		if (thePrefs.GetDebugClientKadUDPLevel() > 0)
+ 			DebugRecv("KADEMLIA2_SEARCH_NOTES_REQ", uIP, uUDPPort);
+@@ -427,12 +443,21 @@ bool CKademliaUDPListener::AddContact_KADEMLIA2(const byte *pbyData, uint32 uLen
+ 	if (pnOutVersion != NULL)
+ 		*pnOutVersion = uVersion;
+ 
++	const uint16 uObservedUDPPort = uUDPPort;
++	uint32 dwBuddyIP = 0;	// D1
++	uint16 nBuddyPort = 0;
+ 	bool bUDPFirewalled = false;
+ 	bool bTCPFirewalled = false;
+ 	for (unsigned uTags = byteIO.ReadByte(); uTags > 0; --uTags) {
+ 		const CKadTag *pTag = byteIO.ReadTag();
+ 
+-		if (pTag->m_name == TAG_SOURCEUPORT) {
++		if (pTag->m_name == TAG_NATDBUDDYIP) {
++			if (pTag->IsInt())
++				dwBuddyIP = (uint32)pTag->GetInt();
++		} else if (pTag->m_name == TAG_NATDBUDDYPORT) {
++			if (pTag->IsInt())
++				nBuddyPort = (uint16)pTag->GetInt();
++		} else if (pTag->m_name == TAG_SOURCEUPORT) {
+ 			if (pTag->IsInt() && (uint16)pTag->GetInt() > 0)
+ 				uUDPPort = (uint16)pTag->GetInt();
+ 			else
+@@ -479,6 +504,13 @@ bool CKademliaUDPListener::AddContact_KADEMLIA2(const byte *pbyData, uint32 uLen
+ 	if (!bUDPFirewalled) // do not add (or update) UDP firewalled sources to our routing table
+ 		return CKademlia::GetRoutingZone()->Add(uID, uIP, uUDPPort, uTCPPort, uVersion, cUDPKey, rbIPVerified, bUpdate, false, true);
+ 
++	// D1: a LowID with a buddy goes in the table of the contacts via buddy, at the endpoint its
++	// hello came from (its mapping is endpoint-independent); one that lost its buddy goes out
++	if (dwBuddyIP != 0 && nBuddyPort != 0)
++		theApp.nattraversal->KadAddViaBuddy(uID, uIP, uObservedUDPPort, uTCPPort, uVersion, ntohl(dwBuddyIP), nBuddyPort, true);
++	else
++		theApp.nattraversal->KadRemoveViaBuddy(uID);
++
+ 	//DEBUG_ONLY( AddDebugLogLine(DLP_LOW, false, _T("Kad: Not adding firewalled client to routing table (%s)"), (LPCTSTR)ipstr(htonl(uIP))) );
+ 	return false;
+ }
+@@ -675,8 +707,8 @@ void CKademliaUDPListener::Process_KADEMLIA2_REQ(const byte *pbyPacketData, uint
+ {
+ 	// Get target and type
+ 	CSafeMemFile fileIO(pbyPacketData, uLenPacket);
+-	byte byType = fileIO.ReadUInt8();
+-	byType = byType & 0x1F;
++	const byte byRawType = fileIO.ReadUInt8();
++	byte byType = byRawType & 0x1F;
+ 	if (byType == 0) {
+ 		CString strError;
+ 		strError.Format(_T("***NOTE: Received wrong type (0x%02x) in %hs"), byType, __FUNCTION__);
+@@ -720,9 +752,92 @@ void CKademliaUDPListener::Process_KADEMLIA2_REQ(const byte *pbyPacketData, uint
+ 			DebugSendF("KADEMLIA2_RES", uIP, uUDPPort, _T("Count=%u"), uCount);
+ 
+ 		SendPacket(fileIO2, KADEMLIA2_RES, uIP, uUDPPort, senderUDPKey, NULL);
++
++		// D1: to a requester that asks for them, the closest contacts via buddy too
++		if (byRawType & KADEMLIA_REQ_VIA_BUDDY) {
++			std::vector<CContact*> viaBuddy;
++			theApp.nattraversal->KadGetClosest(uTarget, byType, true, viaBuddy);
++			if (!viaBuddy.empty()) {
++				CSafeMemFile fileIO3((UINT)(16 + 1 + 31 * viaBuddy.size()));
++				fileIO3.WriteUInt128(uTarget);
++				fileIO3.WriteUInt8(static_cast<uint8>(viaBuddy.size()));
++				for (std::vector<CContact*>::const_iterator it = viaBuddy.begin(); it != viaBuddy.end(); ++it) {
++					const CContact *pContact = *it;
++					fileIO3.WriteUInt128(pContact->GetClientID());
++					fileIO3.WriteUInt32(pContact->GetIPAddress());
++					fileIO3.WriteUInt16(pContact->GetUDPPort());
++					fileIO3.WriteUInt16(pContact->GetTCPPort());
++					fileIO3.WriteUInt8(pContact->GetVersion());
++					fileIO3.WriteUInt32(pContact->GetBuddyIP());
++					fileIO3.WriteUInt16(pContact->GetBuddyPort());
++					delete pContact;
++				}
++				if (thePrefs.GetDebugClientKadUDPLevel() > 0)
++					DebugSendF("KADEMLIA2_NATD_RES", uIP, uUDPPort, _T("Count=%u"), (unsigned)viaBuddy.size());
++				SendPacket(fileIO3, KADEMLIA2_NATD_RES, uIP, uUDPPort, senderUDPKey, NULL);
++			}
++		}
+ 	}
+ }
+ 
++// D1: the contacts via buddy a patched node knows, used as those of KADEMLIA2_RES, with the
++// checks eMule makes on a contact's address applied to the buddy's address too
++void CKademliaUDPListener::Process_KADEMLIA2_NATD_RES(const byte *pbyPacketData, uint32 uLenPacket, uint32 uIP, uint16 uUDPPort)
++{
++	// tracked apart: KADEMLIA2_RES, which comes first, takes the request off the track list
++	if (!theApp.nattraversal->KadTakeRequest(uIP)) {
++		CString strError;
++		strError.Format(_T("***NOTE: Received unrequested response packet, size (%u) in %hs"), uLenPacket, __FUNCTION__);
++		throw strError;
++	}
++	CSafeMemFile fileIO(pbyPacketData, uLenPacket);
++	CUInt128 uTarget;
++	fileIO.ReadUInt128(uTarget);
++	const uint8 uNumContacts = fileIO.ReadUInt8();
++	if (uLenPacket != (uint32)(16 + 1 + 31 * uNumContacts)) {
++		CString strError;
++		strError.Format(_T("***NOTE: Received wrong size (%u) packet in %hs"), uLenPacket, __FUNCTION__);
++		throw strError;
++	}
++	if (uNumContacts > CSearchManager::GetExpectedResponseContactCount(uTarget))
++		return;
++	ContactArray cResults;
++	try {
++		for (uint8 iIndex = 0; iIndex < uNumContacts; ++iIndex) {
++			CUInt128 uID;
++			fileIO.ReadUInt128(uID);
++			const uint32 uIPResult = fileIO.ReadUInt32();
++			const uint16 uUDPPortResult = fileIO.ReadUInt16();
++			const uint16 uTCPPortResult = fileIO.ReadUInt16();
++			const uint8 uVersion = fileIO.ReadUInt8();
++			const uint32 uBuddyIP = fileIO.ReadUInt32();
++			const uint16 uBuddyPort = fileIO.ReadUInt16();
++			if (uBuddyIP == 0 || uBuddyPort == 0 || uVersion < KADEMLIA_VERSION6_49aBETA)
++				continue;
++			const uint32 dwNetIP = htonl(uIPResult);
++			const uint32 dwNetBuddyIP = htonl(uBuddyIP);
++			if (!IsGoodIPPort(dwNetIP, uUDPPortResult) || theApp.ipfilter->IsFiltered(dwNetIP)
++				|| !IsGoodIPPort(dwNetBuddyIP, uBuddyPort) || theApp.ipfilter->IsFiltered(dwNetBuddyIP))
++			{
++				continue;
++			}
++			theApp.nattraversal->KadAddViaBuddy(uID, uIPResult, uUDPPortResult, uTCPPortResult, uVersion, uBuddyIP, uBuddyPort, false);
++			CContact *pContact = new CContact(uID, uIPResult, uUDPPortResult, uTCPPortResult, uTarget, uVersion, CKadUDPKey(), false);
++			pContact->SetViaBuddy(uBuddyIP, uBuddyPort);
++			cResults.push_back(pContact);
++		}
++	} catch (...) {
++		for (ContactArray::const_iterator itContact = cResults.begin(); itContact != cResults.end(); ++itContact)
++			delete *itContact;
++		throw;
++	}
++	if (CSearchManager::TakesViaBuddyContacts(uTarget))
++		CSearchManager::ProcessResponse(uTarget, uIP, uUDPPort, cResults);
++	else
++		for (ContactArray::const_iterator itContact = cResults.begin(); itContact != cResults.end(); ++itContact)
++			delete *itContact;
++}
++
+ // Used in Kad2.0 only
+ void CKademliaUDPListener::Process_KADEMLIA2_RES(const byte *pbyPacketData, uint32 uLenPacket, uint32 uIP, uint16 uUDPPort, const CKadUDPKey& /*senderUDPKey*/)
+ {
+@@ -1272,7 +1387,8 @@ void CKademliaUDPListener::Process_KADEMLIA2_PUBLISH_KEY_REQ(const byte *pbyPack
+ void CKademliaUDPListener::Process_KADEMLIA2_PUBLISH_SOURCE_REQ(const byte *pbyPacketData, uint32 uLenPacket, uint32 uIP, uint16 uUDPPort, const CKadUDPKey &senderUDPKey)
+ {
+ 	// check if we are UDP firewalled
+-	if (CUDPFirewallTester::IsFirewalledUDP(true))
++	// - D1: a request that came through our buddy can be answered the same way
++	if (CUDPFirewallTester::IsFirewalledUDP(true) && !theApp.nattraversal->IsKadFromRelay())
+ 		//We are firewalled. We should not index this entry and give publisher a false report.
+ 		return;
+ 
+@@ -1432,6 +1548,10 @@ void CKademliaUDPListener::Process_KADEMLIA2_PUBLISH_RES(const byte *pbyPacketDa
+ 	CUInt128 uFile;
+ 	fileIO.ReadUInt128(uFile);
+ 	uint8 uLoad = fileIO.ReadUInt8();
++	// D1: the copies on LowIDs come on top of those on the nodes eMule reaches, which alone
++	// count towards the totals of a publish
++	if (theApp.nattraversal->KadIsViaBuddy(uIP, uUDPPort))
++		return;
+ 	CSearchManager::ProcessPublishResult(uFile, uLoad, true);
+ 	if (fileIO.GetLength() > fileIO.GetPosition()) {
+ 		// for future use
+@@ -1875,6 +1995,8 @@ void CKademliaUDPListener::SendPacket(const byte *pbyData, uint32 uLenData, uint
+ 		pPacket->PackPacket();
+ 	theStats.AddUpDataOverheadKad(pPacket->size);
+ 	AddTrackedOutPacket(uDestinationHost, pbyData[1]);
++	if (theApp.nattraversal->KadRelay(pPacket, uDestinationHost, uDestinationPort))
++		return; // D1: through the contact's buddy
+ 	theApp.clientudp->SendPacket(pPacket, ntohl(uDestinationHost), uDestinationPort, true
+ 		, (uCryptTargetID != NULL) ? uCryptTargetID->GetData() : NULL
+ 		, true, targetUDPKey.GetKeyValue(theApp.GetPublicIP()));
+@@ -1891,6 +2013,8 @@ void CKademliaUDPListener::SendPacket(const byte *pbyData, uint32 uLenData, byte
+ 		pPacket->PackPacket();
+ 	theStats.AddUpDataOverheadKad(pPacket->size);
+ 	AddTrackedOutPacket(uDestinationHost, byOpcode);
++	if (theApp.nattraversal->KadRelay(pPacket, uDestinationHost, uDestinationPort))
++		return; // D1: through the contact's buddy
+ 	theApp.clientudp->SendPacket(pPacket, ntohl(uDestinationHost), uDestinationPort, true
+ 		, (uCryptTargetID != NULL) ? uCryptTargetID->GetData() : NULL
+ 		, true, targetUDPKey.GetKeyValue(theApp.GetPublicIP()));
+@@ -1904,6 +2028,8 @@ void CKademliaUDPListener::SendPacket(CSafeMemFile &pbyData, byte byOpcode, uint
+ 		pPacket->PackPacket();
+ 	theStats.AddUpDataOverheadKad(pPacket->size);
+ 	AddTrackedOutPacket(uDestinationHost, byOpcode);
++	if (theApp.nattraversal->KadRelay(pPacket, uDestinationHost, uDestinationPort))
++		return; // D1: through the contact's buddy
+ 	theApp.clientudp->SendPacket(pPacket, htonl(uDestinationHost), uDestinationPort, true
+ 		, (uCryptTargetID != NULL) ? uCryptTargetID->GetData() : NULL
+ 		, true, targetUDPKey.GetKeyValue(theApp.GetPublicIP()));
+diff --git a/srchybrid/kademlia/net/KademliaUDPListener.h b/srchybrid/kademlia/net/KademliaUDPListener.h
+index ff405f3..6f709de 100644
+--- a/srchybrid/kademlia/net/KademliaUDPListener.h
++++ b/srchybrid/kademlia/net/KademliaUDPListener.h
+@@ -78,6 +78,7 @@ namespace Kademlia
+ 		void Process_KADEMLIA2_HELLO_RES_ACK(const byte *pbyPacketData, uint32 uLenPacket, uint32 uIP, bool bValidReceiverKey);
+ 		void Process_KADEMLIA2_REQ(const byte *pbyPacketData, uint32 uLenPacket, uint32 uIP, uint16 uUDPPort, const CKadUDPKey &senderUDPKey);
+ 		void Process_KADEMLIA2_RES(const byte *pbyPacketData, uint32 uLenPacket, uint32 uIP, uint16 uUDPPort, const CKadUDPKey &senderUDPKey);
++		void Process_KADEMLIA2_NATD_RES(const byte *pbyPacketData, uint32 uLenPacket, uint32 uIP, uint16 uUDPPort);
+ 		static void Process_KADEMLIA2_SEARCH_KEY_REQ(const byte *pbyPacketData, uint32 uLenPacket, uint32 uIP, uint16 uUDPPort, const CKadUDPKey &senderUDPKey);
+ 		static void Process_KADEMLIA2_SEARCH_SOURCE_REQ(const byte *pbyPacketData, uint32 uLenPacket, uint32 uIP, uint16 uUDPPort, const CKadUDPKey &senderUDPKey);
+ 		static void Process_KADEMLIA_SEARCH_RES(const byte *pbyPacketData, uint32 uLenPacket, uint32 uIP, uint16 uUDPPort);
+diff --git a/srchybrid/kademlia/routing/Contact.cpp b/srchybrid/kademlia/routing/Contact.cpp
+index 7f2c7f1..357b5a7 100644
+--- a/srchybrid/kademlia/routing/Contact.cpp
++++ b/srchybrid/kademlia/routing/Contact.cpp
+@@ -136,6 +136,8 @@ void CContact::Copy(const CContact &fromContact)
+ 	m_bIPVerified = fromContact.m_bIPVerified;
+ 	m_bReceivedHelloPacket = fromContact.m_bReceivedHelloPacket;
+ 	m_bBootstrapContact = fromContact.m_bBootstrapContact;
++	m_uBuddyIp = fromContact.m_uBuddyIp;
++	m_uBuddyPort = fromContact.m_uBuddyPort;
+ }
+ 
+ void CContact::InitContact()
+diff --git a/srchybrid/kademlia/routing/Contact.h b/srchybrid/kademlia/routing/Contact.h
+index 8614d3f..5657786 100644
+--- a/srchybrid/kademlia/routing/Contact.h
++++ b/srchybrid/kademlia/routing/Contact.h
+@@ -97,6 +97,12 @@ namespace Kademlia
+ 		bool	IsBootstrapContact() const				{ return m_bBootstrapContact; }
+ 		void	SetBootstrapContact()					{ m_bBootstrapContact = true; }
+ 
++		// D1: a LowID reached through its buddy (host order IP); never in the routing bins
++		bool	IsViaBuddy() const						{ return m_uBuddyIp != 0; }
++		uint32	GetBuddyIP() const						{ return m_uBuddyIp; }
++		uint16	GetBuddyPort() const					{ return m_uBuddyPort; }
++		void	SetViaBuddy(uint32 uIp, uint16 uPort)	{ m_uBuddyIp = uIp; m_uBuddyPort = uPort; }
++
+ 	private:
+ 		void	InitContact(); // Common var initialization goes here
+ 		void	Copy(const CContact &fromContact);
+@@ -118,5 +124,7 @@ namespace Kademlia
+ 		bool	m_bIPVerified;
+ 		bool	m_bReceivedHelloPacket;
+ 		bool	m_bBootstrapContact;
++		uint32	m_uBuddyIp = 0;
++		uint16	m_uBuddyPort = 0;
+ 	};
+ }
+\ No newline at end of file

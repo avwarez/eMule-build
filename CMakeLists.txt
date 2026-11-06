@@ -106,7 +106,15 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          the buddy is lost, the client checks its public endpoint again
 #          (natd QuickCheck, at most once a minute), ends its streams if it
 #          changed with the buddy lost, and publishes its sources again when
-#          the endpoint changed, as it does when the buddy changes.
+#          the endpoint changed, as it does when the buddy changes. 89ne
+#          (D1) makes such a LowID a Kad node others can ask, through its
+#          buddy: its hellos carry the buddy's IP and port, patched nodes keep
+#          it in a table of their own (the routing bins stay as they are),
+#          send it Kad packets inside OP_REASKCALLBACKUDP, which the buddy
+#          forwards, and answer a KADEMLIA2_REQ marked with 0x80 in its type
+#          byte with KADEMLIA2_NATD_RES too; the buddy's address passes the
+#          checks eMule makes on a contact's. The LowID then indexes sources
+#          published to it that way, on top of the nodes eMule reaches.
 #   90-94  the code compiles but /Wall flags it; these bring the warning
 #          count back to zero.
 #   95-96  the code compiles and is warning-clean but is not correct on
