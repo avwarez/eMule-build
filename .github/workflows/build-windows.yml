@@ -56,15 +56,28 @@ jobs:
         # without complaint, so nothing else in the build cares.
         run: git config --global core.autocrlf false
 
+      - name: natd deploy key
+        # natd is a private repository. The NATD_DEPLOY_KEY secret holds the
+        # private half of a read-only deploy key of avwarez/natd: the natd
+        # submodule is then fetched over ssh with it (actions/checkout copies
+        # this global config into the one it uses). Without the secret the
+        # step does nothing and only the natd submodule fails to check out.
+        shell: bash
+        env:
+          NATD_DEPLOY_KEY: ${{ secrets.NATD_DEPLOY_KEY }}
+        run: |
+          [ -n "$NATD_DEPLOY_KEY" ] || exit 0
+          key="$RUNNER_TEMP/natd_deploy_key"
+          printf '%s\n' "$NATD_DEPLOY_KEY" > "$key"
+          chmod 600 "$key"
+          command -v cygpath >/dev/null && key=$(cygpath -m "$key")
+          git config --global url."git@github.com:avwarez/natd".insteadOf https://github.com/avwarez/natd
+          git config --global core.sshCommand "ssh -i '$key' -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+
       - name: Checkout (with submodules)
         uses: actions/checkout@v4
         with:
           submodules: recursive
-          # natd is a private repository: a token that can read it (a
-          # fine-grained one, Contents read-only on avwarez/natd) in the
-          # NATD_TOKEN secret. Without the secret the default token is used,
-          # and only the natd submodule fails to check out.
-          token: ${{ secrets.NATD_TOKEN || github.token }}
 
       - name: Report checkout line endings
         # Cheap forensics for the patch-application step below: if a patch
@@ -173,11 +186,28 @@ jobs:
       # to `clean: true`, which git-cleans the workspace before checking out -
       # that would delete the downloaded artifacts/release-assets if this ran
       # after them.
+      - name: natd deploy key
+        # natd is a private repository. The NATD_DEPLOY_KEY secret holds the
+        # private half of a read-only deploy key of avwarez/natd: the natd
+        # submodule is then fetched over ssh with it (actions/checkout copies
+        # this global config into the one it uses). Without the secret the
+        # step does nothing and only the natd submodule fails to check out.
+        shell: bash
+        env:
+          NATD_DEPLOY_KEY: ${{ secrets.NATD_DEPLOY_KEY }}
+        run: |
+          [ -n "$NATD_DEPLOY_KEY" ] || exit 0
+          key="$RUNNER_TEMP/natd_deploy_key"
+          printf '%s\n' "$NATD_DEPLOY_KEY" > "$key"
+          chmod 600 "$key"
+          command -v cygpath >/dev/null && key=$(cygpath -m "$key")
+          git config --global url."git@github.com:avwarez/natd".insteadOf https://github.com/avwarez/natd
+          git config --global core.sshCommand "ssh -i '$key' -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+
       - name: Checkout (with submodules, full history + tags)
         uses: actions/checkout@v4
         with:
           submodules: recursive
-          token: ${{ secrets.NATD_TOKEN || github.token }}   # natd, see the build job
           # fetch-depth: 0 alone only guarantees full history/tags for the
           # top-level repo. Submodule tags still need an explicit fetch below,
           # since actions/checkout's own submodule clone only fetches
