@@ -115,6 +115,11 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          byte with KADEMLIA2_NATD_RES too; the buddy's address passes the
 #          checks eMule makes on a contact's. The LowID then indexes sources
 #          published to it that way, on top of the nodes eMule reaches.
+#          89nf obfuscates the first leg to the buddy: the LowID gives its
+#          buddy's user hash (when the buddy takes obfuscated UDP) in its
+#          hellos, in KADEMLIA2_NATD_RES and in its source records, and the
+#          relay and the punch request go to the buddy obfuscated with it, as
+#          eMule's own UDP between two clients.
 #   90-94  the code compiles but /Wall flags it; these bring the warning
 #          count back to zero.
 #   95-96  the code compiles and is warning-clean but is not correct on
