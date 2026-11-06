@@ -95,7 +95,13 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          its NAT maps that port endpoint-independently. 89nb: a punchable
 #          LowID marks its Kad source records with a "natd" tag, and a
 #          punchable LowID keeps the LowID sources that carry it instead of
-#          dropping them as LowID->LowID.
+#          dropping them as LowID->LowID. 89nc: towards such a source the
+#          downloader asks for a punch, through the source's buddy
+#          (OP_REASKCALLBACKUDP, forwarded by any buddy with the endpoint it
+#          saw) or directly (OP_DIRECTCALLBACKREQ), with the natd marker at
+#          the end of the packet; both punch, and the eD2K stream runs over
+#          natd::Stream (KCP) on the client UDP port, under a
+#          CClientReqSocket given a CNatdSocketLayer instead of TCP.
 #   90-94  the code compiles but /Wall flags it; these bring the warning
 #          count back to zero.
 #   95-96  the code compiles and is warning-clean but is not correct on
