@@ -101,7 +101,12 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          saw) or directly (OP_DIRECTCALLBACKREQ), with the natd marker at
 #          the end of the packet; both punch, and the eD2K stream runs over
 #          natd::Stream (KCP) on the client UDP port, under a
-#          CClientReqSocket given a CNatdSocketLayer instead of TCP.
+#          CClientReqSocket given a CNatdSocketLayer instead of TCP. 89nd:
+#          a dead stream is a lost connection, as a TCP one; then, and when
+#          the buddy is lost, the client checks its public endpoint again
+#          (natd QuickCheck, at most once a minute), ends its streams if it
+#          changed with the buddy lost, and publishes its sources again when
+#          the endpoint changed, as it does when the buddy changes.
 #   90-94  the code compiles but /Wall flags it; these bring the warning
 #          count back to zero.
 #   95-96  the code compiles and is warning-clean but is not correct on

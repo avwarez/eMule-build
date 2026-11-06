@@ -1,0 +1,205 @@
+diff --git a/srchybrid/ClientList.cpp b/srchybrid/ClientList.cpp
+index 624708d..7fa8dff 100644
+--- a/srchybrid/ClientList.cpp
++++ b/srchybrid/ClientList.cpp
+@@ -37,6 +37,7 @@
+ #include "TransferDlg.h"
+ #include "serverwnd.h"
+ #include "Log.h"
++#include "NatTraversal.h"
+ #include "packets.h"
+ #include "Statistics.h"
+ 
+@@ -595,6 +596,8 @@ void CClientList::Process()
+ 				//Go ahead and instantly try to find a new buddy.
+ 				Kademlia::CKademlia::GetPrefs()->SetFindBuddy();
+ 			}
++			if (m_nBuddyStatus == Connected)
++				theApp.nattraversal->OnBuddyLost();
+ 			m_pBuddy = NULL;
+ 			m_nBuddyStatus = Disconnected;
+ 			theApp.emuledlg->serverwnd->UpdateMyInfo();
+diff --git a/srchybrid/KnownFile.cpp b/srchybrid/KnownFile.cpp
+index ea2b6b8..bc579b7 100644
+--- a/srchybrid/KnownFile.cpp
++++ b/srchybrid/KnownFile.cpp
+@@ -39,6 +39,7 @@
+ #include "SafeFile.h"
+ #include "shahashset.h"
+ #include "Log.h"
++#include "NatTraversal.h"
+ #include "MD4.h"
+ #include "Collection.h"
+ #include "emuledlg.h"
+@@ -1630,8 +1631,12 @@ bool CKnownFile::PublishSrc()
+ 		if (!buddy)
+ 			return false;
+ 		lastBuddyIP = buddy->GetIP();
+-		if (lastBuddyIP != m_lastBuddyIP) {
++		// the same for the other datum of the record a punch depends on: the public endpoint the
++		// index node sees (a new one, or the client just found punchable)
++		const uint64 nPunchEndpoint = theApp.nattraversal->GetPunchEndpoint();
++		if (lastBuddyIP != m_lastBuddyIP || (nPunchEndpoint != 0 && nPunchEndpoint != m_nLastPunchEndpoint)) {
+ 			SetLastPublishTimeKadSrc(tNow + KADEMLIAREPUBLISHTIMES, lastBuddyIP);
++			m_nLastPunchEndpoint = nPunchEndpoint;
+ 			return true;
+ 		}
+ 	} else
+diff --git a/srchybrid/KnownFile.h b/srchybrid/KnownFile.h
+index 0717ac5..785556f 100644
+--- a/srchybrid/KnownFile.h
++++ b/srchybrid/KnownFile.h
+@@ -176,6 +176,7 @@ private:
+ 	time_t	m_lastPublishTimeKadNotes;
+ 	uint32	kadFileSearchID;
+ 	uint32	m_lastBuddyIP;
++	uint64	m_nLastPunchEndpoint = 0;	// NAT traversal: the public endpoint the last source record carried
+ 	UINT	m_uMetaDataVer;
+ 	uint16	m_iPartCount;
+ 	uint16	m_iED2KPartCount;
+diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
+index 764a816..0479d75 100644
+--- a/srchybrid/NatTraversal.cpp
++++ b/srchybrid/NatTraversal.cpp
+@@ -53,6 +53,7 @@ static char THIS_FILE[] = __FILE__;
+ #define NATD_MAX_SESSIONS		64		// punches and streams
+ #define NATD_STREAM_KEEPALIVE	SEC2MS(20)
+ #define NATD_LINGER				((DWORD)SEC2MS(10))	// a stream closed by eMule, until its FIN is through
++#define NATD_CHECK_REUSE		((DWORD)MIN2MS(1))	// an endpoint check stands this long: the STUN servers are someone else's
+ 
+ namespace
+ {
+@@ -206,6 +207,10 @@ struct CNatTraversal::Impl
+ 	natd::NatProfile profile;
+ 	bool bProfileReady = false;
+ 	bool bPunchable = false;
++	std::unique_ptr<natd::QuickCheck> pCheck;	// the public endpoint checked again
++	DWORD dwLastCheck = 0;
++	bool bCheckedOnce = false;
++	bool bCloseIfChanged = false;	// what the check is for: the buddy was lost
+ 
+ 	CCriticalSection cs;	// the sessions; Write() comes from the upload throttler thread too
+ 	std::map<uint32, std::unique_ptr<SSession>> sessions;
+@@ -215,6 +220,8 @@ struct CNatTraversal::Impl
+ 	void Deliver(natd::SocketId id, const natd::Endpoint &from, const uint8_t *pData, size_t nLen, natd::TimePoint now, bool &bUsed);
+ 	void Poll(natd::TimePoint now);
+ 	void StartDiscovery(natd::TimePoint now);
++	void CheckEndpoint(bool bCloseIfChanged, natd::TimePoint now);
++	void PollCheck(natd::TimePoint now);
+ 	SSession* NewSession(bool bIncoming, const natd::Endpoint &remote, const natd::TxId &token);
+ 	void StartPunch(SSession &s, natd::TimePoint now);
+ 	void PollSessions(natd::TimePoint now);
+@@ -244,6 +251,8 @@ void CNatTraversal::Impl::Deliver(natd::SocketId id, const natd::Endpoint &from,
+ {
+ 	if (!bUsed && pDiscovery && pDiscovery->onDatagram(id, from, pData, nLen, now))
+ 		bUsed = true;
++	if (!bUsed && pCheck && pCheck->onDatagram(id, from, pData, nLen, now))
++		bUsed = true;
+ 	for (std::map<uint32, std::unique_ptr<SSession>>::const_iterator it = sessions.begin(); !bUsed && it != sessions.end(); ++it) {
+ 		SSession &s = *it->second;
+ 		if (s.pStream)
+@@ -269,10 +278,54 @@ void CNatTraversal::Impl::Poll(natd::TimePoint now)
+ 					, bPunchable ? _T("punchable") : _T("not punchable"));
+ 		}
+ 	}
++	PollCheck(now);
+ 	PollSessions(now);
+ 	RaiseEvents();
+ }
+ 
++// A check of the public endpoint, natd QuickCheck on the STUN servers: one at a time, and none
++// within a minute of the last one, whose result stands.
++void CNatTraversal::Impl::CheckEndpoint(bool bClose, natd::TimePoint now)
++{
++	if (!bProfileReady)
++		return;
++	bCloseIfChanged = bCloseIfChanged || bClose;
++	if (pCheck || (bCheckedOnce && ::GetTickCount() - dwLastCheck < NATD_CHECK_REUSE)) {
++		if (!pCheck)
++			bCloseIfChanged = false;	// the endpoint was found the same, or updated, a moment ago
++		return;
++	}
++	pCheck = std::make_unique<natd::QuickCheck>(discoveryConfig, profile, io);
++	pCheck->start(now);
++}
++
++void CNatTraversal::Impl::PollCheck(natd::TimePoint now)
++{
++	if (!pCheck)
++		return;
++	pCheck->poll(now);
++	const natd::QuickCheckResult result = pCheck->result();
++	if (result == natd::QuickCheckResult::Pending)
++		return;
++	const bool bChanged = result == natd::QuickCheckResult::Changed;
++	if (bChanged) {
++		const natd::Endpoint observed(pCheck->observed());
++		if (thePrefs.GetVerbose())
++			AddDebugLogLine(false, _T("NAT traversal: public endpoint changed from %s to %s"), (LPCTSTR)EndpointStr(profile.publicEndpoint), (LPCTSTR)EndpointStr(observed));
++		profile.publicEndpoint = observed;
++		// the streams cannot outlive the address: they end as the TCP connections of a
++		// client whose address changed
++		if (bCloseIfChanged)
++			for (std::map<uint32, std::unique_ptr<SSession>>::const_iterator it = sessions.begin(); it != sessions.end(); ++it)
++				if (it->second->pStream && !it->second->bOver)
++					Failed(*it->second, WSAECONNRESET);
++	}
++	pCheck.reset();
++	dwLastCheck = ::GetTickCount();
++	bCheckedOnce = true;
++	bCloseIfChanged = false;
++}
++
+ SSession* CNatTraversal::Impl::NewSession(bool bIncoming, const natd::Endpoint &remote, const natd::TxId &token)
+ {
+ 	if (sessions.size() >= NATD_MAX_SESSIONS)
+@@ -404,7 +457,10 @@ void CNatTraversal::Impl::PollSessions(natd::TimePoint now)
+ 				if (state == natd::StreamState::Dead) {
+ 					if (thePrefs.GetVerbose())
+ 						AddDebugLogLine(false, _T("NAT traversal: stream with %s dead"), (LPCTSTR)EndpointStr(s.remote));
++					// a lost connection, as a TCP one; our own endpoint may have changed (the CGNAT
++					// lost its mappings, a new address): checked, so that the next punch uses the right one
+ 					Failed(s, WSAECONNRESET);
++					CheckEndpoint(false, now);
+ 				} else if (state == natd::StreamState::Closed || s.pStream->peerClosed()) {
+ 					if (s.pLayer != NULL)
+ 						s.lPendingEvents |= FD_CLOSE;
+@@ -533,6 +589,21 @@ uint16 CNatTraversal::GetPublicPort() const
+ 	return m_pImpl->bProfileReady ? m_pImpl->profile.publicEndpoint.port : 0;
+ }
+ 
++uint64 CNatTraversal::GetPunchEndpoint() const
++{
++	if (!m_pImpl->bPunchable)
++		return 0;
++	const natd::Endpoint &ep = m_pImpl->profile.publicEndpoint;
++	return ((uint64)ep.ip << 16) | ep.port;
++}
++
++void CNatTraversal::OnBuddyLost()
++{
++	CSingleLock lock(&m_pImpl->cs, TRUE);
++	if (m_pImpl->bPunchable)
++		m_pImpl->CheckEndpoint(true, natd::Clock::now());
++}
++
+ // LowID->LowID (CemuleApp::CanDoCallback said no) between two clients that can be punched to,
+ // for a file we download from the source: the only case where a punch is tried.
+ bool CNatTraversal::CanPunchTo(const CUpDownClient &client) const
+diff --git a/srchybrid/NatTraversal.h b/srchybrid/NatTraversal.h
+index 7be4232..6e6b338 100644
+--- a/srchybrid/NatTraversal.h
++++ b/srchybrid/NatTraversal.h
+@@ -65,6 +65,12 @@ public:
+ 	// dwIP in network order.
+ 	uint32	GetPublicIP() const;
+ 	uint16	GetPublicPort() const;
++	// The public endpoint as one number while punchable, 0 otherwise: a source record carries
++	// it (the IP and UDP port the index node sees), so a change means publishing again.
++	uint64	GetPunchEndpoint() const;
++	// The TCP connection to the buddy broke: a new public address breaks it at once. The
++	// endpoint is checked; if it changed, the punched streams end as TCP connections do.
++	void	OnBuddyLost();
+ 
+ 	// Downloader side. True when TCP cannot reach the client (LowID->LowID) but a punch can.
+ 	bool	CanPunchTo(const CUpDownClient &client) const;
