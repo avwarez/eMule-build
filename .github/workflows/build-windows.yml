@@ -60,6 +60,11 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
+          # natd is a private repository: a token that can read it (a
+          # fine-grained one, Contents read-only on avwarez/natd) in the
+          # NATD_TOKEN secret. Without the secret the default token is used,
+          # and only the natd submodule fails to check out.
+          token: ${{ secrets.NATD_TOKEN || github.token }}
 
       - name: Report checkout line endings
         # Cheap forensics for the patch-application step below: if a patch
@@ -172,6 +177,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
+          token: ${{ secrets.NATD_TOKEN || github.token }}   # natd, see the build job
           # fetch-depth: 0 alone only guarantees full history/tags for the
           # top-level repo. Submodule tags still need an explicit fetch below,
           # since actions/checkout's own submodule clone only fetches

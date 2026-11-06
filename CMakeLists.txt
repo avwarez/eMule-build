@@ -6,7 +6,7 @@ project(eMule VERSION 0.72 LANGUAGES CXX RC)
 # srchybrid/emule.vcxproj (MSVC + static MFC/ATL). It is Windows-only.
 #
 # All third-party dependencies (mbedtls, cryptopp, id3lib, zlib, libplum,
-# resizablelib) are vendored as vanilla git submodules - see each
+# natd, resizablelib) are vendored as vanilla git submodules - see each
 # add_subdirectory() below and the corresponding *_build/CMakeLists.txt for
 # the ones with no CMake support of their own.
 # ---------------------------------------------------------------------------
@@ -293,6 +293,21 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "Every vendored library is built static" FO
 set(PLUM_NO_EXAMPLE ON CACHE BOOL "Don't build libplum's own example program" FORCE)
 add_subdirectory(libplum EXCLUDE_FROM_ALL)
 target_compile_options(plum-static PRIVATE $<$<C_COMPILER_ID:MSVC>:/W3>)
+
+# ---------------------------------------------------------------------------
+# natd - git submodule (natd/, avwarez/natd, a private repository: the CI
+# checkout reads it with the NATD_TOKEN secret), the NAT discovery and UDP
+# hole punching that emule_build/89n* add between two LowIDs: sans-I/O C++17,
+# no sockets or threads of its own (eMule moves the datagrams and the time),
+# with KCP (MIT, vendored in natd/third_party/kcp) as the stream over the
+# punched path. Has its own CMakeLists.txt; its examples and tests stay out.
+# Built at the standard eMule is built at, so that its headers mean the same
+# in its own translation units and in eMule's.
+# ---------------------------------------------------------------------------
+set(NATD_EXAMPLES OFF CACHE BOOL "Don't build natd's example tools" FORCE)
+set(NATD_TESTS OFF CACHE BOOL "Don't build natd's tests" FORCE)
+add_subdirectory(natd EXCLUDE_FROM_ALL)
+target_compile_features(natd PRIVATE cxx_std_23)
 
 # ---------------------------------------------------------------------------
 # ResizableLib - git submodule (resizablelib/, avwarez/resizablelib pinned to
