@@ -87,6 +87,12 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          PowerShare does to the debug log, and 89g keeps a PowerShare
 #          upload going past the session limit while no other PowerShare
 #          request or friend slot is waiting for the slot.
+#          89n* let two LowIDs reach each other through UDP hole punching,
+#          with natd (below) and nothing but Kad, the buddies and public STUN
+#          servers; nothing changes towards a client without them, nor
+#          between clients where TCP works. 89na runs natd's NAT discovery
+#          on the client UDP port at Kad start: the client is punchable when
+#          its NAT maps that port endpoint-independently.
 #   90-94  the code compiles but /Wall flags it; these bring the warning
 #          count back to zero.
 #   95-96  the code compiles and is warning-clean but is not correct on
