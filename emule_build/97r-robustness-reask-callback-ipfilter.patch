@@ -1,0 +1,24 @@
+diff --git a/srchybrid/ListenSocket.cpp b/srchybrid/ListenSocket.cpp
+index 15674a1..c485da8 100644
+--- a/srchybrid/ListenSocket.cpp
++++ b/srchybrid/ListenSocket.cpp
+@@ -1401,6 +1401,19 @@ void CClientReqSocket::ProcessExtPacket(const BYTE *packet, uint32 size, UINT op
+ 			CSafeMemFile data_in(packet, size);
+ 			uint32 destip = data_in.ReadUInt32();
+ 			uint16 destport = data_in.ReadUInt16();
++			// The requester's address, as our buddy saw it: the IP filter and the bans apply to it as
++			// to anything that reaches our UDP port (CClientUDPSocket::OnReceive). Without this, a
++			// filtered client got answers and its queue entry updated through the buddy.
++			if (theApp.ipfilter->IsFiltered(destip)) {
++				if (thePrefs.GetLogFilteredIPs())
++					AddDebugLogLine(false, _T("Reask through our buddy from filtered IP %s (%s) ignored"), (LPCTSTR)ipstr(destip), (LPCTSTR)theApp.ipfilter->GetLastHit());
++				return;
++			}
++			if (theApp.clientlist->IsBannedClient(destip)) {
++				if (thePrefs.GetLogBannedClients())
++					AddDebugLogLine(false, _T("Reask through our buddy from banned IP %s ignored"), (LPCTSTR)ipstr(destip));
++				return;
++			}
+ 			uchar reqfilehash[MDX_DIGEST_SIZE];
+ 			data_in.ReadHash16(reqfilehash);
+ 			if (thePrefs.GetDebugClientTCPLevel() > 0)
