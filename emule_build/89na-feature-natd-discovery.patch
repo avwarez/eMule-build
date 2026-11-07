@@ -1,5 +1,5 @@
 diff --git a/srchybrid/ClientUDPSocket.cpp b/srchybrid/ClientUDPSocket.cpp
-index 2688299..17a44a3 100644
+index 2688299..67e93ac 100644
 --- a/srchybrid/ClientUDPSocket.cpp
 +++ b/srchybrid/ClientUDPSocket.cpp
 @@ -30,6 +30,7 @@
@@ -10,16 +10,24 @@ index 2688299..17a44a3 100644
  #include "SafeFile.h"
  #include "kademlia/kademlia/Kademlia.h"
  #include "kademlia/io/IOException.h"
-@@ -75,6 +76,9 @@ void CClientUDPSocket::OnReceive(int nErrorCode)
+@@ -73,7 +74,16 @@ void CClientUDPSocket::OnReceive(int nErrorCode)
+ 	SOCKADDR_IN sockAddr = {};
+ 	int iSockAddrLen = sizeof sockAddr;
  	int nRealLen = ReceiveFrom(buffer, sizeof buffer, (LPSOCKADDR)&sockAddr, &iSockAddrLen);
- 	if (theApp.ipfilter->IsFiltered(sockAddr.sin_addr.s_addr) || theApp.clientlist->IsBannedClient(sockAddr.sin_addr.s_addr) || !sockAddr.sin_port)
- 		return;
+-	if (theApp.ipfilter->IsFiltered(sockAddr.sin_addr.s_addr) || theApp.clientlist->IsBannedClient(sockAddr.sin_addr.s_addr) || !sockAddr.sin_port)
++	// the answers of the STUN servers NAT traversal asks pass the IP filter (they are no peers),
++	// and nothing else from those addresses does
++	const bool bFiltered = theApp.ipfilter->IsFiltered(sockAddr.sin_addr.s_addr) || theApp.clientlist->IsBannedClient(sockAddr.sin_addr.s_addr);
++	const bool bStunServer = bFiltered && theApp.nattraversal != NULL && theApp.nattraversal->IsStunServer(sockAddr.sin_addr.s_addr, ntohs(sockAddr.sin_port));
++	if ((bFiltered && !bStunServer) || !sockAddr.sin_port)
++		return;
 +	// NAT traversal (STUN answers, punch and stream datagrams) never goes through the UDP obfuscation
 +	if (theApp.nattraversal != NULL && theApp.nattraversal->OnDatagram(buffer, nRealLen, sockAddr.sin_addr.s_addr, ntohs(sockAddr.sin_port)))
 +		return;
++	if (bFiltered)
+ 		return;
  
  	BYTE *pBuffer;
- 	uint32 nReceiverVerifyKey;
 diff --git a/srchybrid/Emule.cpp b/srchybrid/Emule.cpp
 index 01c8035..2c5c1a5 100644
 --- a/srchybrid/Emule.cpp
@@ -82,10 +90,10 @@ index fa40464..ba85fff 100644
  	delete theApp.serverlist;				theApp.serverlist = NULL;		// CServerList::SaveServermetToFile
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
 new file mode 100644
-index 0000000..183c287
+index 0000000..111059e
 --- /dev/null
 +++ b/srchybrid/NatTraversal.cpp
-@@ -0,0 +1,273 @@
+@@ -0,0 +1,290 @@
 +//this file is part of eMule
 +//Copyright (C)2002-2026 Merkur ( strEmail.Format("%s@%s", "devteam", "emule-project.net") / https://www.emule-project.net )
 +//
@@ -104,6 +112,7 @@ index 0000000..183c287
 +//Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 +#include "stdafx.h"
 +#include <mutex>
++#include <set>
 +#include <thread>
 +#include <vector>
 +#include "emule.h"
@@ -263,6 +272,7 @@ index 0000000..183c287
 +	CNatdIo io;
 +	std::shared_ptr<SStunList> pStun = std::make_shared<SStunList>();
 +	std::unique_ptr<natd::Agent> pAgent;
++	std::set<uint64> stunEndpoints;	// IP (host order) << 16 | port of the STUN servers natd asks
 +
 +	Impl()
 +	{
@@ -285,9 +295,17 @@ index 0000000..183c287
 +		servers = pStun->servers;
 +	}
 +	const size_t nServers = servers.size();
++	size_t nFiltered = 0;
++	for (const natd::StunEndpoint &sv : servers) {
++		stunEndpoints.insert(((uint64)sv.ep.ip << 16) | sv.ep.port);
++		if (sv.altPort != 0)
++			stunEndpoints.insert(((uint64)sv.ep.ip << 16) | sv.altPort);
++		nFiltered += theApp.ipfilter->IsFiltered(htonl(sv.ep.ip)) ? 1 : 0;
++	}
 +	pAgent->start(now, std::move(servers));	// each client its own order of the servers
 +	if (thePrefs.GetVerbose())
-+		AddDebugLogLine(false, _T("NAT traversal: discovery started on UDP port %u with %u STUN servers"), thePrefs.GetUDPPort(), (unsigned)nServers);
++		AddDebugLogLine(false, _T("NAT traversal: discovery started on UDP port %u with %u STUN servers (%u of them in the IP filter, their answers let through)")
++			, thePrefs.GetUDPPort(), (unsigned)nServers, (unsigned)nFiltered);
 +}
 +
 +void CNatTraversal::Impl::Poll(natd::TimePoint now)
@@ -319,6 +337,13 @@ index 0000000..183c287
 +}
 +
 +CNatTraversal::~CNatTraversal() = default;
++
++// The servers natd sends Binding requests to: their answers are no peer's traffic, and the IP
++// filter (which lists many hosting and cloud ranges, where public STUN servers run) lets them in.
++bool CNatTraversal::IsStunServer(uint32 dwIP, uint16 nPort) const
++{
++	return m_pImpl->stunEndpoints.count(((uint64)ntohl(dwIP) << 16) | nPort) != 0;
++}
 +
 +bool CNatTraversal::OnDatagram(const BYTE *pData, int nLen, uint32 dwIP, uint16 nPort)
 +{
@@ -361,10 +386,10 @@ index 0000000..183c287
 +}
 diff --git a/srchybrid/NatTraversal.h b/srchybrid/NatTraversal.h
 new file mode 100644
-index 0000000..c8e469e
+index 0000000..e4bf0cc
 --- /dev/null
 +++ b/srchybrid/NatTraversal.h
-@@ -0,0 +1,52 @@
+@@ -0,0 +1,54 @@
 +//this file is part of eMule
 +//Copyright (C)2002-2026 Merkur ( strEmail.Format("%s@%s", "devteam", "emule-project.net") / https://www.emule-project.net )
 +//
@@ -403,6 +428,8 @@ index 0000000..c8e469e
 +	// A datagram received on the client UDP socket, before eMule decrypts or parses it:
 +	// true when it was natd's or STUN (and is then done with). dwIP in network order.
 +	bool	OnDatagram(const BYTE *pData, int nLen, uint32 dwIP, uint16 nPort);
++	// one of the STUN servers natd asks (IP in network order): its answers pass the IP filter
++	bool	IsStunServer(uint32 dwIP, uint16 nPort) const;
 +	// every 100 ms, from the upload timer
 +	void	Process();
 +
