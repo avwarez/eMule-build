@@ -121,6 +121,11 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          hellos, in KADEMLIA2_NATD_RES and in its source records, and the
 #          relay and the punch request go to the buddy obfuscated with it, as
 #          eMule's own UDP between two clients.
+#          89ng keeps the mapping of the port such a LowID published in Kad:
+#          when nothing left the client UDP port for the mapping lifetime
+#          natd gives (natd::mappingLifetime: measured, else RFC 4787's 2
+#          minutes for an endpoint-independent mapping) less 10 s, a Kad
+#          ping to a random contact, as eMule's external port lookup sends.
 #   90-94  the code compiles but /Wall flags it; these bring the warning
 #          count back to zero.
 #   95-96  the code compiles and is warning-clean but is not correct on
