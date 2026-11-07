@@ -58,7 +58,7 @@ index 0717ac5..785556f 100644
  	uint16	m_iPartCount;
  	uint16	m_iED2KPartCount;
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
-index b7c57d3..9f0c496 100644
+index f1f3a3c..6342c96 100644
 --- a/srchybrid/NatTraversal.cpp
 +++ b/srchybrid/NatTraversal.cpp
 @@ -56,6 +56,7 @@ static char THIS_FILE[] = __FILE__;
@@ -69,7 +69,7 @@ index b7c57d3..9f0c496 100644
  
  namespace
  {
-@@ -355,6 +356,7 @@ struct CNatTraversal::Impl
+@@ -389,6 +390,7 @@ struct CNatTraversal::Impl
  		cfg.maxSessions = NATD_MAX_SESSIONS;
  		cfg.keepalive = natd::Duration(NATD_STREAM_KEEPALIVE);
  		cfg.linger = natd::Duration(NATD_LINGER);
@@ -77,21 +77,37 @@ index b7c57d3..9f0c496 100644
  		pAgent = std::make_unique<natd::Agent>(cfg, io, CNatdKcpTransport::Factory());
  	}
  	void StartDiscovery(natd::TimePoint now);
-@@ -400,6 +402,13 @@ void CNatTraversal::Impl::HandleEvents(natd::TimePoint now)
+@@ -437,6 +439,18 @@ void CNatTraversal::Impl::HandleEvents(natd::TimePoint now)
  			}
  			continue;
  		}
 +		if (e.type == natd::AgentEventType::EndpointChanged) {
 +			// natd ends the streams whose path is gone (AddressChanged, below); the sources are
 +			// published again with the new endpoint (CKnownFile::PublishSrc, GetPunchEndpoint)
++			AddLogLine(false, _T("NAT traversal: public endpoint changed to %s - downloads between LowIDs through UDP hole punching %s"), (LPCTSTR)EndpointStr(pAgent->publicEndpoint())
++				, pAgent->directPunchable() ? _T("still possible") : _T("not possible"));
++			continue;
++		}
++		if (e.type == natd::AgentEventType::EndpointChecked) {
 +			if (thePrefs.GetVerbose())
-+				AddDebugLogLine(false, _T("NAT traversal: public endpoint changed to %s"), (LPCTSTR)EndpointStr(pAgent->publicEndpoint()));
++				AddDebugLogLine(false, _T("NAT traversal: endpoint check: %hs, public endpoint %s"), natd::toString(pAgent->lastCheckResult()), (LPCTSTR)EndpointStr(pAgent->publicEndpoint()));
 +			continue;
 +		}
  		const std::map<natd::SessionId, SSession>::iterator it = sessions.find(e.session);
  		if (it == sessions.end()) {
  			if (e.session != 0)
-@@ -436,7 +445,9 @@ void CNatTraversal::Impl::HandleEvents(natd::TimePoint now)
+@@ -465,15 +479,18 @@ void CNatTraversal::Impl::HandleEvents(natd::TimePoint now)
+ 			break;
+ 		case natd::AgentEventType::Closed:
+ 			if (thePrefs.GetVerbose() && e.error != natd::SessionError::None)
+-				AddDebugLogLine(false, s.bConnected ? _T("NAT traversal: stream with %s ended: %hs") : _T("NAT traversal: punch towards %s failed: %hs")
+-					, (LPCTSTR)EndpointStr(pAgent->remote(e.session)), natd::toString(e.error));
++				AddDebugLogLine(false, s.bConnected ? _T("NAT traversal: stream with %s ended: %hs%s") : _T("NAT traversal: punch towards %s failed: %hs%s")
++					, (LPCTSTR)EndpointStr(pAgent->remote(e.session)), natd::toString(e.error)
++					, e.error == natd::SessionError::Reset ? _T(", checking the public endpoint") : _T(""));
+ 			if (s.pLayer == NULL) {
+ 				// an incoming punch that did not get through, or a socket already gone
+ 				pAgent->release(e.session, now);
  				sessions.erase(it);
  				break;
  			}
@@ -102,7 +118,7 @@ index b7c57d3..9f0c496 100644
  			s.bOver = true;
  			switch (e.error) {
  			case natd::SessionError::None:		s.nPendingError = 0; break;
-@@ -559,6 +570,22 @@ uint16 CNatTraversal::GetPublicPort() const
+@@ -612,6 +629,25 @@ uint16 CNatTraversal::GetPublicPort() const
  	return m_pImpl->pAgent->publicEndpoint().port;
  }
  
@@ -118,8 +134,11 @@ index b7c57d3..9f0c496 100644
 +void CNatTraversal::OnBuddyLost()
 +{
 +	CSingleLock lock(&m_pImpl->cs, TRUE);
-+	if (m_pImpl->pAgent->directPunchable())
++	if (m_pImpl->pAgent->directPunchable()) {
++		if (thePrefs.GetVerbose())
++			AddDebugLogLine(false, _T("NAT traversal: buddy lost, checking the public endpoint%s"), m_pImpl->pAgent->checking() ? _T(" (a check is on already)") : _T(""));
 +		m_pImpl->pAgent->checkEndpoint(natd::Clock::now(), true);
++	}
 +}
 +
  // LowID->LowID (CemuleApp::CanDoCallback said no) between two clients that can be punched to,

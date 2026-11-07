@@ -181,7 +181,7 @@ index 15674a1..2e1c2eb 100644
  				//Make sure we are still thinking about the same file
  				if (md4equ(reqfilehash, sender->GetUploadFileID())) {
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
-index b659474..b7c57d3 100644
+index 183c287..f1f3a3c 100644
 --- a/srchybrid/NatTraversal.cpp
 +++ b/srchybrid/NatTraversal.cpp
 @@ -15,18 +15,34 @@
@@ -285,7 +285,7 @@ index b659474..b7c57d3 100644
  	class CNatdIo final : public natd::IDatagramIo
  	{
  	public:
-@@ -127,30 +173,195 @@ namespace
+@@ -127,7 +173,7 @@ namespace
  				return m_extra.send(id, to, pData, nLen);
  			if (theApp.clientudp == NULL || theApp.clientudp->m_hSocket == INVALID_SOCKET || nLen > 8192)
  				return false;
@@ -294,7 +294,10 @@ index b659474..b7c57d3 100644
  			return ::sendto(theApp.clientudp->m_hSocket, reinterpret_cast<const char*>(pData), (int)nLen, 0
  				, reinterpret_cast<const sockaddr*>(&sa), (int)sizeof sa) == (int)nLen;
  		}
- 	};
+@@ -166,25 +212,192 @@ namespace
+ 		else
+ 			AddLogLine(false, _T("NAT traversal: NAT type not determined (%hs), public %s - no UDP hole punching"), natd::toString(profile.predictability), (LPCTSTR)strEndpoint);
+ 	}
 +
 +	// eMule's side of a natd::Agent session: the socket over it, and the events it is due
 +	struct SSession
@@ -481,10 +484,12 @@ index b659474..b7c57d3 100644
  	void HandleEvents(natd::TimePoint now);
 +	void Accept(natd::SessionId id, SSession &s, natd::TimePoint now);
 +	void RaiseEvents();
++	DWORD dwLastStats = 0;
++	void LogStats(LPCTSTR pszWhen) const;
  };
  
  void CNatTraversal::Impl::StartDiscovery(natd::TimePoint now)
-@@ -174,16 +385,117 @@ void CNatTraversal::Impl::Poll(natd::TimePoint now)
+@@ -208,18 +421,118 @@ void CNatTraversal::Impl::Poll(natd::TimePoint now)
  	HandleEvents(now);
  }
  
@@ -494,13 +499,15 @@ index b659474..b7c57d3 100644
  {
  	natd::AgentEvent e;
  	while (pAgent->nextEvent(e)) {
+-		if (e.type == natd::AgentEventType::ProfileReady)
++		if (e.type == natd::AgentEventType::ProfileReady) {
+ 			LogNatType(*pAgent);
 -		if (e.type == natd::AgentEventType::ProfileReady && thePrefs.GetVerbose()) {
 -			const natd::NatProfile &profile = pAgent->profile();
 -			AddDebugLogLine(false, _T("NAT traversal: %hs, mapping %hs, filtering %hs, public endpoint %s, %s")
 -				, natd::toString(profile.predictability), natd::toString(profile.details.mapping)
 -				, natd::toString(profile.details.filtering), (LPCTSTR)EndpointStr(profile.publicEndpoint)
 -				, pAgent->directPunchable() ? _T("punchable") : _T("not punchable"));
-+		if (e.type == natd::AgentEventType::ProfileReady) {
 +			if (thePrefs.GetVerbose()) {
 +				const natd::NatProfile &profile = pAgent->profile();
 +				AddDebugLogLine(false, _T("NAT traversal: %hs, mapping %hs, filtering %hs, public endpoint %s, %s")
@@ -609,11 +616,22 @@ index b659474..b7c57d3 100644
  		}
  	}
  }
-@@ -194,10 +506,20 @@ CNatTraversal::CNatTraversal()
+@@ -230,10 +543,31 @@ CNatTraversal::CNatTraversal()
  	std::thread(ResolveStunServers, m_pImpl->pStun).detach();
  }
  
 -CNatTraversal::~CNatTraversal() = default;
++// The natd counters, for an investigation: once an hour.
++void CNatTraversal::Impl::LogStats(LPCTSTR pszWhen) const
++{
++	if (!thePrefs.GetVerbose() || !pAgent->started())
++		return;
++	const natd::AgentStats &st = pAgent->stats();
++	AddDebugLogLine(false, _T("NAT traversal: counters (%s): punches started %I64u, queued %I64u, established %I64u, failed %I64u, refused %I64u; streams dead %I64u, ended for an address change %I64u; endpoint checks %I64u, reused %I64u, changes %I64u; sessions now %u")
++		, pszWhen, st.punchesStarted, st.punchesQueued, st.punchesEstablished, st.punchesFailed, st.punchesRefused
++		, st.streamsDead, st.streamsAddressChanged, st.endpointChecks, st.endpointChecksReused, st.endpointChanges, (unsigned)pAgent->sessionCount());
++}
++
 +CNatTraversal::~CNatTraversal()
 +{
 +	CSingleLock lock(&m_pImpl->cs, TRUE);
@@ -631,7 +649,7 @@ index b659474..b7c57d3 100644
  	if (nLen <= 0 || !m_pImpl->pAgent->mayBeOurs(pData, (size_t)nLen))
  		return false;
  	const natd::TimePoint now = natd::Clock::now();
-@@ -212,6 +534,7 @@ void CNatTraversal::Process()
+@@ -248,6 +582,7 @@ void CNatTraversal::Process()
  {
  	Impl &impl = *m_pImpl;
  	const natd::TimePoint now = natd::Clock::now();
@@ -639,7 +657,19 @@ index b659474..b7c57d3 100644
  	if (!impl.pAgent->started() && Kademlia::CKademlia::IsRunning() && theApp.clientudp != NULL && theApp.clientudp->m_hSocket != INVALID_SOCKET)
  		impl.StartDiscovery(now);
  	// the sockets natd opened itself: what arrived since the last call, without waiting
-@@ -235,3 +558,287 @@ uint16 CNatTraversal::GetPublicPort() const
+@@ -255,6 +590,11 @@ void CNatTraversal::Process()
+ 		impl.pAgent->onDatagram(id, from, pData, nLen, now);
+ 	});
+ 	impl.Poll(now);
++	if (impl.pAgent->started() && ::GetTickCount() - impl.dwLastStats >= (DWORD)HR2MS(1)) {
++		if (impl.dwLastStats != 0)
++			impl.LogStats(_T("last hour"));
++		impl.dwLastStats = ::GetTickCount();
++	}
+ }
+ 
+ bool CNatTraversal::IsPunchable() const
+@@ -271,3 +611,294 @@ uint16 CNatTraversal::GetPublicPort() const
  {
  	return m_pImpl->pAgent->publicEndpoint().port;
  }
@@ -718,15 +748,22 @@ index b659474..b7c57d3 100644
 +void CNatTraversal::StartIncoming(uint32 dwIP, uint16 nPort, const uchar *pKey16, uint64 nNonce)
 +{
 +	CSingleLock lock(&m_pImpl->cs, TRUE);
-+	if (!m_pImpl->pAgent->directPunchable() || dwIP == 0 || nPort == 0)
++	if (!m_pImpl->pAgent->directPunchable() || dwIP == 0 || nPort == 0) {
++		if (thePrefs.GetVerbose())
++			AddDebugLogLine(false, _T("NAT traversal: punch request from %s:%u not taken: %s"), (LPCTSTR)ipstr(dwIP), nPort
++				, m_pImpl->pAgent->directPunchable() ? _T("no endpoint to punch to") : _T("we cannot be punched to"));
 +		return;
++	}
 +	const natd::Endpoint remote{ntohl(dwIP), nPort};
 +	const natd::TxId token(TokenFrom(pKey16, nNonce));
 +	const natd::TimePoint now = natd::Clock::now();
 +	// 0 also for a request repeated while the punch it asked for is still on
 +	const natd::SessionId id = m_pImpl->pAgent->accept(remote, token, now);
-+	if (id == 0)
++	if (id == 0) {
++		if (thePrefs.GetVerbose())
++			AddDebugLogLine(false, _T("NAT traversal: punch request from %s not taken: a punch with it is on already, or the session limit is reached"), (LPCTSTR)EndpointStr(remote));
 +		return;
++	}
 +	SSession &s = m_pImpl->sessions[id];
 +	s.token = token;
 +	if (thePrefs.GetVerbose())

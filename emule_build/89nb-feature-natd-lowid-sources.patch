@@ -1,5 +1,5 @@
 diff --git a/srchybrid/DownloadQueue.cpp b/srchybrid/DownloadQueue.cpp
-index be32c82..518f2f2 100644
+index be32c82..8b01cf8 100644
 --- a/srchybrid/DownloadQueue.cpp
 +++ b/srchybrid/DownloadQueue.cpp
 @@ -23,6 +23,7 @@
@@ -19,17 +19,23 @@ index be32c82..518f2f2 100644
  {
  	//Safety measure to make sure we are looking for these sources
  	CPartFile *temp = GetFileByKadFileSearchID(nSearchID);
-@@ -1568,7 +1569,8 @@ void CDownloadQueue::KademliaSearchFile(uint32 nSearchID, const Kademlia::CUInt1
+@@ -1568,8 +1569,14 @@ void CDownloadQueue::KademliaSearchFile(uint32 nSearchID, const Kademlia::CUInt1
  	case 3:
  		//This will be a firewalled client connected to Kad only.
  		// if we are firewalled ourself, the source is useless to us
 -		if (theApp.IsFirewalled())
 +		// - unless both of us can be punched to (TAG_NATDCLIENT)
-+		if (theApp.IsFirewalled() && !(bNatd && theApp.nattraversal->IsPunchable()))
++		if (theApp.IsFirewalled() && !(bNatd && theApp.nattraversal->IsPunchable())) {
++			if (bNatd && thePrefs.GetVerbose())
++				AddDebugLogLine(false, _T("NAT traversal: LowID source %s for \"%s\" dropped: it can be punched to, we cannot"), (LPCTSTR)ipstr(ED2Kip), (LPCTSTR)temp->GetFileName());
  			break;
++		}
++		if (theApp.IsFirewalled() && thePrefs.GetVerbose())
++			AddDebugLogLine(false, _T("NAT traversal: LowID source %s for \"%s\" not dropped as LowID-to-LowID: both of us can be punched to"), (LPCTSTR)ipstr(ED2Kip), (LPCTSTR)temp->GetFileName());
  
  		if (theApp.ipfilter->IsFiltered(dwBuddyIP)) {
-@@ -1593,12 +1595,18 @@ void CDownloadQueue::KademliaSearchFile(uint32 nSearchID, const Kademlia::CUInt1
+ 			if (thePrefs.GetLogFilteredIPs())
+@@ -1593,13 +1600,24 @@ void CDownloadQueue::KademliaSearchFile(uint32 nSearchID, const Kademlia::CUInt1
  			ctemp->SetBuddyID(cID);
  			ctemp->SetBuddyIP(dwBuddyIP);
  			ctemp->SetBuddyPort(dwBuddyPort);
@@ -45,11 +51,17 @@ index be32c82..518f2f2 100644
  		// if we are firewalled ourselves, the source is useless to us
 -		if (theApp.IsFirewalled())
 +		// - unless both of us can be punched to (TAG_NATDCLIENT)
-+		if (theApp.IsFirewalled() && !(bNatd && theApp.nattraversal->IsPunchable()))
++		if (theApp.IsFirewalled() && !(bNatd && theApp.nattraversal->IsPunchable())) {
++			if (bNatd && thePrefs.GetVerbose())
++				AddDebugLogLine(false, _T("NAT traversal: LowID source %s for \"%s\" dropped: it can be punched to, we cannot"), (LPCTSTR)ipstr(ED2Kip), (LPCTSTR)temp->GetFileName());
  			break;
++		}
++		if (theApp.IsFirewalled() && thePrefs.GetVerbose())
++			AddDebugLogLine(false, _T("NAT traversal: LowID source %s for \"%s\" not dropped as LowID-to-LowID: both of us can be punched to"), (LPCTSTR)ipstr(ED2Kip), (LPCTSTR)temp->GetFileName());
  
  		if ((byCryptOptions & 0x08) == 0)
-@@ -1611,6 +1619,7 @@ void CDownloadQueue::KademliaSearchFile(uint32 nSearchID, const Kademlia::CUInt1
+ 			DebugLogWarning(_T("Received Kad source type 6 (direct callback) which has the direct callback flag not set (%s)"), (LPCTSTR)ipstr(ED2Kip));
+@@ -1611,6 +1629,7 @@ void CDownloadQueue::KademliaSearchFile(uint32 nSearchID, const Kademlia::CUInt1
  			byte cID[16];
  			pcontactID->ToByteArray(cID);
  			ctemp->SetUserHash(cID);
