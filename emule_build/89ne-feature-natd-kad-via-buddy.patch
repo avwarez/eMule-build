@@ -50,10 +50,20 @@ index 2e1c2eb..41fa6d6 100644
  				return;
  			}
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
-index 0479d75..7812e5f 100644
+index d5a6f25..542dffd 100644
 --- a/srchybrid/NatTraversal.cpp
 +++ b/srchybrid/NatTraversal.cpp
-@@ -37,7 +37,15 @@
+@@ -15,7 +15,9 @@
+ //along with this program; if not, write to the Free Software
+ //Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ #include "stdafx.h"
++#include <algorithm>
+ #include <array>
++#include <deque>
+ #include <map>
+ #include <mutex>
+ #include <thread>
+@@ -35,7 +37,15 @@
  #include "Statistics.h"
  #include "UpDownClient.h"
  #include "Log.h"
@@ -69,7 +79,7 @@ index 0479d75..7812e5f 100644
  #include "natd/natd.hpp"
  #include "natd/winsock_io.hpp"
  
-@@ -54,6 +62,13 @@ static char THIS_FILE[] = __FILE__;
+@@ -52,6 +62,13 @@ static char THIS_FILE[] = __FILE__;
  #define NATD_STREAM_KEEPALIVE	SEC2MS(20)
  #define NATD_LINGER				((DWORD)SEC2MS(10))	// a stream closed by eMule, until its FIN is through
  #define NATD_CHECK_REUSE		((DWORD)MIN2MS(1))	// an endpoint check stands this long: the STUN servers are someone else's
@@ -83,19 +93,16 @@ index 0479d75..7812e5f 100644
  
  namespace
  {
-@@ -86,15 +101,57 @@ namespace
- 		return natd::sessionTokenFrom(abyInput, sizeof abyInput);
+@@ -82,12 +99,54 @@ namespace
  	}
  
+ 	// The marker is natd's offer
 -	void WriteMarker(CSafeMemFile &data, uint64 nNonce)
 +	void WriteMarker(CSafeMemFile &data, uint8 byType, uint64 nNonce)
  	{
- 		static const BYTE s_abyMagic[4] = {'N', 'A', 'T', 'D'};
- 		data.Write(s_abyMagic, sizeof s_abyMagic);
- 		data.WriteUInt8(NATD_MARKER_VERSION);
--		data.WriteUInt8(NATD_MARKER_PUNCH);
-+		data.WriteUInt8(byType);
- 		data.WriteUInt64(nNonce);
+-		const std::array<uint8_t, natd::kOfferSize> abyOffer(natd::encodeOffer(natd::Offer{NATD_MARKER_PUNCH, nNonce}));
++		const std::array<uint8_t, natd::kOfferSize> abyOffer(natd::encodeOffer(natd::Offer{byType, nNonce}));
+ 		data.Write(abyOffer.data(), (UINT)abyOffer.size());
  	}
  
 +	uint64 RandomUInt64()
@@ -143,9 +150,9 @@ index 0479d75..7812e5f 100644
  	// The STUN servers, resolved off the main thread (getaddrinfo blocks). The thread owns a
  	// reference: it may still run when eMule closes, and then writes to nobody.
  	struct SStunList
-@@ -212,6 +269,14 @@ struct CNatTraversal::Impl
- 	bool bCheckedOnce = false;
- 	bool bCloseIfChanged = false;	// what the check is for: the buddy was lost
+@@ -189,6 +248,14 @@ struct CNatTraversal::Impl
+ 	std::shared_ptr<SStunList> pStun = std::make_shared<SStunList>();
+ 	std::unique_ptr<natd::Agent> pAgent;
  
 +	// D1, main thread only
 +	std::map<Kademlia::CUInt128, SViaBuddy> kadContacts;
@@ -155,11 +162,11 @@ index 0479d75..7812e5f 100644
 +	DWORD dwLastKadTimer = 0;
 +	void KadTimer();
 +
- 	CCriticalSection cs;	// the sessions; Write() comes from the upload throttler thread too
- 	std::map<uint32, std::unique_ptr<SSession>> sessions;
- 	std::deque<uint32> waiting;	// sessions without a punch session yet, oldest first
-@@ -572,6 +637,287 @@ void CNatTraversal::Process()
- 		impl.Deliver(id, from, pData, nLen, now, bUsed);
+ 	CCriticalSection cs;	// pAgent and the sessions; Write() comes from the upload throttler thread too
+ 	std::map<natd::SessionId, SSession> sessions;
+ 
+@@ -399,6 +466,287 @@ void CNatTraversal::Process()
+ 		impl.pAgent->onDatagram(id, from, pData, nLen, now);
  	});
  	impl.Poll(now);
 +	if (::GetTickCount() - impl.dwLastKadTimer >= (DWORD)MIN2MS(1)) {
@@ -269,7 +276,7 @@ index 0479d75..7812e5f 100644
 +// port our hello came from, and whoever asked knows them by IP and port, as any Kad answer.
 +bool CNatTraversal::KadGetMyBuddy(uint32 &dwBuddyIP, uint16 &nBuddyPort) const
 +{
-+	if (!m_pImpl->bPunchable || !Kademlia::CUDPFirewallTester::IsFirewalledUDP(true) || theApp.clientlist->GetBuddyStatus() != Connected)
++	if (!m_pImpl->pAgent->directPunchable() || !Kademlia::CUDPFirewallTester::IsFirewalledUDP(true) || theApp.clientlist->GetBuddyStatus() != Connected)
 +		return false;
 +	const CUpDownClient *pBuddy = theApp.clientlist->GetBuddy();
 +	if (pBuddy == NULL || pBuddy->GetIP() == 0 || pBuddy->GetUDPPort() == 0)
@@ -446,7 +453,7 @@ index 0479d75..7812e5f 100644
  }
  
  bool CNatTraversal::IsPunchable() const
-@@ -625,7 +971,7 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
+@@ -453,7 +801,7 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
  {
  	if (!CanPunchTo(client))
  		return false;
@@ -455,7 +462,7 @@ index 0479d75..7812e5f 100644
  	natd::TxId token;
  	CSafeMemFile data(64);
  	if (client.HasValidBuddyID() && client.GetBuddyIP() != 0 && client.GetBuddyPort() != 0) {
-@@ -633,7 +979,7 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
+@@ -461,7 +809,7 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
  		const uchar *pFileHash = client.GetRequestFile()->GetFileHash();
  		data.WriteHash16(client.GetBuddyID());
  		data.WriteHash16(pFileHash);
@@ -464,7 +471,7 @@ index 0479d75..7812e5f 100644
  		token = TokenFrom(pFileHash, nNonce);
  		Packet *packet = new Packet(data, OP_EMULEPROT);
  		packet->opcode = OP_REASKCALLBACKUDP;
-@@ -646,7 +992,7 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
+@@ -474,7 +822,7 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
  		data.WriteUInt16(thePrefs.GetPort());
  		data.WriteHash16(thePrefs.GetUserHash());
  		data.WriteUInt8(GetMyConnectOptions(true, false));
@@ -473,7 +480,7 @@ index 0479d75..7812e5f 100644
  		token = TokenFrom(thePrefs.GetUserHash(), nNonce);
  		Packet *packet = new Packet(data, OP_EMULEPROT);
  		packet->opcode = OP_DIRECTCALLBACKREQ;
-@@ -659,17 +1005,18 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
+@@ -487,7 +835,7 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
  	return true;
  }
  
@@ -482,16 +489,17 @@ index 0479d75..7812e5f 100644
  {
  	if (data.GetLength() - data.GetPosition() < NATD_MARKER_SIZE)
  		return false;
- 	const ULONGLONG nPos = data.GetPosition();
- 	BYTE abyMagic[4];
- 	data.Read(abyMagic, sizeof abyMagic);
--	if (memcmp(abyMagic, "NATD", 4) != 0 || data.ReadUInt8() != NATD_MARKER_VERSION || data.ReadUInt8() != NATD_MARKER_PUNCH) {
-+	if (memcmp(abyMagic, "NATD", 4) != 0 || data.ReadUInt8() != NATD_MARKER_VERSION) {
+@@ -495,10 +843,11 @@ bool CNatTraversal::ReadMarker(CSafeMemFile &data, uint64 &nNonce)
+ 	BYTE abyOffer[NATD_MARKER_SIZE];
+ 	data.Read(abyOffer, sizeof abyOffer);
+ 	const std::optional<natd::Offer> offer(natd::decodeOffer(abyOffer, sizeof abyOffer));
+-	if (!offer || offer->kind != NATD_MARKER_PUNCH) {
++	if (!offer) {
  		data.Seek((LONGLONG)nPos, CFile::begin);	// not ours: the rest of the packet is read as before
  		return false;
  	}
-+	byType = data.ReadUInt8();
- 	nNonce = data.ReadUInt64();
++	byType = offer->kind;
+ 	nNonce = offer->nonce;
  	return true;
  }
 diff --git a/srchybrid/NatTraversal.h b/srchybrid/NatTraversal.h

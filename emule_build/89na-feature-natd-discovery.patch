@@ -82,10 +82,10 @@ index fa40464..ba85fff 100644
  	delete theApp.serverlist;				theApp.serverlist = NULL;		// CServerList::SaveServermetToFile
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
 new file mode 100644
-index 0000000..ff1f540
+index 0000000..409934e
 --- /dev/null
 +++ b/srchybrid/NatTraversal.cpp
-@@ -0,0 +1,244 @@
+@@ -0,0 +1,237 @@
 +//this file is part of eMule
 +//Copyright (C)2002-2026 Merkur ( strEmail.Format("%s@%s", "devteam", "emule-project.net") / https://www.emule-project.net )
 +//
@@ -103,9 +103,7 @@ index 0000000..ff1f540
 +//along with this program; if not, write to the Free Software
 +//Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 +#include "stdafx.h"
-+#include <algorithm>
 +#include <mutex>
-+#include <random>
 +#include <thread>
 +#include <vector>
 +#include "emule.h"
@@ -174,8 +172,6 @@ index 0000000..ff1f540
 +			if (se.ep.valid())
 +				servers.push_back(se);
 +		}
-+		// Each client its own order: no public server takes everybody's first request.
-+		std::shuffle(servers.begin(), servers.end(), std::mt19937(std::random_device()()));
 +		std::lock_guard<std::mutex> lock(pList->m);
 +		pList->servers.swap(servers);
 +		pList->bDone = true;
@@ -226,56 +222,56 @@ index 0000000..ff1f540
 +	};
 +}
 +
++// natd::Agent does the work: discovery, endpoint checks, punch sessions and their streams.
++// What stays here is eMule's: the socket, when to start, and what the events mean to eMule.
 +struct CNatTraversal::Impl
 +{
 +	CNatdIo io;
 +	std::shared_ptr<SStunList> pStun = std::make_shared<SStunList>();
-+	natd::DiscoveryConfig discoveryConfig;
-+	std::unique_ptr<natd::NatDiscovery> pDiscovery;
-+	natd::NatProfile profile;
-+	bool bProfileReady = false;
-+	bool bPunchable = false;
++	std::unique_ptr<natd::Agent> pAgent;
 +
-+	void Deliver(natd::SocketId id, const natd::Endpoint &from, const uint8_t *pData, size_t nLen, natd::TimePoint now, bool &bUsed);
-+	void Poll(natd::TimePoint now);
++	Impl()
++	{
++		natd::AgentConfig cfg;
++		cfg.discovery.primarySocket = kPrimarySocket;
++		pAgent = std::make_unique<natd::Agent>(cfg, io);
++	}
 +	void StartDiscovery(natd::TimePoint now);
++	void Poll(natd::TimePoint now);
++	void HandleEvents(natd::TimePoint now);
 +};
 +
 +void CNatTraversal::Impl::StartDiscovery(natd::TimePoint now)
 +{
++	std::vector<natd::StunEndpoint> servers;
 +	{
 +		std::lock_guard<std::mutex> lock(pStun->m);
 +		if (!pStun->bDone)
 +			return;
-+		discoveryConfig.stunServers = pStun->servers;
++		servers = pStun->servers;
 +	}
-+	discoveryConfig.primarySocket = kPrimarySocket;
-+	pDiscovery = std::make_unique<natd::NatDiscovery>(discoveryConfig, io);
-+	pDiscovery->start(now);
++	const size_t nServers = servers.size();
++	pAgent->start(now, std::move(servers));	// each client its own order of the servers
 +	if (thePrefs.GetVerbose())
-+		AddDebugLogLine(false, _T("NAT traversal: discovery started on UDP port %u with %u STUN servers"), thePrefs.GetUDPPort(), (unsigned)discoveryConfig.stunServers.size());
-+}
-+
-+void CNatTraversal::Impl::Deliver(natd::SocketId id, const natd::Endpoint &from, const uint8_t *pData, size_t nLen, natd::TimePoint now, bool &bUsed)
-+{
-+	if (!bUsed && pDiscovery && pDiscovery->onDatagram(id, from, pData, nLen, now))
-+		bUsed = true;
++		AddDebugLogLine(false, _T("NAT traversal: discovery started on UDP port %u with %u STUN servers"), thePrefs.GetUDPPort(), (unsigned)nServers);
 +}
 +
 +void CNatTraversal::Impl::Poll(natd::TimePoint now)
 +{
-+	if (pDiscovery) {
-+		pDiscovery->poll(now);
-+		const natd::DiscoveryState state = pDiscovery->state();
-+		if (!bProfileReady && (state == natd::DiscoveryState::Provisional || state == natd::DiscoveryState::Final)) {
-+			bProfileReady = true;
-+			profile = pDiscovery->result();
-+			bPunchable = profile.predictability == natd::Predictability::Stable && profile.publicEndpoint.valid();
-+			if (thePrefs.GetVerbose())
-+				AddDebugLogLine(false, _T("NAT traversal: %hs, mapping %hs, filtering %hs, public endpoint %s, %s")
-+					, natd::toString(profile.predictability), natd::toString(profile.details.mapping)
-+					, natd::toString(profile.details.filtering), (LPCTSTR)EndpointStr(profile.publicEndpoint)
-+					, bPunchable ? _T("punchable") : _T("not punchable"));
++	pAgent->poll(now);
++	HandleEvents(now);
++}
++
++void CNatTraversal::Impl::HandleEvents(natd::TimePoint)
++{
++	natd::AgentEvent e;
++	while (pAgent->nextEvent(e)) {
++		if (e.type == natd::AgentEventType::ProfileReady && thePrefs.GetVerbose()) {
++			const natd::NatProfile &profile = pAgent->profile();
++			AddDebugLogLine(false, _T("NAT traversal: %hs, mapping %hs, filtering %hs, public endpoint %s, %s")
++				, natd::toString(profile.predictability), natd::toString(profile.details.mapping)
++				, natd::toString(profile.details.filtering), (LPCTSTR)EndpointStr(profile.publicEndpoint)
++				, pAgent->directPunchable() ? _T("punchable") : _T("not punchable"));
 +		}
 +	}
 +}
@@ -290,45 +286,42 @@ index 0000000..ff1f540
 +
 +bool CNatTraversal::OnDatagram(const BYTE *pData, int nLen, uint32 dwIP, uint16 nPort)
 +{
-+	if (nLen <= 0 || !(natd::stun::isStunPacket(pData, (size_t)nLen) || natd::proto::isNatdPacket(pData, (size_t)nLen)))
++	if (nLen <= 0 || !m_pImpl->pAgent->mayBeOurs(pData, (size_t)nLen))
 +		return false;
 +	const natd::TimePoint now = natd::Clock::now();
-+	const natd::Endpoint from{ntohl(dwIP), nPort};
-+	bool bUsed = false;
-+	m_pImpl->Deliver(kPrimarySocket, from, pData, (size_t)nLen, now, bUsed);
-+	if (bUsed)
-+		m_pImpl->Poll(now);
-+	// a late answer, or a packet of a session already over: no other protocol of eMule reads it
-+	return true;
++	// true also for a late answer, or a packet of a session already over: no other protocol of
++	// eMule reads natd's or STUN's format
++	const bool bOurs = m_pImpl->pAgent->onDatagram(kPrimarySocket, natd::Endpoint{ntohl(dwIP), nPort}, pData, (size_t)nLen, now);
++	m_pImpl->HandleEvents(now);
++	return bOurs;
 +}
 +
 +void CNatTraversal::Process()
 +{
 +	Impl &impl = *m_pImpl;
 +	const natd::TimePoint now = natd::Clock::now();
-+	if (!impl.pDiscovery && Kademlia::CKademlia::IsRunning() && theApp.clientudp != NULL && theApp.clientudp->m_hSocket != INVALID_SOCKET)
++	if (!impl.pAgent->started() && Kademlia::CKademlia::IsRunning() && theApp.clientudp != NULL && theApp.clientudp->m_hSocket != INVALID_SOCKET)
 +		impl.StartDiscovery(now);
 +	// the sockets natd opened itself: what arrived since the last call, without waiting
 +	impl.io.m_extra.wait(now, [&impl, now](natd::SocketId id, const natd::Endpoint &from, const uint8_t *pData, size_t nLen) {
-+		bool bUsed = false;
-+		impl.Deliver(id, from, pData, nLen, now, bUsed);
++		impl.pAgent->onDatagram(id, from, pData, nLen, now);
 +	});
 +	impl.Poll(now);
 +}
 +
 +bool CNatTraversal::IsPunchable() const
 +{
-+	return m_pImpl->bPunchable;
++	return m_pImpl->pAgent->directPunchable();
 +}
 +
 +uint32 CNatTraversal::GetPublicIP() const
 +{
-+	return m_pImpl->bProfileReady ? htonl(m_pImpl->profile.publicEndpoint.ip) : 0;
++	return htonl(m_pImpl->pAgent->publicEndpoint().ip);
 +}
 +
 +uint16 CNatTraversal::GetPublicPort() const
 +{
-+	return m_pImpl->bProfileReady ? m_pImpl->profile.publicEndpoint.port : 0;
++	return m_pImpl->pAgent->publicEndpoint().port;
 +}
 diff --git a/srchybrid/NatTraversal.h b/srchybrid/NatTraversal.h
 new file mode 100644
