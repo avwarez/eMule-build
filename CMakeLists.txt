@@ -329,8 +329,7 @@ add_subdirectory(libplum EXCLUDE_FROM_ALL)
 target_compile_options(plum-static PRIVATE $<$<C_COMPILER_ID:MSVC>:/W3>)
 
 # ---------------------------------------------------------------------------
-# natd - git submodule (natd/, avwarez/natd, a private repository: the CI
-# checkout reads it with the NATD_DEPLOY_KEY secret), the NAT discovery and UDP
+# natd - git submodule (natd/, avwarez/natd pinned to v0.1.0), the NAT discovery and UDP
 # hole punching that emule_build/89n* add between two LowIDs: sans-I/O C++17,
 # no sockets or threads of its own (eMule moves the datagrams and the time).
 # natd runs the stream session over the punched path but knows no transport:
