@@ -58,7 +58,7 @@ index 0717ac5..785556f 100644
  	uint16	m_iPartCount;
  	uint16	m_iED2KPartCount;
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
-index 56db346..00e4233 100644
+index 6b52e90..13ffc89 100644
 --- a/srchybrid/NatTraversal.cpp
 +++ b/srchybrid/NatTraversal.cpp
 @@ -56,6 +56,7 @@ static char THIS_FILE[] = __FILE__;

@@ -50,7 +50,7 @@ index 2e1c2eb..41fa6d6 100644
  				return;
  			}
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
-index 00e4233..3979e14 100644
+index 13ffc89..0f4a923 100644
 --- a/srchybrid/NatTraversal.cpp
 +++ b/srchybrid/NatTraversal.cpp
 @@ -39,7 +39,15 @@

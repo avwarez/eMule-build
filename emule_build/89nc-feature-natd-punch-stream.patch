@@ -181,7 +181,7 @@ index 15674a1..2e1c2eb 100644
  				//Make sure we are still thinking about the same file
  				if (md4equ(reqfilehash, sender->GetUploadFileID())) {
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
-index b659474..56db346 100644
+index b659474..6b52e90 100644
 --- a/srchybrid/NatTraversal.cpp
 +++ b/srchybrid/NatTraversal.cpp
 @@ -15,18 +15,34 @@
@@ -413,7 +413,7 @@ index b659474..56db346 100644
 +		static const int kWindow = 256;				// send and receive windows, in segments
 +		static const int kMaxSegmentsPerSend = 64;	// < IKCP_WND_RCV (128), see ikcp_send
 +
-+		static int Output(const char *pBuf, int nLen, ikcpcb*, void *pUser)
++		static int Output(const char *pBuf, int nLen, ikcpcb*, void *pUser) noexcept	// called from C (KCP)
 +		{
 +			static_cast<CNatdKcpTransport*>(pUser)->m_output(reinterpret_cast<const uint8_t*>(pBuf), (size_t)nLen);
 +			return 0;
