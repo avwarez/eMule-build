@@ -181,7 +181,7 @@ index 15674a1..2e1c2eb 100644
  				//Make sure we are still thinking about the same file
  				if (md4equ(reqfilehash, sender->GetUploadFileID())) {
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
-index b659474..6b52e90 100644
+index b659474..b7c57d3 100644
 --- a/srchybrid/NatTraversal.cpp
 +++ b/srchybrid/NatTraversal.cpp
 @@ -15,18 +15,34 @@
@@ -234,7 +234,7 @@ index b659474..6b52e90 100644
  namespace
  {
  	// natd's id of the client UDP socket; the sockets natd opens itself (discovery samples) get
-@@ -47,15 +70,28 @@ namespace
+@@ -47,15 +70,37 @@ namespace
  		return str;
  	}
  
@@ -256,6 +256,15 @@ index b659474..6b52e90 100644
 +		return natd::tokenFrom(pKey16, 16, nNonce);
 +	}
 +
++	// The punch nonce, from the system's CSPRNG: the session token is derived from it, and
++	// GetRandomUInt32() (rand() seeded from the tick count) can be guessed
++	uint64 RandomUInt64()
++	{
++		uint64 n = 0;
++		natd::defaultRandomBytes()(reinterpret_cast<uint8_t*>(&n), sizeof n);
++		return n;
++	}
++
 +	// The marker is natd's offer
 +	void WriteMarker(CSafeMemFile &data, uint64 nNonce)
 +	{
@@ -266,7 +275,7 @@ index b659474..6b52e90 100644
  	// The STUN servers, resolved off the main thread (getaddrinfo blocks). The thread owns a
  	// reference: it may still run when eMule closes, and then writes to nobody.
  	struct SStunList
-@@ -90,7 +126,8 @@ namespace
+@@ -90,7 +135,8 @@ namespace
  	}
  
  	// natd's socket interface: the client UDP socket, plus the plain sockets natd opens for its
@@ -276,7 +285,7 @@ index b659474..6b52e90 100644
  	class CNatdIo final : public natd::IDatagramIo
  	{
  	public:
-@@ -127,30 +164,195 @@ namespace
+@@ -127,30 +173,195 @@ namespace
  				return m_extra.send(id, to, pData, nLen);
  			if (theApp.clientudp == NULL || theApp.clientudp->m_hSocket == INVALID_SOCKET || nLen > 8192)
  				return false;
@@ -475,7 +484,7 @@ index b659474..6b52e90 100644
  };
  
  void CNatTraversal::Impl::StartDiscovery(natd::TimePoint now)
-@@ -174,16 +376,117 @@ void CNatTraversal::Impl::Poll(natd::TimePoint now)
+@@ -174,16 +385,117 @@ void CNatTraversal::Impl::Poll(natd::TimePoint now)
  	HandleEvents(now);
  }
  
@@ -600,7 +609,7 @@ index b659474..6b52e90 100644
  		}
  	}
  }
-@@ -194,10 +497,20 @@ CNatTraversal::CNatTraversal()
+@@ -194,10 +506,20 @@ CNatTraversal::CNatTraversal()
  	std::thread(ResolveStunServers, m_pImpl->pStun).detach();
  }
  
@@ -622,7 +631,7 @@ index b659474..6b52e90 100644
  	if (nLen <= 0 || !m_pImpl->pAgent->mayBeOurs(pData, (size_t)nLen))
  		return false;
  	const natd::TimePoint now = natd::Clock::now();
-@@ -212,6 +525,7 @@ void CNatTraversal::Process()
+@@ -212,6 +534,7 @@ void CNatTraversal::Process()
  {
  	Impl &impl = *m_pImpl;
  	const natd::TimePoint now = natd::Clock::now();
@@ -630,7 +639,7 @@ index b659474..6b52e90 100644
  	if (!impl.pAgent->started() && Kademlia::CKademlia::IsRunning() && theApp.clientudp != NULL && theApp.clientudp->m_hSocket != INVALID_SOCKET)
  		impl.StartDiscovery(now);
  	// the sockets natd opened itself: what arrived since the last call, without waiting
-@@ -235,3 +549,287 @@ uint16 CNatTraversal::GetPublicPort() const
+@@ -235,3 +558,287 @@ uint16 CNatTraversal::GetPublicPort() const
  {
  	return m_pImpl->pAgent->publicEndpoint().port;
  }
@@ -656,7 +665,7 @@ index b659474..6b52e90 100644
 +{
 +	if (!CanPunchTo(client))
 +		return false;
-+	const uint64 nNonce = ((uint64)GetRandomUInt32() << 32) | GetRandomUInt32();
++	const uint64 nNonce = RandomUInt64();
 +	natd::TxId token;
 +	CSafeMemFile data(64);
 +	if (client.HasValidBuddyID() && client.GetBuddyIP() != 0 && client.GetBuddyPort() != 0) {

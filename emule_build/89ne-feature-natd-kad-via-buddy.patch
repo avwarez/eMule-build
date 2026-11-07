@@ -50,7 +50,7 @@ index 2e1c2eb..41fa6d6 100644
  				return;
  			}
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
-index 13ffc89..0f4a923 100644
+index 9f0c496..4646d27 100644
 --- a/srchybrid/NatTraversal.cpp
 +++ b/srchybrid/NatTraversal.cpp
 @@ -39,7 +39,15 @@
@@ -83,7 +83,7 @@ index 13ffc89..0f4a923 100644
  
  namespace
  {
-@@ -87,12 +102,54 @@ namespace
+@@ -96,12 +111,49 @@ namespace
  	}
  
  	// The marker is natd's offer
@@ -95,11 +95,6 @@ index 13ffc89..0f4a923 100644
  		data.Write(abyOffer.data(), (UINT)abyOffer.size());
  	}
  
-+	uint64 RandomUInt64()
-+	{
-+		return ((uint64)GetRandomUInt32() << 32) | GetRandomUInt32();
-+	}
-+
 +	uint64 EndpointKey(uint32 uIP, uint16 nPort)
 +	{
 +		return ((uint64)uIP << 16) | nPort;
@@ -140,7 +135,7 @@ index 13ffc89..0f4a923 100644
  	// The STUN servers, resolved off the main thread (getaddrinfo blocks). The thread owns a
  	// reference: it may still run when eMule closes, and then writes to nobody.
  	struct SStunList
-@@ -334,6 +391,14 @@ struct CNatTraversal::Impl
+@@ -343,6 +395,14 @@ struct CNatTraversal::Impl
  	std::shared_ptr<SStunList> pStun = std::make_shared<SStunList>();
  	std::unique_ptr<natd::Agent> pAgent;
  
@@ -155,7 +150,7 @@ index 13ffc89..0f4a923 100644
  	CCriticalSection cs;	// pAgent and the sessions; Write() comes from the upload throttler thread too
  	std::map<natd::SessionId, SSession> sessions;
  
-@@ -544,6 +609,287 @@ void CNatTraversal::Process()
+@@ -553,6 +613,287 @@ void CNatTraversal::Process()
  		impl.pAgent->onDatagram(id, from, pData, nLen, now);
  	});
  	impl.Poll(now);
@@ -443,16 +438,7 @@ index 13ffc89..0f4a923 100644
  }
  
  bool CNatTraversal::IsPunchable() const
-@@ -598,7 +944,7 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
- {
- 	if (!CanPunchTo(client))
- 		return false;
--	const uint64 nNonce = ((uint64)GetRandomUInt32() << 32) | GetRandomUInt32();
-+	const uint64 nNonce = RandomUInt64();
- 	natd::TxId token;
- 	CSafeMemFile data(64);
- 	if (client.HasValidBuddyID() && client.GetBuddyIP() != 0 && client.GetBuddyPort() != 0) {
-@@ -606,7 +952,7 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
+@@ -615,7 +956,7 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
  		const uchar *pFileHash = client.GetRequestFile()->GetFileHash();
  		data.WriteHash16(client.GetBuddyID());
  		data.WriteHash16(pFileHash);
@@ -461,7 +447,7 @@ index 13ffc89..0f4a923 100644
  		token = TokenFrom(pFileHash, nNonce);
  		Packet *packet = new Packet(data, OP_EMULEPROT);
  		packet->opcode = OP_REASKCALLBACKUDP;
-@@ -619,7 +965,7 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
+@@ -628,7 +969,7 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
  		data.WriteUInt16(thePrefs.GetPort());
  		data.WriteHash16(thePrefs.GetUserHash());
  		data.WriteUInt8(GetMyConnectOptions(true, false));
@@ -470,7 +456,7 @@ index 13ffc89..0f4a923 100644
  		token = TokenFrom(thePrefs.GetUserHash(), nNonce);
  		Packet *packet = new Packet(data, OP_EMULEPROT);
  		packet->opcode = OP_DIRECTCALLBACKREQ;
-@@ -632,7 +978,7 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
+@@ -641,7 +982,7 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
  	return true;
  }
  
@@ -479,7 +465,7 @@ index 13ffc89..0f4a923 100644
  {
  	if (data.GetLength() - data.GetPosition() < NATD_MARKER_SIZE)
  		return false;
-@@ -640,10 +986,11 @@ bool CNatTraversal::ReadMarker(CSafeMemFile &data, uint64 &nNonce)
+@@ -649,10 +990,11 @@ bool CNatTraversal::ReadMarker(CSafeMemFile &data, uint64 &nNonce)
  	BYTE abyOffer[NATD_MARKER_SIZE];
  	data.Read(abyOffer, sizeof abyOffer);
  	const std::optional<natd::Offer> offer(natd::decodeOffer(abyOffer, sizeof abyOffer));

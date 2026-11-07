@@ -33,10 +33,10 @@ index 6b49c3f..dca620a 100644
  	// searching on global servers
  	void	StopUDPRequests();
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
-index 0f4a923..b2dad9c 100644
+index 4646d27..5e99845 100644
 --- a/srchybrid/NatTraversal.cpp
 +++ b/srchybrid/NatTraversal.cpp
-@@ -135,6 +135,8 @@ namespace
+@@ -139,6 +139,8 @@ namespace
  		uint8	uVersion;
  		uint32	uBuddyIP;
  		uint16	uBuddyPort;
@@ -45,7 +45,7 @@ index 0f4a923..b2dad9c 100644
  		bool	bVerified;		// it said hello
  		DWORD	dwAdded;
  		DWORD	dwHeard;
-@@ -147,6 +149,7 @@ namespace
+@@ -151,6 +153,7 @@ namespace
  		uint32	uBuddyIP;
  		uint16	uBuddyPort;
  		uchar	abyBuddyID[MDX_DIGEST_SIZE];
@@ -53,7 +53,7 @@ index 0f4a923..b2dad9c 100644
  		DWORD	dwSeen;
  	};
  
-@@ -651,7 +654,7 @@ void CNatTraversal::Impl::KadTimer()
+@@ -655,7 +658,7 @@ void CNatTraversal::Impl::KadTimer()
  	}
  }
  
@@ -62,7 +62,7 @@ index 0f4a923..b2dad9c 100644
  {
  	if (!Kademlia::CKademlia::IsRunning() || uID == Kademlia::CKademlia::GetPrefs()->GetKadID() || uVersion < KADEMLIA_VERSION6_49aBETA)
  		return;
-@@ -672,16 +675,31 @@ void CNatTraversal::KadAddViaBuddy(const Kademlia::CUInt128 &uID, uint32 uIP, ui
+@@ -676,16 +679,31 @@ void CNatTraversal::KadAddViaBuddy(const Kademlia::CUInt128 &uID, uint32 uIP, ui
  		c.uVersion = uVersion;
  		c.uBuddyIP = uBuddyIP;
  		c.uBuddyPort = uBuddyPort;
@@ -95,7 +95,7 @@ index 0f4a923..b2dad9c 100644
  void CNatTraversal::KadRemoveViaBuddy(const Kademlia::CUInt128 &uID)
  {
  	m_pImpl->kadContacts.erase(uID);
-@@ -714,7 +732,7 @@ void CNatTraversal::KadGetClosest(const Kademlia::CUInt128 &uTarget, uint32 uMax
+@@ -718,7 +736,7 @@ void CNatTraversal::KadGetClosest(const Kademlia::CUInt128 &uTarget, uint32 uMax
  
  // Only with an endpoint-independent mapping (the simple case): our answers then leave from the
  // port our hello came from, and whoever asked knows them by IP and port, as any Kad answer.
@@ -104,7 +104,7 @@ index 0f4a923..b2dad9c 100644
  {
  	if (!m_pImpl->pAgent->directPunchable() || !Kademlia::CUDPFirewallTester::IsFirewalledUDP(true) || theApp.clientlist->GetBuddyStatus() != Connected)
  		return false;
-@@ -723,6 +741,8 @@ bool CNatTraversal::KadGetMyBuddy(uint32 &dwBuddyIP, uint16 &nBuddyPort) const
+@@ -727,6 +745,8 @@ bool CNatTraversal::KadGetMyBuddy(uint32 &dwBuddyIP, uint16 &nBuddyPort) const
  		return false;
  	dwBuddyIP = pBuddy->GetIP();
  	nBuddyPort = pBuddy->GetUDPPort();
@@ -113,7 +113,7 @@ index 0f4a923..b2dad9c 100644
  	return true;
  }
  
-@@ -761,10 +781,13 @@ bool CNatTraversal::KadRelay(Packet *pPacket, uint32 uIP, uint16 uUDPPort)
+@@ -765,10 +785,13 @@ bool CNatTraversal::KadRelay(Packet *pPacket, uint32 uIP, uint16 uUDPPort)
  	uint32 uBuddyIP = 0;
  	uint16 uBuddyPort = 0;
  	uchar abyBuddyID[MDX_DIGEST_SIZE];
@@ -127,7 +127,7 @@ index 0f4a923..b2dad9c 100644
  			Kademlia::CUInt128 uBuddyID(true);
  			uBuddyID.Xor(it->first);
  			uBuddyID.ToByteArray(abyBuddyID);
-@@ -777,6 +800,7 @@ bool CNatTraversal::KadRelay(Packet *pPacket, uint32 uIP, uint16 uUDPPort)
+@@ -781,6 +804,7 @@ bool CNatTraversal::KadRelay(Packet *pPacket, uint32 uIP, uint16 uUDPPort)
  		uBuddyIP = it->second.uBuddyIP;
  		uBuddyPort = it->second.uBuddyPort;
  		md4cpy(abyBuddyID, it->second.abyBuddyID);
@@ -135,7 +135,7 @@ index 0f4a923..b2dad9c 100644
  	}
  
  	CSafeMemFile data(128 + pPacket->size);
-@@ -787,7 +811,8 @@ bool CNatTraversal::KadRelay(Packet *pPacket, uint32 uIP, uint16 uUDPPort)
+@@ -791,7 +815,8 @@ bool CNatTraversal::KadRelay(Packet *pPacket, uint32 uIP, uint16 uUDPPort)
  	data.WriteHash16(thePrefs.GetUserHash());
  	uint32 dwMyBuddyIP;
  	uint16 nMyBuddyPort;
@@ -145,7 +145,7 @@ index 0f4a923..b2dad9c 100644
  		data.WriteUInt8(1);
  		data.WriteUInt32(dwMyBuddyIP);
  		data.WriteUInt16(nMyBuddyPort);
-@@ -796,6 +821,8 @@ bool CNatTraversal::KadRelay(Packet *pPacket, uint32 uIP, uint16 uUDPPort)
+@@ -800,6 +825,8 @@ bool CNatTraversal::KadRelay(Packet *pPacket, uint32 uIP, uint16 uUDPPort)
  		uchar abyMyBuddyID[MDX_DIGEST_SIZE];
  		uMyBuddyID.ToByteArray(abyMyBuddyID);
  		data.WriteHash16(abyMyBuddyID);
@@ -154,7 +154,7 @@ index 0f4a923..b2dad9c 100644
  	} else {
  		data.WriteUInt8(0);
  		data.WriteUInt16(thePrefs.GetPort());
-@@ -809,7 +836,10 @@ bool CNatTraversal::KadRelay(Packet *pPacket, uint32 uIP, uint16 uUDPPort)
+@@ -813,7 +840,10 @@ bool CNatTraversal::KadRelay(Packet *pPacket, uint32 uIP, uint16 uUDPPort)
  	Packet *pRelay = new Packet(data, OP_EMULEPROT);
  	pRelay->opcode = OP_REASKCALLBACKUDP;
  	theStats.AddUpDataOverheadKad(pRelay->size);
@@ -166,7 +166,7 @@ index 0f4a923..b2dad9c 100644
  	return true;
  }
  
-@@ -855,6 +885,7 @@ void CNatTraversal::RelayToKad(CSafeMemFile &data, uint32 dwIP, uint16 nPort)
+@@ -859,6 +889,7 @@ void CNatTraversal::RelayToKad(CSafeMemFile &data, uint32 dwIP, uint16 nPort)
  		route.uBuddyIP = ntohl(data.ReadUInt32());
  		route.uBuddyPort = data.ReadUInt16();
  		data.ReadHash16(route.abyBuddyID);
@@ -174,7 +174,7 @@ index 0f4a923..b2dad9c 100644
  		route.dwSeen = ::GetTickCount();
  		if (!KadAddressOk(route.uBuddyIP, route.uBuddyPort))
  			return;
-@@ -957,8 +988,10 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
+@@ -961,8 +992,10 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
  		Packet *packet = new Packet(data, OP_EMULEPROT);
  		packet->opcode = OP_REASKCALLBACKUDP;
  		theStats.AddUpDataOverheadOther(packet->size);
