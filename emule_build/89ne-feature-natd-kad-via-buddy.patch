@@ -50,7 +50,7 @@ index 2e1c2eb..41fa6d6 100644
  				return;
  			}
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
-index 9cabc92..ae0cf75 100644
+index 80e9607..54c83c9 100644
 --- a/srchybrid/NatTraversal.cpp
 +++ b/srchybrid/NatTraversal.cpp
 @@ -40,7 +40,15 @@
@@ -135,7 +135,7 @@ index 9cabc92..ae0cf75 100644
  	// The STUN servers, resolved off the main thread (getaddrinfo blocks). The thread owns a
  	// reference: it may still run when eMule closes, and then writes to nobody.
  	struct SStunList
-@@ -379,6 +431,22 @@ struct CNatTraversal::Impl
+@@ -379,6 +431,23 @@ struct CNatTraversal::Impl
  	std::unique_ptr<natd::Agent> pAgent;
  	std::set<uint64> stunEndpoints;	// IP (host order) << 16 | port of the STUN servers natd asks
  
@@ -151,6 +151,7 @@ index 9cabc92..ae0cf75 100644
 +	{
 +		uint32 nAdded = 0, nExpired = 0, nRemoved = 0;			// contacts via buddy
 +		uint32 nRelayedOut = 0, nRelayedIn = 0, nRelayedBad = 0;	// Kad packets over the relay
++		uint32 nRelayedFiltered = 0;							// dropped: sender or its buddy filtered
 +		uint32 nNoRoute = 0;									// a packet with no buddy to send it to
 +	} kadCounters;
 +	DWORD dwLastKadStats = 0;
@@ -158,7 +159,7 @@ index 9cabc92..ae0cf75 100644
  	CCriticalSection cs;	// pAgent and the sessions; Write() comes from the upload throttler thread too
  	std::map<natd::SessionId, SSession> sessions;
  
-@@ -629,6 +697,309 @@ void CNatTraversal::Process()
+@@ -629,6 +698,317 @@ void CNatTraversal::Process()
  			impl.LogStats(_T("last hour"));
  		impl.dwLastStats = ::GetTickCount();
  	}
@@ -209,9 +210,9 @@ index 9cabc92..ae0cf75 100644
 +			for (std::map<Kademlia::CUInt128, SViaBuddy>::const_iterator it = kadContacts.begin(); it != kadContacts.end(); ++it)
 +				nVerified += it->second.bVerified ? 1 : 0;
 +			const SKadCounters &k = kadCounters;
-+			AddDebugLogLine(false, _T("NAT traversal: Kad via buddy (last hour): contacts %u (%u verified), routes back %u; contacts added %u, expired %u, removed %u; packets relayed out %u, in %u, bad %u, without a route %u")
++			AddDebugLogLine(false, _T("NAT traversal: Kad via buddy (last hour): contacts %u (%u verified), routes back %u; contacts added %u, expired %u, removed %u; packets relayed out %u, in %u, bad %u, filtered %u, without a route %u")
 +				, (unsigned)kadContacts.size(), (unsigned)nVerified, (unsigned)kadRoutes.size(), k.nAdded, k.nExpired, k.nRemoved
-+				, k.nRelayedOut, k.nRelayedIn, k.nRelayedBad, k.nNoRoute);
++				, k.nRelayedOut, k.nRelayedIn, k.nRelayedBad, k.nRelayedFiltered, k.nNoRoute);
 +		}
 +		kadCounters = SKadCounters();
 +		dwLastKadStats = dwNow;
@@ -419,6 +420,12 @@ index 9cabc92..ae0cf75 100644
 +	Impl &impl = *m_pImpl;
 +	if (!Kademlia::CKademlia::IsRunning())
 +		return;
++	// the IP filter, as CClientUDPSocket::OnReceive applies it to any Kad packet: nothing from a
++	// filtered or banned sender (its buddy, the way back, is checked below)
++	if (theApp.ipfilter->IsFiltered(dwIP) || theApp.clientlist->IsBannedClient(dwIP)) {
++		++impl.kadCounters.nRelayedFiltered;
++		return;
++	}
 +	uchar abySender[MDX_DIGEST_SIZE];
 +	data.ReadHash16(abySender);
 +	if (md4equ(abySender, thePrefs.GetUserHash()))
@@ -430,8 +437,10 @@ index 9cabc92..ae0cf75 100644
 +		route.uBuddyPort = data.ReadUInt16();
 +		data.ReadHash16(route.abyBuddyID);
 +		route.dwSeen = ::GetTickCount();
-+		if (!KadAddressOk(route.uBuddyIP, route.uBuddyPort))
++		if (!KadAddressOk(route.uBuddyIP, route.uBuddyPort)) {
++			++impl.kadCounters.nRelayedFiltered;	// a filtered buddy, or not a usable address
 +			return;
++		}
 +		if (impl.kadRoutes.size() < D1_MAX_ROUTES || impl.kadRoutes.find(EndpointKey(uIP, nPort)) != impl.kadRoutes.end())
 +			impl.kadRoutes[EndpointKey(uIP, nPort)] = route;
 +	} else
@@ -468,7 +477,7 @@ index 9cabc92..ae0cf75 100644
  }
  
  bool CNatTraversal::IsPunchable() const
-@@ -694,7 +1065,7 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
+@@ -697,7 +1077,7 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
  		const uchar *pFileHash = client.GetRequestFile()->GetFileHash();
  		data.WriteHash16(client.GetBuddyID());
  		data.WriteHash16(pFileHash);
@@ -477,7 +486,7 @@ index 9cabc92..ae0cf75 100644
  		token = TokenFrom(pFileHash, nNonce);
  		Packet *packet = new Packet(data, OP_EMULEPROT);
  		packet->opcode = OP_REASKCALLBACKUDP;
-@@ -707,7 +1078,7 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
+@@ -710,7 +1090,7 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
  		data.WriteUInt16(thePrefs.GetPort());
  		data.WriteHash16(thePrefs.GetUserHash());
  		data.WriteUInt8(GetMyConnectOptions(true, false));
@@ -486,7 +495,7 @@ index 9cabc92..ae0cf75 100644
  		token = TokenFrom(thePrefs.GetUserHash(), nNonce);
  		Packet *packet = new Packet(data, OP_EMULEPROT);
  		packet->opcode = OP_DIRECTCALLBACKREQ;
-@@ -720,7 +1091,7 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
+@@ -723,7 +1103,7 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
  	return true;
  }
  
@@ -495,7 +504,7 @@ index 9cabc92..ae0cf75 100644
  {
  	if (data.GetLength() - data.GetPosition() < NATD_MARKER_SIZE)
  		return false;
-@@ -728,10 +1099,11 @@ bool CNatTraversal::ReadMarker(CSafeMemFile &data, uint64 &nNonce)
+@@ -731,10 +1111,11 @@ bool CNatTraversal::ReadMarker(CSafeMemFile &data, uint64 &nNonce)
  	BYTE abyOffer[NATD_MARKER_SIZE];
  	data.Read(abyOffer, sizeof abyOffer);
  	const std::optional<natd::Offer> offer(natd::decodeOffer(abyOffer, sizeof abyOffer));
