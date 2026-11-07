@@ -58,10 +58,10 @@ index 0717ac5..785556f 100644
  	uint16	m_iPartCount;
  	uint16	m_iED2KPartCount;
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
-index d4dbcb9..d5a6f25 100644
+index 56db346..00e4233 100644
 --- a/srchybrid/NatTraversal.cpp
 +++ b/srchybrid/NatTraversal.cpp
-@@ -51,6 +51,7 @@ static char THIS_FILE[] = __FILE__;
+@@ -56,6 +56,7 @@ static char THIS_FILE[] = __FILE__;
  #define NATD_MAX_SESSIONS		64		// punches and streams
  #define NATD_STREAM_KEEPALIVE	SEC2MS(20)
  #define NATD_LINGER				((DWORD)SEC2MS(10))	// a stream closed by eMule, until its FIN is through
@@ -69,15 +69,15 @@ index d4dbcb9..d5a6f25 100644
  
  namespace
  {
-@@ -201,6 +202,7 @@ struct CNatTraversal::Impl
+@@ -346,6 +347,7 @@ struct CNatTraversal::Impl
  		cfg.maxSessions = NATD_MAX_SESSIONS;
  		cfg.keepalive = natd::Duration(NATD_STREAM_KEEPALIVE);
  		cfg.linger = natd::Duration(NATD_LINGER);
 +		cfg.checkReuse = natd::Duration(NATD_CHECK_REUSE);
- 		pAgent = std::make_unique<natd::Agent>(cfg, io);
+ 		pAgent = std::make_unique<natd::Agent>(cfg, io, CNatdKcpTransport::Factory());
  	}
  	void StartDiscovery(natd::TimePoint now);
-@@ -246,6 +248,13 @@ void CNatTraversal::Impl::HandleEvents(natd::TimePoint now)
+@@ -391,6 +393,13 @@ void CNatTraversal::Impl::HandleEvents(natd::TimePoint now)
  			}
  			continue;
  		}
@@ -91,7 +91,7 @@ index d4dbcb9..d5a6f25 100644
  		const std::map<natd::SessionId, SSession>::iterator it = sessions.find(e.session);
  		if (it == sessions.end()) {
  			if (e.session != 0)
-@@ -282,7 +291,9 @@ void CNatTraversal::Impl::HandleEvents(natd::TimePoint now)
+@@ -427,7 +436,9 @@ void CNatTraversal::Impl::HandleEvents(natd::TimePoint now)
  				sessions.erase(it);
  				break;
  			}
@@ -102,7 +102,7 @@ index d4dbcb9..d5a6f25 100644
  			s.bOver = true;
  			switch (e.error) {
  			case natd::SessionError::None:		s.nPendingError = 0; break;
-@@ -405,6 +416,22 @@ uint16 CNatTraversal::GetPublicPort() const
+@@ -550,6 +561,22 @@ uint16 CNatTraversal::GetPublicPort() const
  	return m_pImpl->pAgent->publicEndpoint().port;
  }
  

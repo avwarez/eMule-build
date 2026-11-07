@@ -82,7 +82,7 @@ index fa40464..ba85fff 100644
  	delete theApp.serverlist;				theApp.serverlist = NULL;		// CServerList::SaveServermetToFile
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
 new file mode 100644
-index 0000000..409934e
+index 0000000..b659474
 --- /dev/null
 +++ b/srchybrid/NatTraversal.cpp
 @@ -0,0 +1,237 @@
@@ -234,7 +234,7 @@ index 0000000..409934e
 +	{
 +		natd::AgentConfig cfg;
 +		cfg.discovery.primarySocket = kPrimarySocket;
-+		pAgent = std::make_unique<natd::Agent>(cfg, io);
++		pAgent = std::make_unique<natd::Agent>(cfg, io, natd::StreamTransportFactory());	// the stream transport comes with 89nc
 +	}
 +	void StartDiscovery(natd::TimePoint now);
 +	void Poll(natd::TimePoint now);

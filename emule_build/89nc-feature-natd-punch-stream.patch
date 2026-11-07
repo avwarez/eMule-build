@@ -181,14 +181,18 @@ index 15674a1..2e1c2eb 100644
  				//Make sure we are still thinking about the same file
  				if (md4equ(reqfilehash, sender->GetUploadFileID())) {
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
-index 409934e..d4dbcb9 100644
+index b659474..56db346 100644
 --- a/srchybrid/NatTraversal.cpp
 +++ b/srchybrid/NatTraversal.cpp
-@@ -15,14 +15,25 @@
+@@ -15,18 +15,34 @@
  //along with this program; if not, write to the Free Software
  //Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  #include "stdafx.h"
++#include <algorithm>
 +#include <array>
++#include <chrono>
++#include <deque>
++#include <functional>
 +#include <map>
  #include <mutex>
  #include <thread>
@@ -211,7 +215,12 @@ index 409934e..d4dbcb9 100644
  #include "Log.h"
  #include "kademlia/kademlia/Kademlia.h"
  #include "natd/natd.hpp"
-@@ -34,6 +45,13 @@
+ #include "natd/winsock_io.hpp"
++#include "kcp/ikcp.h"
+ 
+ #ifdef _DEBUG
+ #define new DEBUG_NEW
+@@ -34,6 +50,13 @@
  static char THIS_FILE[] = __FILE__;
  #endif
  
@@ -225,7 +234,7 @@ index 409934e..d4dbcb9 100644
  namespace
  {
  	// natd's id of the client UDP socket; the sockets natd opens itself (discovery samples) get
-@@ -47,15 +65,28 @@ namespace
+@@ -47,15 +70,28 @@ namespace
  		return str;
  	}
  
@@ -257,7 +266,7 @@ index 409934e..d4dbcb9 100644
  	// The STUN servers, resolved off the main thread (getaddrinfo blocks). The thread owns a
  	// reference: it may still run when eMule closes, and then writes to nobody.
  	struct SStunList
-@@ -90,7 +121,8 @@ namespace
+@@ -90,7 +126,8 @@ namespace
  	}
  
  	// natd's socket interface: the client UDP socket, plus the plain sockets natd opens for its
@@ -267,7 +276,7 @@ index 409934e..d4dbcb9 100644
  	class CNatdIo final : public natd::IDatagramIo
  	{
  	public:
-@@ -127,30 +159,55 @@ namespace
+@@ -127,30 +164,195 @@ namespace
  				return m_extra.send(id, to, pData, nLen);
  			if (theApp.clientudp == NULL || theApp.clientudp->m_hSocket == INVALID_SOCKET || nLen > 8192)
  				return false;
@@ -296,6 +305,146 @@ index 409934e..d4dbcb9 100644
 -// What stays here is eMule's: the socket, when to start, and what the events mean to eMule.
 +// What stays here is eMule's: the socket, when to start, the sockets of the punched
 +// connections, and what the events mean to them.
++namespace
++{
++	// The transport of the streams natd runs over a punched path (natd::IStreamTransport): natd
++	// carries its payloads with the session token, keeps the path open and closes with a FIN, but
++	// knows no transport protocol. This one is KCP (kcp/, MIT) in stream mode, normal mode
++	// (congestion control on), segments of at most info.maxPayload bytes sent through info.output.
++	// Changing it needs no new natd; both peers must run the same one.
++	class CNatdKcpTransport : public natd::IStreamTransport
++	{
++	public:
++		explicit CNatdKcpTransport(const natd::StreamTransportInfo &info)
++			: m_output(info.output)
++			, m_epoch(info.now)
++		{
++			const IUINT32 conv = (IUINT32)info.token[0] | (IUINT32)info.token[1] << 8 | (IUINT32)info.token[2] << 16 | (IUINT32)info.token[3] << 24;
++			m_pKcp = ikcp_create(conv, this);
++			ikcp_setoutput(m_pKcp, &CNatdKcpTransport::Output);
++			m_pKcp->stream = 1;
++			ikcp_setmtu(m_pKcp, (int)(std::min)((std::max)(info.maxPayload, (size_t)64), (size_t)1400));
++			ikcp_wndsize(m_pKcp, kWindow, kWindow);
++			ikcp_nodelay(m_pKcp, 0, 20, 0, 0);
++		}
++		~CNatdKcpTransport() override
++		{
++			ikcp_release(m_pKcp);
++		}
++		CNatdKcpTransport(const CNatdKcpTransport&) = delete;
++		CNatdKcpTransport& operator=(const CNatdKcpTransport&) = delete;
++
++		static natd::StreamTransportFactory Factory()
++		{
++			return [](const natd::StreamTransportInfo &info) -> std::unique_ptr<natd::IStreamTransport> {
++				return std::make_unique<CNatdKcpTransport>(info);
++			};
++		}
++
++		void input(const uint8_t *pData, size_t nLen, natd::TimePoint) override
++		{
++			ikcp_input(m_pKcp, reinterpret_cast<const char*>(pData), (long)nLen);
++			Drain();
++		}
++
++		size_t write(const uint8_t *pData, size_t nLen, natd::TimePoint) override
++		{
++			const int nRoom = 2 * kWindow - ikcp_waitsnd(m_pKcp);
++			if (nRoom <= 0 || nLen == 0)
++				return 0;
++			// ikcp_send refuses a call of IKCP_WND_RCV (128) segments or more: feed it in slices
++			size_t nLeft = (std::min)(nLen, (size_t)nRoom * (size_t)m_pKcp->mss);
++			size_t nDone = 0;
++			const size_t nSlice = (size_t)kMaxSegmentsPerSend * (size_t)m_pKcp->mss;
++			while (nLeft > 0) {
++				const size_t n = (std::min)(nLeft, nSlice);
++				if (ikcp_send(m_pKcp, reinterpret_cast<const char*>(pData + nDone), (int)n) < 0)
++					break;
++				nDone += n;
++				nLeft -= n;
++			}
++			if (nDone > 0)
++				ikcp_flush(m_pKcp);
++			return nDone;
++		}
++
++		bool writable() const override
++		{
++			return ikcp_waitsnd(m_pKcp) < 2 * kWindow;
++		}
++
++		size_t readable() const override
++		{
++			return m_rx.size();
++		}
++
++		size_t read(uint8_t *pOut, size_t nMax) override
++		{
++			const size_t n = (std::min)(nMax, m_rx.size());
++			std::copy_n(m_rx.begin(), n, pOut);
++			m_rx.erase(m_rx.begin(), m_rx.begin() + (ptrdiff_t)n);
++			return n;
++		}
++
++		natd::TimePoint poll(natd::TimePoint now) override
++		{
++			const IUINT32 cur = Ms(now);
++			ikcp_update(m_pKcp, cur);
++			Drain();
++			// write() flushes off KCP's interval grid, so a segment can be due for retransmission
++			// before the next scheduled flush: ikcp_check() then says "now" while ikcp_update() does
++			// nothing until the grid point. Retransmit what is due at once.
++			if (ikcp_check(m_pKcp, cur) == cur)
++				ikcp_flush(m_pKcp);
++			return now + natd::Duration(ikcp_check(m_pKcp, cur) - cur);
++		}
++
++		bool flushed() const override
++		{
++			return ikcp_waitsnd(m_pKcp) == 0;
++		}
++
++		bool failed() const override
++		{
++			return m_pKcp->state == (IUINT32)-1;
++		}
++
++	private:
++		static const int kWindow = 256;				// send and receive windows, in segments
++		static const int kMaxSegmentsPerSend = 64;	// < IKCP_WND_RCV (128), see ikcp_send
++
++		static int Output(const char *pBuf, int nLen, ikcpcb*, void *pUser)
++		{
++			static_cast<CNatdKcpTransport*>(pUser)->m_output(reinterpret_cast<const uint8_t*>(pBuf), (size_t)nLen);
++			return 0;
++		}
++
++		IUINT32 Ms(natd::TimePoint t) const
++		{
++			return (IUINT32)std::chrono::duration_cast<natd::Duration>(t - m_epoch).count();
++		}
++
++		void Drain()
++		{
++			for (;;) {
++				const int nSize = ikcp_peeksize(m_pKcp);
++				if (nSize <= 0)
++					break;
++				std::vector<char> buf((size_t)nSize);
++				const int nGot = ikcp_recv(m_pKcp, buf.data(), nSize);
++				if (nGot <= 0)
++					break;
++				m_rx.insert(m_rx.end(), buf.begin(), buf.begin() + nGot);
++			}
++		}
++
++		std::function<void(const uint8_t*, size_t)> m_output;
++		natd::TimePoint m_epoch;
++		ikcpcb *m_pKcp = NULL;
++		std::deque<uint8_t> m_rx;
++	};
++}
++
  struct CNatTraversal::Impl
  {
  	CNatdIo io;
@@ -309,13 +458,14 @@ index 409934e..d4dbcb9 100644
  	{
  		natd::AgentConfig cfg;
  		cfg.discovery.primarySocket = kPrimarySocket;
+-		pAgent = std::make_unique<natd::Agent>(cfg, io, natd::StreamTransportFactory());	// the stream transport comes with 89nc
 +		cfg.maxPunches = NATD_MAX_PUNCHES;
 +		cfg.maxWaiting = NATD_MAX_WAITING;
 +		cfg.punchWait = natd::Duration(NATD_PUNCH_WAIT);
 +		cfg.maxSessions = NATD_MAX_SESSIONS;
 +		cfg.keepalive = natd::Duration(NATD_STREAM_KEEPALIVE);
 +		cfg.linger = natd::Duration(NATD_LINGER);
- 		pAgent = std::make_unique<natd::Agent>(cfg, io);
++		pAgent = std::make_unique<natd::Agent>(cfg, io, CNatdKcpTransport::Factory());
  	}
  	void StartDiscovery(natd::TimePoint now);
  	void Poll(natd::TimePoint now);
@@ -325,7 +475,7 @@ index 409934e..d4dbcb9 100644
  };
  
  void CNatTraversal::Impl::StartDiscovery(natd::TimePoint now)
-@@ -174,16 +231,117 @@ void CNatTraversal::Impl::Poll(natd::TimePoint now)
+@@ -174,16 +376,117 @@ void CNatTraversal::Impl::Poll(natd::TimePoint now)
  	HandleEvents(now);
  }
  
@@ -450,7 +600,7 @@ index 409934e..d4dbcb9 100644
  		}
  	}
  }
-@@ -194,10 +352,20 @@ CNatTraversal::CNatTraversal()
+@@ -194,10 +497,20 @@ CNatTraversal::CNatTraversal()
  	std::thread(ResolveStunServers, m_pImpl->pStun).detach();
  }
  
@@ -472,7 +622,7 @@ index 409934e..d4dbcb9 100644
  	if (nLen <= 0 || !m_pImpl->pAgent->mayBeOurs(pData, (size_t)nLen))
  		return false;
  	const natd::TimePoint now = natd::Clock::now();
-@@ -212,6 +380,7 @@ void CNatTraversal::Process()
+@@ -212,6 +525,7 @@ void CNatTraversal::Process()
  {
  	Impl &impl = *m_pImpl;
  	const natd::TimePoint now = natd::Clock::now();
@@ -480,7 +630,7 @@ index 409934e..d4dbcb9 100644
  	if (!impl.pAgent->started() && Kademlia::CKademlia::IsRunning() && theApp.clientudp != NULL && theApp.clientudp->m_hSocket != INVALID_SOCKET)
  		impl.StartDiscovery(now);
  	// the sockets natd opened itself: what arrived since the last call, without waiting
-@@ -235,3 +404,287 @@ uint16 CNatTraversal::GetPublicPort() const
+@@ -235,3 +549,287 @@ uint16 CNatTraversal::GetPublicPort() const
  {
  	return m_pImpl->pAgent->publicEndpoint().port;
  }

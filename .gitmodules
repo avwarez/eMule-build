@@ -26,3 +26,6 @@
 [submodule "natd"]
 	path = natd
 	url = https://github.com/avwarez/natd.git
+[submodule "kcp"]
+	path = kcp
+	url = https://github.com/skywind3000/kcp.git
