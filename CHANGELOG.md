@@ -30,6 +30,7 @@ This build is eMule 0.72a with the changes below, compiled for x64, Win32 and AR
 - **Send after close:** a network send that completes after its connection has already closed no longer writes into freed memory. This was a cause of random crashes.
 - **Short UDP packets:** a UDP packet from a server too short to hold an opcode is no longer read past its end.
 - **Banned clients:** a banned client that keeps sending data no longer keeps the interface busy.
+- **IP filter through the buddy:** a firewalled client no longer answers a request that its Kad buddy forwards from an address in the IP filter or from a banned client. Before, it replied to that address and updated its place in the upload queue, although the same client writing directly was filtered.
 
 ### Web interface
 
