@@ -84,6 +84,28 @@ index 67e93ac..e49e164 100644
  				pRequester->TryToConnect();
  			} else
  				DebugLogWarning(_T("Ignored DirectCallback Request because we do not accept DirectCall backs at all (%s)"), (LPCTSTR)ipstr(ip));
+diff --git a/srchybrid/DownloadClient.cpp b/srchybrid/DownloadClient.cpp
+index 138ff6e..ef82356 100644
+--- a/srchybrid/DownloadClient.cpp
++++ b/srchybrid/DownloadClient.cpp
+@@ -32,6 +32,7 @@
+ #include "SHAHashSet.h"
+ #include "SharedFileList.h"
+ #include "Log.h"
++#include "NatTraversal.h"
+ #include "zlib/zlib.h"
+ 
+ #ifdef _DEBUG
+@@ -196,7 +197,8 @@ bool CUpDownClient::AskForDownload()
+ 				return true;
+ 			}
+ 			// if we are lowid <-> lowid but contacted the source before already, keep it in the hope that we might turn highid again
+-			if (!theApp.CanDoCallback(this)) {
++			// - unless we can punch to it (89nc): the re-ask then goes over a punch, as it goes over TCP to a HighID
++			if (!theApp.CanDoCallback(this) && !theApp.nattraversal->CanPunchTo(*this)) {
+ 				if (GetDownloadState() != DS_LOWTOLOWIP)
+ 					SetDownloadState(DS_LOWTOLOWIP);
+ 				m_bReaskPending = true;
 diff --git a/srchybrid/EMSocket.cpp b/srchybrid/EMSocket.cpp
 index 8d73530..6f54038 100644
 --- a/srchybrid/EMSocket.cpp
@@ -1089,3 +1111,25 @@ index e4bf0cc..92f9df3 100644
 +	uint16	m_nPort;		// host order, the UDP port of the peer
 +	BYTE	m_abyToken[12];
 +};
+diff --git a/srchybrid/PartFile.cpp b/srchybrid/PartFile.cpp
+index 0053cff..209c8d7 100644
+--- a/srchybrid/PartFile.cpp
++++ b/srchybrid/PartFile.cpp
+@@ -49,6 +49,7 @@
+ #include "ClientList.h"
+ #include "shahashset.h"
+ #include "Log.h"
++#include "NatTraversal.h"
+ #include "Collection.h"
+ #include "CollectionViewDialog.h"
+ #include "uploaddiskiothread.h"
+@@ -2267,7 +2268,8 @@ uint32 CPartFile::Process(uint32 factor, UINT icounter)
+ 				// To Mods, please stop instantly removing these sources.
+ 				// This causes sources to pop in and out creating extra overhead!
+ 				//Make sure this source is still a LowID Client, and we still cannot callback to this Client.
+-				if (cur_src->HasLowID() && !theApp.CanDoCallback(cur_src)) {
++				// and we cannot punch to it either (89nc): if we can, it goes back on queue and is asked again at its re-ask time
++				if (cur_src->HasLowID() && !theApp.CanDoCallback(cur_src) && !theApp.nattraversal->CanPunchTo(*cur_src)) {
+ 					//If we are almost maxed on sources, slowly remove these clients to see if we can find a better source.
+ 					if ((curTick >= m_lastpurgetime + SEC2MS(30)) && (GetSourceCount() >= GetMaxSources() * 4 / 5)) {
+ 						theApp.downloadqueue->RemoveSource(cur_src);
