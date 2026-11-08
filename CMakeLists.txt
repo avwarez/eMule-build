@@ -123,6 +123,19 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          natd gives (natd::mappingLifetime: measured, else RFC 4787's 2
 #          minutes for an endpoint-independent mapping) less 10 s, a Kad
 #          ping to a random contact, as eMule's external port lookup sends.
+#          89ng adds the eD2K server as a channel: two LowIDs logged in to a
+#          server that coordinates punches, Kad or not (discovery then runs
+#          for an eD2K LowID too), by Lugdunum's NAT callback (SRVCAP_
+#          NATTRAVERSAL, announced at login; the Rust ed2k-server takes it
+#          too): the requester sends OP_NAT_CALLBACK_REQUEST from the client
+#          UDP port, obfuscated with the server's UDP key, the server
+#          forwards it with the endpoint it saw, and the source asks back the
+#          same way, which brings its endpoint to the requester. With no
+#          marker there, both sides derive the session: the lower ID starts
+#          the punch and the token comes from its user hash and both IDs, so
+#          two LowIDs asking each other at once still meet. A peer the server
+#          brings more than once counts once; such a LowID source (odd ID) is
+#          kept, not dropped.
 #   90-94  the code compiles but /Wall flags it; these bring the warning
 #          count back to zero.
 #   95-96  the code compiles and is warning-clean but is not correct on
