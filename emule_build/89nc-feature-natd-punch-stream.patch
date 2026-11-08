@@ -24,7 +24,7 @@ index 683f556..28162c7 100644
  
  	ADDRESS_FAMILY m_nFamily;
 diff --git a/srchybrid/BaseClient.cpp b/srchybrid/BaseClient.cpp
-index c2805f7..ed84aee 100644
+index c2805f7..e23861e 100644
 --- a/srchybrid/BaseClient.cpp
 +++ b/srchybrid/BaseClient.cpp
 @@ -56,6 +56,7 @@
@@ -35,20 +35,21 @@ index c2805f7..ed84aee 100644
  #include "CaptchaGenerator.h"
  #include <atlimage.h>
  
-@@ -1340,7 +1341,11 @@ bool CUpDownClient::TryToConnect(bool bIgnoreMaxCon, bool bNoCallbacks, CRuntime
+@@ -1340,7 +1341,12 @@ bool CUpDownClient::TryToConnect(bool bIgnoreMaxCon, bool bNoCallbacks, CRuntime
  		}
  	}
  
 -	if (HasLowID() && GetKadState() != KS_CONNECTING_FWCHECK) {
 +	// LowID->LowID, both of us can be punched to: the source is asked to punch towards us and
 +	// the stream goes over the punched path (89nc); nothing else differs from a TCP connection
-+	const bool bPunch = HasLowID() && GetKadState() != KS_CONNECTING_FWCHECK && pClassSocket == NULL && !bNoCallbacks
-+		&& !theApp.CanDoCallback(this) && theApp.nattraversal->CanPunchTo(*this);
++	const uint8 byPunchVia = (HasLowID() && GetKadState() != KS_CONNECTING_FWCHECK && pClassSocket == NULL && !bNoCallbacks
++		&& !theApp.CanDoCallback(this)) ? theApp.nattraversal->PunchVia(*this) : NATD_VIA_NONE;
++	const bool bPunch = byPunchVia != NATD_VIA_NONE;
 +	if (HasLowID() && GetKadState() != KS_CONNECTING_FWCHECK && !bPunch) {
  		ASSERT(pClassSocket == NULL);
  		if (!theApp.CanDoCallback(this)) { // lowid2lowid check used for the whole function, don't remove
  			// We cannot reach this client, so we hard fail to connect, if this client should be kept,
-@@ -1382,6 +1387,20 @@ bool CUpDownClient::TryToConnect(bool bIgnoreMaxCon, bool bNoCallbacks, CRuntime
+@@ -1382,6 +1388,20 @@ bool CUpDownClient::TryToConnect(bool bIgnoreMaxCon, bool bNoCallbacks, CRuntime
  
  	theApp.clientlist->AddConnectingClient(this); // Starts and checks for the timeout, ensures following Disconnect() or ConnectionEstablished() call
  
@@ -56,7 +57,7 @@ index c2805f7..ed84aee 100644
 +		m_eConnectingState = CCS_DIRECTTCP;
 +		socket = static_cast<CClientReqSocket*>(RUNTIME_CLASS(CClientReqSocket)->CreateObject());
 +		socket->SetClient(this);
-+		if (theApp.nattraversal->AttachOutgoing(socket, *this) && socket->Create())
++		if (theApp.nattraversal->AttachOutgoing(socket, *this, byPunchVia) && socket->Create())
 +			Connect();
 +		else {
 +			socket->Safe_Delete();
@@ -70,17 +71,24 @@ index c2805f7..ed84aee 100644
  	// 3) Normal Outgoing TCP Connection
  	if (!HasLowID() || GetKadState() == KS_CONNECTING_FWCHECK) {
 diff --git a/srchybrid/ClientUDPSocket.cpp b/srchybrid/ClientUDPSocket.cpp
-index 67e93ac..e49e164 100644
+index 67e93ac..7cadf78 100644
 --- a/srchybrid/ClientUDPSocket.cpp
 +++ b/srchybrid/ClientUDPSocket.cpp
-@@ -399,6 +399,10 @@ bool CClientUDPSocket::ProcessPacket(const BYTE *packet, UINT size, uint8 opcode
+@@ -399,6 +399,17 @@ bool CClientUDPSocket::ProcessPacket(const BYTE *packet, UINT size, uint8 opcode
  				pRequester->SetConnectOptions(byConnectOptions, true, false);
  				pRequester->SetDirectUDPCallbackSupport(false);
  				DEBUG_ONLY(DebugLog(_T("Accepting incoming DirectCallbackRequest from %s"), (LPCTSTR)pRequester->DbgGetClientInfo()));
-+				// a LowID that asks for a punch too (89nc): towards the endpoint it sent from
++				// a LowID that asks for a punch too (89nc): towards the endpoint it sent from. The
++				// fields above are the request's (SNatCallback), off a server.
 +				uint64 nNonce;
-+				if (CNatTraversal::ReadMarker(data, nNonce))
-+					theApp.nattraversal->StartIncoming(ip, port, uchUserHash, nNonce);
++				if (CNatTraversal::ReadMarker(data, nNonce)) {
++					SNatCallback cb;
++					cb.dwIP = ip;
++					cb.nPort = port;
++					cb.nID = 0;
++					md4cpy(cb.abyHash, uchUserHash);
++					theApp.nattraversal->StartIncoming(cb, nNonce, NATD_VIA_DIRECT);
++				}
  				pRequester->TryToConnect();
  			} else
  				DebugLogWarning(_T("Ignored DirectCallback Request because we do not accept DirectCall backs at all (%s)"), (LPCTSTR)ipstr(ip));
@@ -175,7 +183,7 @@ index bb97efe..ef1c09e 100644
  	UINT	m_uTimeOut;
  	uint8	byConnected;
 diff --git a/srchybrid/ListenSocket.cpp b/srchybrid/ListenSocket.cpp
-index 15674a1..2e1c2eb 100644
+index 15674a1..bf4adbf 100644
 --- a/srchybrid/ListenSocket.cpp
 +++ b/srchybrid/ListenSocket.cpp
 @@ -41,6 +41,7 @@
@@ -186,7 +194,7 @@ index 15674a1..2e1c2eb 100644
  
  #ifdef _DEBUG
  #define new DEBUG_NEW
-@@ -1421,6 +1422,15 @@ void CClientReqSocket::ProcessExtPacket(const BYTE *packet, uint32 size, UINT op
+@@ -1421,6 +1422,16 @@ void CClientReqSocket::ProcessExtPacket(const BYTE *packet, uint32 size, UINT op
  				return;
  			}
  
@@ -194,8 +202,9 @@ index 15674a1..2e1c2eb 100644
 +			// saw the request come from, and nothing else of this packet is for us
 +			uint64 nNonce;
 +			if (CNatTraversal::ReadMarker(data_in, nNonce)) {
-+				if (theApp.IsFirewalled())
-+					theApp.nattraversal->StartIncoming(destip, destport, reqfilehash, nNonce);
++				SNatCallback cb;
++				if (theApp.IsFirewalled() && CNatTraversal::ReadCallback(data_in, destip, destport, cb))
++					theApp.nattraversal->StartIncoming(cb, nNonce, NATD_VIA_BUDDY);
 +				return;
 +			}
 +
@@ -203,10 +212,10 @@ index 15674a1..2e1c2eb 100644
  				//Make sure we are still thinking about the same file
  				if (md4equ(reqfilehash, sender->GetUploadFileID())) {
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
-index 111059e..9ed1220 100644
+index 179e44d..eb356ad 100644
 --- a/srchybrid/NatTraversal.cpp
 +++ b/srchybrid/NatTraversal.cpp
-@@ -15,19 +15,35 @@
+@@ -15,20 +15,36 @@
  //along with this program; if not, write to the Free Software
  //Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  #include "stdafx.h"
@@ -237,13 +246,14 @@ index 111059e..9ed1220 100644
 +#include "UpDownClient.h"
  #include "Log.h"
  #include "kademlia/kademlia/Kademlia.h"
+ #include "kademlia/kademlia/Prefs.h"
  #include "natd/natd.hpp"
  #include "natd/winsock_io.hpp"
 +#include "kcp/ikcp.h"
  
  #ifdef _DEBUG
  #define new DEBUG_NEW
-@@ -35,6 +51,13 @@
+@@ -36,6 +52,13 @@
  static char THIS_FILE[] = __FILE__;
  #endif
  
@@ -257,7 +267,7 @@ index 111059e..9ed1220 100644
  namespace
  {
  	// natd's id of the client UDP socket; the sockets natd opens itself (discovery samples) get
-@@ -48,15 +71,37 @@ namespace
+@@ -49,15 +72,58 @@ namespace
  		return str;
  	}
  
@@ -273,7 +283,7 @@ index 111059e..9ed1220 100644
  		return sa;
  	}
  
-+	// The session token from 16 bytes both peers know (a file or user hash) and the nonce.
++	// The session token from the requester's user hash, which both peers know, and the nonce.
 +	natd::TxId TokenFrom(const uchar *pKey16, uint64 nNonce)
 +	{
 +		return natd::tokenFrom(pKey16, 16, nNonce);
@@ -295,10 +305,31 @@ index 111059e..9ed1220 100644
 +		data.Write(abyOffer.data(), (UINT)abyOffer.size());
 +	}
 +
++	// The punch request after the endpoint (SNatCallback), as we send it: our ID, our crypt
++	// settings and our user hash
++	void WriteCallback(CSafeMemFile &data, uint32 nID)
++	{
++		data.WriteUInt32(nID);
++		data.WriteUInt8((uint8)((GetMyConnectOptions(true, false) & 0x07) | NATD_CALLBACK_HASH));
++		data.WriteHash16(thePrefs.GetUserHash());
++	}
++
++	LPCTSTR ViaStr(uint8 byVia)
++	{
++		switch (byVia) {
++		case NATD_VIA_BUDDY:
++			return _T("through the buddy");
++		case NATD_VIA_DIRECT:
++			return _T("directly");
++		default:
++			return _T("");
++		}
++	}
++
  	// The STUN servers, resolved off the main thread (getaddrinfo blocks). The thread owns a
  	// reference: it may still run when eMule closes, and then writes to nobody.
  	struct SStunList
-@@ -91,7 +136,8 @@ namespace
+@@ -92,7 +158,8 @@ namespace
  	}
  
  	// natd's socket interface: the client UDP socket, plus the plain sockets natd opens for its
@@ -308,7 +339,7 @@ index 111059e..9ed1220 100644
  	class CNatdIo final : public natd::IDatagramIo
  	{
  	public:
-@@ -128,7 +174,7 @@ namespace
+@@ -129,7 +196,7 @@ namespace
  				return m_extra.send(id, to, pData, nLen);
  			if (theApp.clientudp == NULL || theApp.clientudp->m_hSocket == INVALID_SOCKET || nLen > 8192)
  				return false;
@@ -317,7 +348,7 @@ index 111059e..9ed1220 100644
  			return ::sendto(theApp.clientudp->m_hSocket, reinterpret_cast<const char*>(pData), (int)nLen, 0
  				, reinterpret_cast<const sockaddr*>(&sa), (int)sizeof sa) == (int)nLen;
  		}
-@@ -167,10 +213,164 @@ namespace
+@@ -168,10 +235,175 @@ namespace
  		else
  			AddLogLine(false, _T("NAT traversal: NAT type not determined (%hs), public %s - no UDP hole punching"), natd::toString(profile.predictability), (LPCTSTR)strEndpoint);
  	}
@@ -410,14 +441,18 @@ index 111059e..9ed1220 100644
 +
 +		size_t readable() const override
 +		{
-+			return m_rx.size();
++			return m_rx.size() - m_nRxHead;
 +		}
 +
 +		size_t read(uint8_t *pOut, size_t nMax) override
 +		{
-+			const size_t n = (std::min)(nMax, m_rx.size());
-+			std::copy_n(m_rx.begin(), n, pOut);
-+			m_rx.erase(m_rx.begin(), m_rx.begin() + (ptrdiff_t)n);
++			const size_t n = (std::min)(nMax, m_rx.size() - m_nRxHead);
++			memcpy(pOut, m_rx.data() + m_nRxHead, n);
++			m_nRxHead += n;
++			if (m_nRxHead == m_rx.size()) {
++				m_rx.clear();
++				m_nRxHead = 0;
++			}
 +			return n;
 +		}
 +
@@ -459,31 +494,38 @@ index 111059e..9ed1220 100644
 +			return (IUINT32)std::chrono::duration_cast<natd::Duration>(t - m_epoch).count();
 +		}
 +
++		// what KCP has in order, straight into the buffer the stream reads from
 +		void Drain()
 +		{
 +			for (;;) {
 +				const int nSize = ikcp_peeksize(m_pKcp);
 +				if (nSize <= 0)
 +					break;
-+				std::vector<char> buf((size_t)nSize);
-+				const int nGot = ikcp_recv(m_pKcp, buf.data(), nSize);
++				if (m_nRxHead > 0) {	// what was read goes first
++					m_rx.erase(m_rx.begin(), m_rx.begin() + (ptrdiff_t)m_nRxHead);
++					m_nRxHead = 0;
++				}
++				const size_t nOld = m_rx.size();
++				m_rx.resize(nOld + (size_t)nSize);
++				const int nGot = ikcp_recv(m_pKcp, reinterpret_cast<char*>(m_rx.data() + nOld), nSize);
++				m_rx.resize(nOld + (size_t)(std::max)(nGot, 0));
 +				if (nGot <= 0)
 +					break;
-+				m_rx.insert(m_rx.end(), buf.begin(), buf.begin() + nGot);
 +			}
 +		}
 +
 +		std::function<void(const uint8_t*, size_t)> m_output;
 +		natd::TimePoint m_epoch;
 +		ikcpcb *m_pKcp = NULL;
-+		std::deque<uint8_t> m_rx;
++		std::vector<uint8_t> m_rx;	// received, not read yet from m_nRxHead on
++		size_t m_nRxHead = 0;
 +	};
 +}
 +
  struct CNatTraversal::Impl
  {
  	CNatdIo io;
-@@ -178,15 +378,28 @@ struct CNatTraversal::Impl
+@@ -179,15 +411,28 @@ struct CNatTraversal::Impl
  	std::unique_ptr<natd::Agent> pAgent;
  	std::set<uint64> stunEndpoints;	// IP (host order) << 16 | port of the STUN servers natd asks
  
@@ -513,7 +555,7 @@ index 111059e..9ed1220 100644
  };
  
  void CNatTraversal::Impl::StartDiscovery(natd::TimePoint now)
-@@ -218,18 +431,118 @@ void CNatTraversal::Impl::Poll(natd::TimePoint now)
+@@ -219,18 +464,117 @@ void CNatTraversal::Impl::Poll(natd::TimePoint now)
  	HandleEvents(now);
  }
  
@@ -550,16 +592,16 @@ index 111059e..9ed1220 100644
 +		SSession &s = it->second;
 +		switch (e.type) {
 +		case natd::AgentEventType::Connected:
-+			s.bConnected = true;
-+			if (thePrefs.GetVerbose())
-+				AddDebugLogLine(false, _T("NAT traversal: punched to %s, stream open"), (LPCTSTR)EndpointStr(pAgent->remote(e.session)));
-+			s.lPendingEvents |= FD_CONNECT;
-+			break;
 +		case natd::AgentEventType::Incoming:
++			// whichever side started the punch: the socket that asked connects, the other side's
++			// socket is made now, as an accepted one
 +			s.bConnected = true;
 +			if (thePrefs.GetVerbose())
 +				AddDebugLogLine(false, _T("NAT traversal: punched to %s, stream open"), (LPCTSTR)EndpointStr(pAgent->remote(e.session)));
-+			Accept(e.session, s, now);
++			if (s.pLayer != NULL)
++				s.lPendingEvents |= FD_CONNECT;
++			else
++				Accept(e.session, s, now);
 +			break;
 +		case natd::AgentEventType::Readable:
 +			s.lPendingEvents |= FD_READ;
@@ -572,7 +614,7 @@ index 111059e..9ed1220 100644
 +				AddDebugLogLine(false, s.bConnected ? _T("NAT traversal: stream with %s ended: %hs") : _T("NAT traversal: punch towards %s failed: %hs")
 +					, (LPCTSTR)EndpointStr(pAgent->remote(e.session)), natd::toString(e.error));
 +			if (s.pLayer == NULL) {
-+				// an incoming punch that did not get through, or a socket already gone
++				// a punch that did not get through before the socket was made, or a socket already gone
 +				pAgent->release(e.session, now);
 +				sessions.erase(it);
 +				break;
@@ -603,10 +645,9 @@ index 111059e..9ed1220 100644
 +	CClientReqSocket *pSocket = NULL;
 +	if (!theApp.listensocket->TooManySockets(true) && !theApp.ipfilter->IsFiltered(dwIP) && !theApp.clientlist->IsBannedClient(dwIP)) {
 +		pSocket = new CClientReqSocket;
-+		CNatdSocketLayer *pLayer = new CNatdSocketLayer(dwIP, remote.port, s.token.data());
++		CNatdSocketLayer *pLayer = new CNatdSocketLayer(dwIP, remote.port, s.token.data(), NATD_VIA_NONE);
 +		pSocket->AttachNatdLayer(pLayer);
-+		if (pSocket->Create()) {
-+			theApp.listensocket->AddConnection();
++		if (pSocket->Create()) {	// counts the connection, as CListenSocket::OnAccept does
 +			s.pLayer = pLayer;
 +			pLayer->Accepted(id);
 +			return;
@@ -640,7 +681,7 @@ index 111059e..9ed1220 100644
  		}
  	}
  }
-@@ -240,7 +553,27 @@ CNatTraversal::CNatTraversal()
+@@ -241,7 +585,27 @@ CNatTraversal::CNatTraversal()
  	std::thread(ResolveStunServers, m_pImpl->pStun).detach();
  }
  
@@ -669,7 +710,7 @@ index 111059e..9ed1220 100644
  
  // The servers natd sends Binding requests to: their answers are no peer's traffic, and the IP
  // filter (which lists many hosting and cloud ranges, where public STUN servers run) lets them in.
-@@ -251,6 +584,7 @@ bool CNatTraversal::IsStunServer(uint32 dwIP, uint16 nPort) const
+@@ -252,6 +616,7 @@ bool CNatTraversal::IsStunServer(uint32 dwIP, uint16 nPort) const
  
  bool CNatTraversal::OnDatagram(const BYTE *pData, int nLen, uint32 dwIP, uint16 nPort)
  {
@@ -677,15 +718,15 @@ index 111059e..9ed1220 100644
  	if (nLen <= 0 || !m_pImpl->pAgent->mayBeOurs(pData, (size_t)nLen))
  		return false;
  	const natd::TimePoint now = natd::Clock::now();
-@@ -265,6 +599,7 @@ void CNatTraversal::Process()
+@@ -266,6 +631,7 @@ void CNatTraversal::Process()
  {
  	Impl &impl = *m_pImpl;
  	const natd::TimePoint now = natd::Clock::now();
 +	CSingleLock lock(&impl.cs, TRUE);
- 	if (!impl.pAgent->started() && Kademlia::CKademlia::IsRunning() && theApp.clientudp != NULL && theApp.clientudp->m_hSocket != INVALID_SOCKET)
- 		impl.StartDiscovery(now);
- 	// the sockets natd opened itself: what arrived since the last call, without waiting
-@@ -272,6 +607,11 @@ void CNatTraversal::Process()
+ 	// only a LowID punches: in Kad once its firewall check is over (Kad says firewalled while it
+ 	// checks); a HighID never asks the STUN servers
+ 	if (!impl.pAgent->started() && theApp.clientudp != NULL && theApp.clientudp->m_hSocket != INVALID_SOCKET && theApp.IsFirewalled()
+@@ -278,6 +644,11 @@ void CNatTraversal::Process()
  		impl.pAgent->onDatagram(id, from, pData, nLen, now);
  	});
  	impl.Poll(now);
@@ -697,66 +738,69 @@ index 111059e..9ed1220 100644
  }
  
  bool CNatTraversal::IsPunchable() const
-@@ -288,3 +628,304 @@ uint16 CNatTraversal::GetPublicPort() const
+@@ -294,3 +665,320 @@ uint16 CNatTraversal::GetPublicPort() const
  {
  	return m_pImpl->pAgent->publicEndpoint().port;
  }
 +
 +// LowID->LowID (CemuleApp::CanDoCallback said no) between two clients that can be punched to,
 +// for a file we download from the source: the only case where a punch is tried.
-+bool CNatTraversal::CanPunchTo(const CUpDownClient &client) const
++uint8 CNatTraversal::PunchVia(const CUpDownClient &client) const
 +{
-+	if (!m_pImpl->pAgent->directPunchable() || !client.IsNatdSource() || client.GetRequestFile() == NULL || thePrefs.GetUDPPort() == 0
-+		|| !Kademlia::CKademlia::IsConnected() || !Kademlia::CKademlia::IsFirewalled())
++	if (!m_pImpl->pAgent->directPunchable() || client.GetRequestFile() == NULL || thePrefs.GetUDPPort() == 0)
++		return NATD_VIA_NONE;
++	// a source that published its punchable endpoint in Kad: through its buddy, or directly.
++	// The address the punch goes to is checked, whatever TryToConnect checked (it looks at
++	// GetIP() first).
++	if (client.IsNatdSource() && Kademlia::CKademlia::IsConnected() && Kademlia::CKademlia::IsFirewalled()
++		&& client.GetConnectIP() != 0 && client.GetKadPort() != 0
++		&& !theApp.ipfilter->IsFiltered(client.GetConnectIP()) && !theApp.clientlist->IsBannedClient(client.GetConnectIP()))
 +	{
-+		return false;
++		if (client.SupportsDirectUDPCallback())
++			return NATD_VIA_DIRECT;
++		if (client.HasValidBuddyID() && client.GetBuddyIP() != 0 && client.GetBuddyPort() != 0)
++			return NATD_VIA_BUDDY;
 +	}
-+	if (client.GetConnectIP() == 0 || client.GetKadPort() == 0)
-+		return false;
-+	// the address the punch goes to, whatever TryToConnect checked (it looks at GetIP() first)
-+	if (theApp.ipfilter->IsFiltered(client.GetConnectIP()) || theApp.clientlist->IsBannedClient(client.GetConnectIP()))
-+		return false;
-+	return client.SupportsDirectUDPCallback() || (client.HasValidBuddyID() && client.GetBuddyIP() != 0 && client.GetBuddyPort() != 0);
++	return NATD_VIA_NONE;
 +}
 +
 +// The request carries the marker; the punch goes to the endpoint the index node saw the
 +// source publish from (its Kad port), while the source punches to the endpoint the request
-+// came from - the one its buddy saw, for a source behind a buddy.
-+bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &client)
++// came from - the one its buddy saw, for a source behind a buddy. The token comes from our
++// user hash, which the request carries, and the marker's nonce.
++bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &client, uint8 byVia)
 +{
-+	if (!CanPunchTo(client))
++	if (byVia == NATD_VIA_NONE)
 +		return false;
 +	const uint64 nNonce = RandomUInt64();
-+	natd::TxId token;
 +	CSafeMemFile data(64);
-+	if (client.HasValidBuddyID() && client.GetBuddyIP() != 0 && client.GetBuddyPort() != 0) {
++	if (byVia == NATD_VIA_BUDDY) {
 +		// through the buddy, which checks the buddy ID and forwards the rest as it is
-+		const uchar *pFileHash = client.GetRequestFile()->GetFileHash();
 +		data.WriteHash16(client.GetBuddyID());
-+		data.WriteHash16(pFileHash);
++		data.WriteHash16(client.GetRequestFile()->GetFileHash());
 +		WriteMarker(data, nNonce);
-+		token = TokenFrom(pFileHash, nNonce);
++		WriteCallback(data, 0);
 +		Packet *packet = new Packet(data, OP_EMULEPROT);
 +		packet->opcode = OP_REASKCALLBACKUDP;
 +		theStats.AddUpDataOverheadOther(packet->size);
 +		// as eMule sends OP_REASKCALLBACKUDP: it does not know the buddy's user hash
 +		theApp.clientudp->SendPacket(packet, client.GetBuddyIP(), client.GetBuddyPort(), false, NULL, false, 0);
 +	} else {
-+		// a source with an open UDP port: after the three fields of OP_DIRECTCALLBACKREQ,
-+		// which is all an unpatched client reads
++		// a source with an open UDP port: the three fields of OP_DIRECTCALLBACKREQ, which is all
++		// an unpatched client reads, are the request's (the port, the user hash, the crypt
++		// settings) and its endpoint is the one the datagram comes from
 +		data.WriteUInt16(thePrefs.GetPort());
 +		data.WriteHash16(thePrefs.GetUserHash());
 +		data.WriteUInt8(GetMyConnectOptions(true, false));
 +		WriteMarker(data, nNonce);
-+		token = TokenFrom(thePrefs.GetUserHash(), nNonce);
 +		Packet *packet = new Packet(data, OP_EMULEPROT);
 +		packet->opcode = OP_DIRECTCALLBACKREQ;
 +		theStats.AddUpDataOverheadOther(packet->size);
 +		theApp.clientudp->SendPacket(packet, client.GetConnectIP(), client.GetKadPort(), client.ShouldReceiveCryptUDPPackets(), client.GetUserHash(), false, 0);
 +	}
++	pSocket->AttachNatdLayer(new CNatdSocketLayer(client.GetConnectIP(), client.GetKadPort(), TokenFrom(thePrefs.GetUserHash(), nNonce).data(), byVia));
 +	if (thePrefs.GetVerbose())
-+		AddDebugLogLine(false, _T("NAT traversal: punch requested %s, %s"), client.SupportsDirectUDPCallback() ? _T("directly") : _T("through the buddy"), (LPCTSTR)client.DbgGetClientInfo());
-+	pSocket->AttachNatdLayer(new CNatdSocketLayer(client.GetConnectIP(), client.GetKadPort(), token.data()));
++		AddDebugLogLine(false, _T("NAT traversal: punch requested %s, %s"), ViaStr(byVia), (LPCTSTR)client.DbgGetClientInfo());
 +	return true;
 +}
 +
@@ -776,55 +820,67 @@ index 111059e..9ed1220 100644
 +	return true;
 +}
 +
-+void CNatTraversal::StartIncoming(uint32 dwIP, uint16 nPort, const uchar *pKey16, uint64 nNonce)
++bool CNatTraversal::ReadCallback(CSafeMemFile &data, uint32 dwIP, uint16 nPort, SNatCallback &cb)
 +{
-+	CSingleLock lock(&m_pImpl->cs, TRUE);
-+	// the IP filter, as for anything we would send to or read from that address: a request
-+	// through the buddy carries the endpoint the buddy saw, which no filter has checked yet
-+	if (theApp.ipfilter->IsFiltered(dwIP) || theApp.clientlist->IsBannedClient(dwIP)) {
-+		if (thePrefs.GetVerbose())
-+			AddDebugLogLine(false, _T("NAT traversal: punch request from %s:%u not taken: the address is filtered or banned"), (LPCTSTR)ipstr(dwIP), nPort);
-+		return;
-+	}
-+	if (!m_pImpl->pAgent->directPunchable() || dwIP == 0 || nPort == 0) {
-+		if (thePrefs.GetVerbose())
-+			AddDebugLogLine(false, _T("NAT traversal: punch request from %s:%u not taken: %s"), (LPCTSTR)ipstr(dwIP), nPort
-+				, m_pImpl->pAgent->directPunchable() ? _T("no endpoint to punch to") : _T("we cannot be punched to"));
-+		return;
-+	}
-+	const natd::Endpoint remote{ntohl(dwIP), nPort};
-+	const natd::TxId token(TokenFrom(pKey16, nNonce));
-+	const natd::TimePoint now = natd::Clock::now();
-+	// 0 also for a request repeated while the punch it asked for is still on
-+	const natd::SessionId id = m_pImpl->pAgent->accept(remote, token, now);
-+	if (id == 0) {
-+		if (thePrefs.GetVerbose())
-+			AddDebugLogLine(false, _T("NAT traversal: punch request from %s not taken: a punch with it is on already, or the session limit is reached"), (LPCTSTR)EndpointStr(remote));
-+		return;
-+	}
-+	SSession &s = m_pImpl->sessions[id];
-+	s.token = token;
-+	if (thePrefs.GetVerbose())
-+		AddDebugLogLine(false, _T("NAT traversal: punching towards %s (requested)"), (LPCTSTR)EndpointStr(remote));
-+	m_pImpl->HandleEvents(now);
++	if (data.GetLength() - data.GetPosition() < 5)
++		return false;
++	cb.dwIP = dwIP;
++	cb.nPort = nPort;
++	cb.nID = data.ReadUInt32();
++	const uint8 byCrypt = data.ReadUInt8();
++	// no user hash, no token
++	if ((byCrypt & NATD_CALLBACK_HASH) == 0 || data.GetLength() - data.GetPosition() < MDX_DIGEST_SIZE)
++		return false;
++	data.ReadHash16(cb.abyHash);
++	return true;
++}
++
++bool CNatTraversal::StartIncoming(const SNatCallback &cb, uint64 nNonce, uint8 byVia)
++{
++	return OpenSession(cb.dwIP, cb.nPort, TokenFrom(cb.abyHash, nNonce).data(), false, NULL, byVia);
 +}
 +
 +bool CNatTraversal::Connect(CNatdSocketLayer *pLayer)
 +{
++	return OpenSession(pLayer->GetIP(), pLayer->GetPort(), pLayer->GetToken(), true, pLayer, pLayer->m_byVia);
++}
++
++bool CNatTraversal::OpenSession(uint32 dwIP, uint16 nPort, const BYTE *pToken12, bool bConnect, CNatdSocketLayer *pLayer, uint8 byVia)
++{
 +	CSingleLock lock(&m_pImpl->cs, TRUE);
-+	natd::TxId token;
-+	memcpy(token.data(), pLayer->GetToken(), token.size());
-+	const natd::Endpoint remote{ntohl(pLayer->GetIP()), pLayer->GetPort()};
-+	const natd::TimePoint now = natd::Clock::now();
-+	const natd::SessionId id = m_pImpl->pAgent->connect(remote, token, now);
-+	if (id == 0)
++	// the IP filter, as for anything we would send to or read from that address: a request
++	// through a relay carries the endpoint the relay saw, which no filter has checked yet
++	LPCTSTR pszNot = NULL;
++	if (theApp.ipfilter->IsFiltered(dwIP) || theApp.clientlist->IsBannedClient(dwIP))
++		pszNot = _T("the address is filtered or banned");
++	else if (!m_pImpl->pAgent->directPunchable())
++		pszNot = _T("we cannot be punched to");
++	else if (dwIP == 0 || nPort == 0)
++		pszNot = _T("no endpoint to punch to");
++	if (pszNot != NULL) {
++		if (thePrefs.GetVerbose())
++			AddDebugLogLine(false, _T("NAT traversal: punch %s with %s:%u not started: %s"), ViaStr(byVia), (LPCTSTR)ipstr(dwIP), nPort, pszNot);
 +		return false;
++	}
++	const natd::Endpoint remote{ntohl(dwIP), nPort};
++	natd::TxId token;
++	memcpy(token.data(), pToken12, token.size());
++	const natd::TimePoint now = natd::Clock::now();
++	// 0 also for a request repeated while the punch it asked for is still on
++	const natd::SessionId id = bConnect ? m_pImpl->pAgent->connect(remote, token, now) : m_pImpl->pAgent->accept(remote, token, now);
++	if (id == 0) {
++		if (thePrefs.GetVerbose())
++			AddDebugLogLine(false, _T("NAT traversal: punch %s with %s not started: a punch with it is on already, or the session limit is reached"), ViaStr(byVia), (LPCTSTR)EndpointStr(remote));
++		return false;
++	}
 +	SSession &s = m_pImpl->sessions[id];
 +	s.token = token;
 +	s.pLayer = pLayer;
-+	pLayer->m_nSession = id;
++	if (pLayer != NULL)
++		pLayer->m_nSession = id;
 +	if (thePrefs.GetVerbose())
-+		AddDebugLogLine(false, _T("NAT traversal: punching towards %s (requesting)"), (LPCTSTR)EndpointStr(remote));
++		AddDebugLogLine(false, _T("NAT traversal: punching towards %s (%s, %s, %s)"), (LPCTSTR)EndpointStr(remote), ViaStr(byVia)
++			, pLayer != NULL ? _T("we asked") : _T("we were asked"), bConnect ? _T("we start") : _T("we answer"));
 +	m_pImpl->HandleEvents(now);
 +	return true;
 +}
@@ -881,10 +937,11 @@ index 111059e..9ed1220 100644
 +///////////////////////////////////////////////////////////////////////////////
 +// CNatdSocketLayer
 +
-+CNatdSocketLayer::CNatdSocketLayer(uint32 dwIP, uint16 nPort, const BYTE *pToken12)
++CNatdSocketLayer::CNatdSocketLayer(uint32 dwIP, uint16 nPort, const BYTE *pToken12, uint8 byVia)
 +	: m_nSession()
 +	, m_dwIP(dwIP)
 +	, m_nPort(nPort)
++	, m_byVia(byVia)
 +{
 +	memcpy(m_abyToken, pToken12, sizeof m_abyToken);
 +}
@@ -1003,7 +1060,7 @@ index 111059e..9ed1220 100644
 +	return TRUE;
 +}
 diff --git a/srchybrid/NatTraversal.h b/srchybrid/NatTraversal.h
-index e4bf0cc..92f9df3 100644
+index e4bf0cc..d5bfb4b 100644
 --- a/srchybrid/NatTraversal.h
 +++ b/srchybrid/NatTraversal.h
 @@ -16,6 +16,7 @@
@@ -1014,7 +1071,7 @@ index e4bf0cc..92f9df3 100644
  
  // UDP hole punching between two LowIDs, with natd (the natd submodule): NAT discovery on the
  // client UDP port (the one Kad uses), with public STUN servers only - no server of our own.
-@@ -24,7 +25,26 @@
+@@ -24,7 +25,49 @@
  // Predictability::Stable): the endpoint a third party sees is then the one every peer sees,
  // so two punchable LowIDs can reach each other through the endpoints their buddies saw.
  //
@@ -1025,6 +1082,11 @@ index e4bf0cc..92f9df3 100644
 +// saw the request come from) or directly (OP_DIRECTCALLBACKREQ), with the natd marker at the
 +// end of the packet: both punch at once, and the eD2K stream then runs over natd::Stream
 +// (KCP) on the client UDP port, under a CClientReqSocket that knows nothing of it.
++//
++// The request is the same on every channel, the one the eD2K servers forward between two
++// LowIDs (Lugdunum's NAT callback, SNatCallback): the requester's endpoint as the relay saw
++// it, its ID on the server (0 off a server), its crypt settings and its user hash. The
++// session token comes from that user hash and the nonce of the request.
 +//
 +// The natd headers stay inside NatTraversal.cpp. Every method is called on the main thread,
 +// but Write(), which the upload throttler calls too.
@@ -1039,24 +1101,47 @@ index e4bf0cc..92f9df3 100644
 +#define NATD_MARKER_VERSION		1
 +#define NATD_MARKER_PUNCH		1
 +
++// The channels a punch request goes through
++#define NATD_VIA_NONE			0
++#define NATD_VIA_BUDDY			1	// OP_REASKCALLBACKUDP to the source's buddy
++#define NATD_VIA_DIRECT			2	// OP_DIRECTCALLBACKREQ to a source with an open UDP port
++
++// The punch request: <ID 4><crypt 1>[<user hash 16> if crypt & NATD_CALLBACK_HASH] after the
++// endpoint the relay adds, as Lugdunum forwards it (OP_NAT_CALLBACK_*). crypt is the requester's
++// crypt layer support, request and require in bits 0-2, as GetMyConnectOptions puts them; the
++// punch needs only the user hash (the stream's crypt layer negotiates as over TCP).
++#define NATD_CALLBACK_HASH		0x80
++struct SNatCallback
++{
++	uint32	dwIP;			// network order
++	uint16	nPort;			// the requester's UDP port
++	uint32	nID;			// the requester's ID on the server, 0 for a request that came through no server
++	uchar	abyHash[16];	// the requester's user hash
++};
++
  class CNatTraversal
  {
  public:
-@@ -48,7 +68,68 @@ public:
+@@ -48,7 +91,78 @@ public:
  	uint32	GetPublicIP() const;
  	uint16	GetPublicPort() const;
  
 +	// Downloader side. True when TCP cannot reach the client (LowID->LowID) but a punch can.
-+	bool	CanPunchTo(const CUpDownClient &client) const;
-+	// Sends the marked callback request and gives the socket the layer that punches when
-+	// the socket connects; false when nothing was sent (the socket is then left as it was).
-+	bool	AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &client);
++	bool	CanPunchTo(const CUpDownClient &client) const	{ return PunchVia(client) != NATD_VIA_NONE; }
++	// The channel the punch request goes through (NATD_VIA_*).
++	uint8	PunchVia(const CUpDownClient &client) const;
++	// Sends the punch request through byVia (PunchVia) and gives the socket the layer that
++	// punches when the socket connects; false when nothing was sent (the socket is then left as it was).
++	bool	AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &client, uint8 byVia);
 +
 +	// Source side: the marker at the current position of a callback request, if there is one.
 +	static bool ReadMarker(CSafeMemFile &data, uint64 &nNonce);
-+	// A marked request arrived: punch towards the endpoint it came from (network order IP).
-+	// The token comes from the 16 bytes both peers know (file or user hash) and the nonce.
-+	void	StartIncoming(uint32 dwIP, uint16 nPort, const uchar *pKey16, uint64 nNonce);
++	// The request after the endpoint, at the current position; false without the user hash.
++	// dwIP (network order) and nPort: the requester's endpoint, as the relay saw it.
++	static bool ReadCallback(CSafeMemFile &data, uint32 dwIP, uint16 nPort, SNatCallback &cb);
++	// A request arrived through byVia: punch towards the requester's endpoint, with the token
++	// from its user hash and the nonce. False when the punch was not started.
++	bool	StartIncoming(const SNatCallback &cb, uint64 nNonce, uint8 byVia);
 +
 +	// CNatdSocketLayer; Write() also from the upload throttler thread
 +	bool	Connect(CNatdSocketLayer *pLayer);
@@ -1065,6 +1150,10 @@ index e4bf0cc..92f9df3 100644
 +	void	Detach(uint32 nSession);
 +
  private:
++	// A punch session towards dwIP:nPort (network order IP): natd connects when bConnect, else
++	// accepts. pLayer: the socket's, NULL for a socket made when the stream opens.
++	bool	OpenSession(uint32 dwIP, uint16 nPort, const BYTE *pToken12, bool bConnect, CNatdSocketLayer *pLayer, uint8 byVia);
++
  	struct Impl;
  	std::unique_ptr<Impl> m_pImpl;
  };
@@ -1075,7 +1164,7 @@ index e4bf0cc..92f9df3 100644
 +{
 +	friend class CNatTraversal;
 +public:
-+	CNatdSocketLayer(uint32 dwIP, uint16 nPort, const BYTE *pToken12);
++	CNatdSocketLayer(uint32 dwIP, uint16 nPort, const BYTE *pToken12, uint8 byVia);
 +	virtual	~CNatdSocketLayer();
 +
 +	// incoming: the punch is done, the socket starts as an accepted one
@@ -1109,6 +1198,7 @@ index e4bf0cc..92f9df3 100644
 +	uint32	m_nSession;		// 0: none (not connected yet, or gone)
 +	uint32	m_dwIP;			// network order
 +	uint16	m_nPort;		// host order, the UDP port of the peer
++	uint8	m_byVia;		// NATD_VIA_*, the channel of the request
 +	BYTE	m_abyToken[12];
 +};
 diff --git a/srchybrid/PartFile.cpp b/srchybrid/PartFile.cpp

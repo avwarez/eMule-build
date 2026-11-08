@@ -1,5 +1,5 @@
 diff --git a/srchybrid/ClientUDPSocket.cpp b/srchybrid/ClientUDPSocket.cpp
-index f887585..4e564d2 100644
+index 7cadf78..1c97b15 100644
 --- a/srchybrid/ClientUDPSocket.cpp
 +++ b/srchybrid/ClientUDPSocket.cpp
 @@ -51,6 +51,7 @@ CClientUDPSocket::CClientUDPSocket()
@@ -10,7 +10,7 @@ index f887585..4e564d2 100644
  }
  
  CClientUDPSocket::~CClientUDPSocket()
-@@ -504,6 +505,7 @@ int CClientUDPSocket::SendTo(uchar *lpBuf, int nBufLen, uint32 dwIP, uint16 nPor
+@@ -510,6 +511,7 @@ int CClientUDPSocket::SendTo(uchar *lpBuf, int nBufLen, uint32 dwIP, uint16 nPor
  			DebugLogError(_T("Error: Client UDP socket, failed to send data to %s:%u: %s"), (LPCTSTR)ipstr(dwIP), nPort, (LPCTSTR)GetErrorMessage(dwError, 1));
  		return 0; //error
  	}
@@ -49,26 +49,30 @@ index 1414820..1712936 100644
  };
 \ No newline at end of file
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
-index 4fc277d..7f95e8b 100644
+index 8a7b24c..d0af8a2 100644
 --- a/srchybrid/NatTraversal.cpp
 +++ b/srchybrid/NatTraversal.cpp
-@@ -46,6 +46,7 @@
- #include "kademlia/kademlia/UDPFirewallTester.h"
- #include "kademlia/net/KademliaUDPListener.h"
- #include "kademlia/routing/Contact.h"
+@@ -42,6 +42,11 @@
+ #include "Log.h"
+ #include "kademlia/kademlia/Kademlia.h"
+ #include "kademlia/kademlia/Prefs.h"
++#include "kademlia/net/KademliaUDPListener.h"
++#include "kademlia/routing/Contact.h"
 +#include "kademlia/routing/RoutingZone.h"
- #include "kademlia/utils/KadUDPKey.h"
- #include "kademlia/utils/UInt128.h"
- #include "zlib/zlib.h"
-@@ -66,6 +67,7 @@ static char THIS_FILE[] = __FILE__;
++#include "kademlia/utils/KadUDPKey.h"
++#include "kademlia/utils/UInt128.h"
+ #include "natd/natd.hpp"
+ #include "natd/winsock_io.hpp"
+ #include "kcp/ikcp.h"
+@@ -59,6 +64,7 @@ static char THIS_FILE[] = __FILE__;
  #define NATD_STREAM_KEEPALIVE	SEC2MS(20)
  #define NATD_LINGER				((DWORD)SEC2MS(10))	// a stream closed by eMule, until its FIN is through
  #define NATD_CHECK_REUSE		((DWORD)MIN2MS(1))	// an endpoint check stands this long: the STUN servers are someone else's
 +#define NATD_KEEPALIVE_MARGIN	natd::Duration(SEC2MS(10))	// the keepalive goes this long before natd's mapping lifetime
- #define D1_MAX_CONTACTS			500		// Kad contacts via buddy
- #define D1_MAX_ROUTES			256		// the way back to LowIDs whose Kad packets came through the relay
- #define D1_ROUTE_LIFETIME		((DWORD)MIN2MS(10))
-@@ -231,8 +233,11 @@ namespace
+ 
+ namespace
+ {
+@@ -198,8 +204,11 @@ namespace
  			if (theApp.clientudp == NULL || theApp.clientudp->m_hSocket == INVALID_SOCKET || nLen > 8192)
  				return false;
  			const sockaddr_in sa(SockAddr(htonl(to.ip), to.port));
@@ -81,7 +85,7 @@ index 4fc277d..7f95e8b 100644
  		}
  	};
  
-@@ -475,6 +480,9 @@ struct CNatTraversal::Impl
+@@ -435,6 +444,9 @@ struct CNatTraversal::Impl
  	void RaiseEvents();
  	DWORD dwLastStats = 0;
  	void LogStats(LPCTSTR pszWhen) const;
@@ -91,7 +95,7 @@ index 4fc277d..7f95e8b 100644
  };
  
  void CNatTraversal::Impl::StartDiscovery(natd::TimePoint now)
-@@ -649,9 +657,9 @@ void CNatTraversal::Impl::LogStats(LPCTSTR pszWhen) const
+@@ -608,9 +620,9 @@ void CNatTraversal::Impl::LogStats(LPCTSTR pszWhen) const
  	if (!thePrefs.GetVerbose() || !pAgent->started())
  		return;
  	const natd::AgentStats &st = pAgent->stats();
@@ -103,15 +107,11 @@ index 4fc277d..7f95e8b 100644
  }
  
  CNatTraversal::~CNatTraversal()
-@@ -701,11 +709,37 @@ void CNatTraversal::Process()
+@@ -665,7 +677,33 @@ void CNatTraversal::Process()
  		if (impl.dwLastStats != 0)
  			impl.LogStats(_T("last hour"));
  		impl.dwLastStats = ::GetTickCount();
 +		impl.nKeepalives = 0;
- 	}
- 	if (::GetTickCount() - impl.dwLastKadTimer >= (DWORD)MIN2MS(1)) {
- 		impl.dwLastKadTimer = ::GetTickCount();
- 		impl.KadTimer();
  	}
 +	impl.Keepalive();
 +}
@@ -140,4 +140,4 @@ index 4fc277d..7f95e8b 100644
 +	Kademlia::CKademlia::GetUDPListener()->SendNullPacket(KADEMLIA2_PING, pContact->GetIPAddress(), pContact->GetUDPPort(), pContact->GetUDPKey(), &uTargetID);
  }
  
- ///////////////////////////////////////////////////////////////////////////////
+ const uchar* CNatTraversal::GetMyBuddyHash() const

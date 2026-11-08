@@ -90,10 +90,10 @@ index fa40464..ba85fff 100644
  	delete theApp.serverlist;				theApp.serverlist = NULL;		// CServerList::SaveServermetToFile
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
 new file mode 100644
-index 0000000..111059e
+index 0000000..179e44d
 --- /dev/null
 +++ b/srchybrid/NatTraversal.cpp
-@@ -0,0 +1,290 @@
+@@ -0,0 +1,296 @@
 +//this file is part of eMule
 +//Copyright (C)2002-2026 Merkur ( strEmail.Format("%s@%s", "devteam", "emule-project.net") / https://www.emule-project.net )
 +//
@@ -122,6 +122,7 @@ index 0000000..111059e
 +#include "OtherFunctions.h"
 +#include "Log.h"
 +#include "kademlia/kademlia/Kademlia.h"
++#include "kademlia/kademlia/Prefs.h"
 +#include "natd/natd.hpp"
 +#include "natd/winsock_io.hpp"
 +
@@ -361,8 +362,13 @@ index 0000000..111059e
 +{
 +	Impl &impl = *m_pImpl;
 +	const natd::TimePoint now = natd::Clock::now();
-+	if (!impl.pAgent->started() && Kademlia::CKademlia::IsRunning() && theApp.clientudp != NULL && theApp.clientudp->m_hSocket != INVALID_SOCKET)
++	// only a LowID punches: in Kad once its firewall check is over (Kad says firewalled while it
++	// checks); a HighID never asks the STUN servers
++	if (!impl.pAgent->started() && theApp.clientudp != NULL && theApp.clientudp->m_hSocket != INVALID_SOCKET && theApp.IsFirewalled()
++		&& Kademlia::CKademlia::IsConnected() && Kademlia::CKademlia::IsFirewalled() && !Kademlia::CKademlia::GetPrefs()->GetRecheckIP())
++	{
 +		impl.StartDiscovery(now);
++	}
 +	// the sockets natd opened itself: what arrived since the last call, without waiting
 +	impl.io.m_extra.wait(now, [&impl, now](natd::SocketId id, const natd::Endpoint &from, const uint8_t *pData, size_t nLen) {
 +		impl.pAgent->onDatagram(id, from, pData, nLen, now);

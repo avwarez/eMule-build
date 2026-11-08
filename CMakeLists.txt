@@ -91,37 +91,34 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          with natd (below) and nothing but Kad, the buddies and public STUN
 #          servers; nothing changes towards a client without them, nor
 #          between clients where TCP works. 89na runs natd's NAT discovery
-#          on the client UDP port at Kad start: the client is punchable when
-#          its NAT maps that port endpoint-independently. 89nb: a punchable
-#          LowID marks its Kad source records with a "natd" tag, and a
-#          punchable LowID keeps the LowID sources that carry it instead of
-#          dropping them as LowID->LowID. 89nc: towards such a source the
-#          downloader asks for a punch, through the source's buddy
+#          on the client UDP port once the client is a LowID (Kad's firewall
+#          check over; a HighID never asks the STUN servers): the client is
+#          punchable when its NAT maps that port endpoint-independently.
+#          89nb: a punchable LowID marks its Kad source records with a "natd"
+#          tag, and a punchable LowID keeps the LowID sources that carry it
+#          instead of dropping them as LowID->LowID. 89nc: towards such a
+#          source the downloader asks for a punch, through the source's buddy
 #          (OP_REASKCALLBACKUDP, forwarded by any buddy with the endpoint it
 #          saw) or directly (OP_DIRECTCALLBACKREQ), with the natd marker at
-#          the end of the packet; both punch, and the eD2K stream runs over
-#          a natd stream on the client UDP port, with eMule's own transport
-#          (CNatdKcpTransport: KCP, kcp/ below; natd knows none), under a
-#          CClientReqSocket given a CNatdSocketLayer instead of TCP. 89nd:
+#          the end of the packet and the request in the format the eD2K
+#          servers forward between two LowIDs (Lugdunum's NAT callback: the
+#          requester's ID on the server, 0 off one, its crypt settings and
+#          its user hash, from which with the nonce the session token comes);
+#          both punch, and the eD2K stream runs over a natd stream on the
+#          client UDP port, with eMule's own transport (CNatdKcpTransport:
+#          KCP, kcp/ below; natd knows none), under a CClientReqSocket given
+#          a CNatdSocketLayer instead of TCP; a punchable LowID source is
+#          asked again at its re-ask time, not parked as LowID->LowID. 89nd:
 #          a dead stream is a lost connection, as a TCP one; then, and when
 #          the buddy is lost, the client checks its public endpoint again
 #          (natd QuickCheck, at most once a minute), ends its streams if it
 #          changed with the buddy lost, and publishes its sources again when
 #          the endpoint changed, as it does when the buddy changes. 89ne
-#          (D1) makes such a LowID a Kad node others can ask, through its
-#          buddy: its hellos carry the buddy's IP and port, patched nodes keep
-#          it in a table of their own (the routing bins stay as they are),
-#          send it Kad packets inside OP_REASKCALLBACKUDP, which the buddy
-#          forwards, and answer a KADEMLIA2_REQ marked with 0x80 in its type
-#          byte with KADEMLIA2_NATD_RES too; the buddy's address passes the
-#          checks eMule makes on a contact's. The LowID then indexes sources
-#          published to it that way, on top of the nodes eMule reaches.
-#          89nf obfuscates the first leg to the buddy: the LowID gives its
+#          obfuscates the punch request to the buddy: the LowID gives its
 #          buddy's user hash (when the buddy takes obfuscated UDP) in its
-#          hellos, in KADEMLIA2_NATD_RES and in its source records, and the
-#          relay and the punch request go to the buddy obfuscated with it, as
-#          eMule's own UDP between two clients.
-#          89ng keeps the mapping of the port such a LowID published in Kad:
+#          source records, and the request goes to the buddy obfuscated with
+#          it, as eMule's own UDP between two clients.
+#          89nf keeps the mapping of the port such a LowID published in Kad:
 #          when nothing left the client UDP port for the mapping lifetime
 #          natd gives (natd::mappingLifetime: measured, else RFC 4787's 2
 #          minutes for an endpoint-independent mapping) less 10 s, a Kad
@@ -334,7 +331,7 @@ add_subdirectory(libplum EXCLUDE_FROM_ALL)
 target_compile_options(plum-static PRIVATE $<$<C_COMPILER_ID:MSVC>:/W3>)
 
 # ---------------------------------------------------------------------------
-# natd - git submodule (natd/, avwarez/natd pinned to v0.1.0), the NAT discovery and UDP
+# natd - git submodule (natd/, avwarez/natd pinned to v0.1.3), the NAT discovery and UDP
 # hole punching that emule_build/89n* add between two LowIDs: sans-I/O C++17,
 # no sockets or threads of its own (eMule moves the datagrams and the time).
 # natd runs the stream session over the punched path but knows no transport:

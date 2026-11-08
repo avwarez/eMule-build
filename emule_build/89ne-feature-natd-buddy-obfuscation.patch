@@ -1,0 +1,184 @@
+diff --git a/srchybrid/DownloadQueue.cpp b/srchybrid/DownloadQueue.cpp
+index 949f0b5..a7ccb78 100644
+--- a/srchybrid/DownloadQueue.cpp
++++ b/srchybrid/DownloadQueue.cpp
+@@ -1533,7 +1533,7 @@ static bool KeepFirewalledSource(bool bNatd, uint32 dwIP, const CPartFile &file)
+ 	return bKeep;
+ }
+ 
+-void CDownloadQueue::KademliaSearchFile(uint32 nSearchID, const Kademlia::CUInt128 *pcontactID, const Kademlia::CUInt128 *pbuddyID, uint8 type, uint32 ip, uint16 tcp, uint16 udp, uint32 dwBuddyIP, uint16 dwBuddyPort, uint8 byCryptOptions, bool bNatd)
++void CDownloadQueue::KademliaSearchFile(uint32 nSearchID, const Kademlia::CUInt128 *pcontactID, const Kademlia::CUInt128 *pbuddyID, uint8 type, uint32 ip, uint16 tcp, uint16 udp, uint32 dwBuddyIP, uint16 dwBuddyPort, uint8 byCryptOptions, bool bNatd, const uchar *pNatdBuddyHash)
+ {
+ 	//Safety measure to make sure we are looking for these sources
+ 	CPartFile *temp = GetFileByKadFileSearchID(nSearchID);
+@@ -1611,6 +1611,7 @@ void CDownloadQueue::KademliaSearchFile(uint32 nSearchID, const Kademlia::CUInt1
+ 				// the punch goes to the endpoint the index node saw publishing
+ 				ctemp->SetConnectIP(ED2Kip);
+ 				ctemp->SetNatdSource(true);
++				ctemp->SetNatdBuddyHash(pNatdBuddyHash);
+ 			}
+ 		}
+ 		break;
+diff --git a/srchybrid/DownloadQueue.h b/srchybrid/DownloadQueue.h
+index 6b49c3f..dca620a 100644
+--- a/srchybrid/DownloadQueue.h
++++ b/srchybrid/DownloadQueue.h
+@@ -133,7 +133,7 @@ public:
+ 	// searching in Kad
+ 	void	SetLastKademliaFileRequest()				{ m_lastkademliafilerequest = ::GetTickCount(); }
+ 	bool	DoKademliaFileRequest() const;
+-	void	KademliaSearchFile(uint32 nSearchID, const Kademlia::CUInt128 *pcontactID, const Kademlia::CUInt128 *pbuddyID, uint8 type, uint32 ip, uint16 tcp, uint16 udp, uint32 dwBuddyIP, uint16 dwBuddyPort, uint8 byCryptOptions, bool bNatd);
++	void	KademliaSearchFile(uint32 nSearchID, const Kademlia::CUInt128 *pcontactID, const Kademlia::CUInt128 *pbuddyID, uint8 type, uint32 ip, uint16 tcp, uint16 udp, uint32 dwBuddyIP, uint16 dwBuddyPort, uint8 byCryptOptions, bool bNatd, const uchar *pNatdBuddyHash);
+ 
+ 	// searching on global servers
+ 	void	StopUDPRequests();
+diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
+index fd9a208..8a7b24c 100644
+--- a/srchybrid/NatTraversal.cpp
++++ b/srchybrid/NatTraversal.cpp
+@@ -668,6 +668,12 @@ void CNatTraversal::Process()
+ 	}
+ }
+ 
++const uchar* CNatTraversal::GetMyBuddyHash() const
++{
++	const CUpDownClient *pBuddy = theApp.clientlist->GetBuddyStatus() == Connected ? theApp.clientlist->GetBuddy() : NULL;
++	return pBuddy != NULL && pBuddy->SupportsCryptLayer() && pBuddy->HasValidHash() ? pBuddy->GetUserHash() : NULL;
++}
++
+ bool CNatTraversal::IsPunchable() const
+ {
+ 	return m_pImpl->pAgent->directPunchable();
+@@ -733,6 +739,7 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
+ 		return false;
+ 	const uint64 nNonce = RandomUInt64();
+ 	CSafeMemFile data(64);
++	bool bObfuscated;
+ 	if (byVia == NATD_VIA_BUDDY) {
+ 		// through the buddy, which checks the buddy ID and forwards the rest as it is
+ 		data.WriteHash16(client.GetBuddyID());
+@@ -742,8 +749,10 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
+ 		Packet *packet = new Packet(data, OP_EMULEPROT);
+ 		packet->opcode = OP_REASKCALLBACKUDP;
+ 		theStats.AddUpDataOverheadOther(packet->size);
+-		// as eMule sends OP_REASKCALLBACKUDP: it does not know the buddy's user hash
+-		theApp.clientudp->SendPacket(packet, client.GetBuddyIP(), client.GetBuddyPort(), false, NULL, false, 0);
++		// obfuscated for the buddy when the record gave its user hash; without it, in the clear
++		// as eMule sends OP_REASKCALLBACKUDP, which does not know that hash
++		bObfuscated = thePrefs.IsCryptLayerEnabled() && !isnulmd4(client.GetNatdBuddyHash());
++		theApp.clientudp->SendPacket(packet, client.GetBuddyIP(), client.GetBuddyPort(), bObfuscated, bObfuscated ? client.GetNatdBuddyHash() : NULL, false, 0);
+ 	} else {
+ 		// a source with an open UDP port: the three fields of OP_DIRECTCALLBACKREQ, which is all
+ 		// an unpatched client reads, are the request's (the port, the user hash, the crypt
+@@ -755,11 +764,13 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
+ 		Packet *packet = new Packet(data, OP_EMULEPROT);
+ 		packet->opcode = OP_DIRECTCALLBACKREQ;
+ 		theStats.AddUpDataOverheadOther(packet->size);
+-		theApp.clientudp->SendPacket(packet, client.GetConnectIP(), client.GetKadPort(), client.ShouldReceiveCryptUDPPackets(), client.GetUserHash(), false, 0);
++		bObfuscated = client.ShouldReceiveCryptUDPPackets();
++		theApp.clientudp->SendPacket(packet, client.GetConnectIP(), client.GetKadPort(), bObfuscated, client.GetUserHash(), false, 0);
+ 	}
+ 	pSocket->AttachNatdLayer(new CNatdSocketLayer(client.GetConnectIP(), client.GetKadPort(), TokenFrom(thePrefs.GetUserHash(), nNonce).data(), byVia));
+ 	if (thePrefs.GetVerbose())
+-		AddDebugLogLine(false, _T("NAT traversal: punch requested %s, %s"), ViaStr(byVia), (LPCTSTR)client.DbgGetClientInfo());
++		AddDebugLogLine(false, _T("NAT traversal: punch requested %s (%s), %s"), ViaStr(byVia)
++			, bObfuscated ? _T("obfuscated") : _T("in the clear"), (LPCTSTR)client.DbgGetClientInfo());
+ 	return true;
+ }
+ 
+diff --git a/srchybrid/NatTraversal.h b/srchybrid/NatTraversal.h
+index 6b86db7..921d051 100644
+--- a/srchybrid/NatTraversal.h
++++ b/srchybrid/NatTraversal.h
+@@ -96,6 +96,9 @@ public:
+ 	// The TCP connection to the buddy broke: a new public address breaks it at once. The
+ 	// endpoint is checked; if it changed, the punched streams end as TCP connections do.
+ 	void	OnBuddyLost();
++	// Our buddy's user hash when it takes obfuscated UDP, else NULL: our source records carry it,
++	// so that the punch request to the buddy goes obfuscated for it
++	const uchar* GetMyBuddyHash() const;
+ 
+ 	// Downloader side. True when TCP cannot reach the client (LowID->LowID) but a punch can.
+ 	bool	CanPunchTo(const CUpDownClient &client) const	{ return PunchVia(client) != NATD_VIA_NONE; }
+diff --git a/srchybrid/Opcodes.h b/srchybrid/Opcodes.h
+index 0de3554..195b111 100644
+--- a/srchybrid/Opcodes.h
++++ b/srchybrid/Opcodes.h
+@@ -429,6 +429,7 @@
+ #define TAG_SOURCETYPE			"\xFF"	// <uint8>
+ // A string name, unlike the eMule tags above: a mod with tags of its own uses one-byte names.
+ #define TAG_NATDCLIENT			"natd"	// <uint8> NAT traversal version; the source can be punched to
++#define TAG_NATDBUDDYHASH		"natdbuddyhash"	// <hash> the buddy's user hash, when it takes obfuscated UDP: the punch request is obfuscated for it
+ 
+ #define	TAGTYPE_NONE			0x00
+ #define	TAGTYPE_HASH			0x01
+diff --git a/srchybrid/UpdownClient.h b/srchybrid/UpdownClient.h
+index 93847a5..29bd148 100644
+--- a/srchybrid/UpdownClient.h
++++ b/srchybrid/UpdownClient.h
+@@ -121,6 +121,9 @@ public:
+ 	// a LowID Kad source whose record carries TAG_NATDCLIENT: it answers a punch request
+ 	bool			IsNatdSource() const							{ return m_bNatdSource; }
+ 	void			SetNatdSource(bool bNatd)						{ m_bNatdSource = bNatd; }
++	// its buddy's user hash from the record (all zero: unknown), to obfuscate the punch request
++	const uchar*	GetNatdBuddyHash() const						{ return m_achNatdBuddyHash; }
++	void			SetNatdBuddyHash(const uchar *pHash)			{ md4cpy(m_achNatdBuddyHash, pHash); }
+ 	EClientSoftware	GetClientSoft() const							{ return m_clientSoft; }
+ 	const CString&	GetClientSoftVer() const						{ return m_strClientSoftware; }
+ 	const CString&	GetClientModVer() const							{ return m_strModVersion; }
+@@ -510,6 +513,7 @@ protected:
+ 	uint16	m_nBuddyPort;
+ 	bool	m_bBuddyIDValid;
+ 	bool	m_bNatdSource = false;
++	uchar	m_achNatdBuddyHash[MDX_DIGEST_SIZE] = {};
+ 	bool	m_bUnicodeSupport;
+ 	//--group aligned to int32
+ 	uint32	m_nBuddyIP;
+diff --git a/srchybrid/kademlia/kademlia/Search.cpp b/srchybrid/kademlia/kademlia/Search.cpp
+index b972afc..fefa5fe 100644
+--- a/srchybrid/kademlia/kademlia/Search.cpp
++++ b/srchybrid/kademlia/kademlia/Search.cpp
+@@ -694,8 +694,13 @@ void CSearch::StorePacket()
+ 			listTag.push_back(new CKadTagUInt8(TAG_ENCRYPTION, CKademlia::GetPrefs()->GetMyConnectOptions(true, true)));
+ 			// A LowID that can be punched to says so: a LowID downloader keeps the source only then
+ 			// (the index node keeps tags it does not know, as every other client ignores them)
+-			if (theApp.IsFirewalled() && theApp.nattraversal->IsPunchable())
++			if (theApp.IsFirewalled() && theApp.nattraversal->IsPunchable()) {
+ 				listTag.push_back(new CKadTagUInt8(TAG_NATDCLIENT, 1));
++				// the buddy's user hash, so that the punch request to it can be obfuscated
++				const uchar *pBuddyHash = theApp.nattraversal->GetMyBuddyHash();
++				if (pBuddyHash != NULL)
++					listTag.push_back(new CKadTagHash(TAG_NATDBUDDYHASH, pBuddyHash));
++			}
+ 
+ 			// Send packet
+ 			CKademlia::GetUDPListener()->SendPublishSourcePacket(pFromContact, m_uTarget, uID, listTag);
+@@ -929,6 +934,7 @@ void CSearch::ProcessResultFile(const CUInt128 &uAnswer, TagList &rlistInfo)
+ 	CUInt128 uBuddy;
+ 	uint8 byCryptOptions = 0; // 0 = not supported
+ 	bool bNatd = false;
++	uchar abyBuddyHash[MDX_DIGEST_SIZE] = {};	// all zero: unknown
+ 
+ 	for (TagList::const_iterator itInfoList = rlistInfo.begin(); itInfoList != rlistInfo.end(); ++itInfoList) {
+ 		const CKadTag &cTag(**itInfoList);
+@@ -936,6 +942,11 @@ void CSearch::ProcessResultFile(const CUInt128 &uAnswer, TagList &rlistInfo)
+ 			bNatd = cTag.IsInt() && cTag.GetInt() >= 1;
+ 			continue;
+ 		}
++		if (cTag.m_name.Compare(TAG_NATDBUDDYHASH) == 0) {
++			if (cTag.IsHash())
++				md4cpy(abyBuddyHash, cTag.GetHash());
++			continue;
++		}
+ 		if (cTag.m_name.GetLength() != 1) //all names are 1 byte strings
+ 			continue;
+ 		switch ((byte)cTag.m_name[0]) {
+@@ -983,7 +994,7 @@ void CSearch::ProcessResultFile(const CUInt128 &uAnswer, TagList &rlistInfo)
+ 	case 6:
+ 		++m_uAnswers;
+ 		theApp.emuledlg->kademliawnd->searchList->SearchRef(this);
+-		theApp.downloadqueue->KademliaSearchFile(m_uSearchID, &uAnswer, &uBuddy, uType, uIP, uTCPPort, uUDPPort, uBuddyIP, uBuddyPort, byCryptOptions, bNatd);
++		theApp.downloadqueue->KademliaSearchFile(m_uSearchID, &uAnswer, &uBuddy, uType, uIP, uTCPPort, uUDPPort, uBuddyIP, uBuddyPort, byCryptOptions, bNatd, abyBuddyHash);
+ 		break;
+ 	}
+ }
