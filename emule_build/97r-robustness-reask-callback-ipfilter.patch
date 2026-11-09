@@ -1,8 +1,8 @@
 diff --git a/srchybrid/ListenSocket.cpp b/srchybrid/ListenSocket.cpp
-index 15674a1..c485da8 100644
+index bf4adbf..9cb0ca0 100644
 --- a/srchybrid/ListenSocket.cpp
 +++ b/srchybrid/ListenSocket.cpp
-@@ -1401,6 +1401,19 @@ void CClientReqSocket::ProcessExtPacket(const BYTE *packet, uint32 size, UINT op
+@@ -1402,6 +1402,19 @@ void CClientReqSocket::ProcessExtPacket(const BYTE *packet, uint32 size, UINT op
  			CSafeMemFile data_in(packet, size);
  			uint32 destip = data_in.ReadUInt32();
  			uint16 destport = data_in.ReadUInt16();

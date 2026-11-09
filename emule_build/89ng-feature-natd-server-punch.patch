@@ -29,7 +29,7 @@ index 1712936..08fdf06 100644
  
  protected:
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
-index d0af8a2..6953648 100644
+index 5ffe47c..3b2d9b0 100644
 --- a/srchybrid/NatTraversal.cpp
 +++ b/srchybrid/NatTraversal.cpp
 @@ -20,6 +20,7 @@
@@ -82,7 +82,7 @@ index d0af8a2..6953648 100644
  	// The STUN servers, resolved off the main thread (getaddrinfo blocks). The thread owns a
  	// reference: it may still run when eMule closes, and then writes to nobody.
  	struct SStunList
-@@ -447,6 +464,32 @@ struct CNatTraversal::Impl
+@@ -450,6 +467,32 @@ struct CNatTraversal::Impl
  	void Keepalive();
  	DWORD dwLastKeepalive = 0;
  	uint32 nKeepalives = 0;	// since the last hourly counters
@@ -115,7 +115,7 @@ index d0af8a2..6953648 100644
  };
  
  void CNatTraversal::Impl::StartDiscovery(natd::TimePoint now)
-@@ -661,10 +704,11 @@ void CNatTraversal::Process()
+@@ -664,10 +707,11 @@ void CNatTraversal::Process()
  	Impl &impl = *m_pImpl;
  	const natd::TimePoint now = natd::Clock::now();
  	CSingleLock lock(&impl.cs, TRUE);
@@ -130,7 +130,7 @@ index d0af8a2..6953648 100644
  	{
  		impl.StartDiscovery(now);
  	}
-@@ -680,6 +724,195 @@ void CNatTraversal::Process()
+@@ -683,6 +727,195 @@ void CNatTraversal::Process()
  		impl.nKeepalives = 0;
  	}
  	impl.Keepalive();
@@ -326,7 +326,7 @@ index d0af8a2..6953648 100644
  }
  
  // A LowID that published its port as punchable keeps the NAT's mapping of it: when nothing left
-@@ -764,17 +997,30 @@ uint8 CNatTraversal::PunchVia(const CUpDownClient &client) const
+@@ -767,17 +1000,30 @@ uint8 CNatTraversal::PunchVia(const CUpDownClient &client) const
  		if (client.HasValidBuddyID() && client.GetBuddyIP() != 0 && client.GetBuddyPort() != 0)
  			return NATD_VIA_BUDDY;
  	}
@@ -361,7 +361,7 @@ index d0af8a2..6953648 100644
  	const uint64 nNonce = RandomUInt64();
  	CSafeMemFile data(64);
  	bool bObfuscated;
-@@ -791,6 +1037,17 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
+@@ -794,6 +1040,17 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
  		// as eMule sends OP_REASKCALLBACKUDP, which does not know that hash
  		bObfuscated = thePrefs.IsCryptLayerEnabled() && !isnulmd4(client.GetNatdBuddyHash());
  		theApp.clientudp->SendPacket(packet, client.GetBuddyIP(), client.GetBuddyPort(), bObfuscated, bObfuscated ? client.GetNatdBuddyHash() : NULL, false, 0);
@@ -379,7 +379,7 @@ index d0af8a2..6953648 100644
  	} else {
  		// a source with an open UDP port: the three fields of OP_DIRECTCALLBACKREQ, which is all
  		// an unpatched client reads, are the request's (the port, the user hash, the crypt
-@@ -805,7 +1062,8 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
+@@ -808,7 +1065,8 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
  		bObfuscated = client.ShouldReceiveCryptUDPPackets();
  		theApp.clientudp->SendPacket(packet, client.GetConnectIP(), client.GetKadPort(), bObfuscated, client.GetUserHash(), false, 0);
  	}
@@ -389,7 +389,7 @@ index d0af8a2..6953648 100644
  	if (thePrefs.GetVerbose())
  		AddDebugLogLine(false, _T("NAT traversal: punch requested %s (%s), %s"), ViaStr(byVia)
  			, bObfuscated ? _T("obfuscated") : _T("in the clear"), (LPCTSTR)client.DbgGetClientInfo());
-@@ -850,6 +1108,9 @@ bool CNatTraversal::StartIncoming(const SNatCallback &cb, uint64 nNonce, uint8 b
+@@ -853,6 +1111,9 @@ bool CNatTraversal::StartIncoming(const SNatCallback &cb, uint64 nNonce, uint8 b
  
  bool CNatTraversal::Connect(CNatdSocketLayer *pLayer)
  {
@@ -399,7 +399,7 @@ index d0af8a2..6953648 100644
  	return OpenSession(pLayer->GetIP(), pLayer->GetPort(), pLayer->GetToken(), true, pLayer, pLayer->m_byVia);
  }
  
-@@ -947,17 +1208,22 @@ void CNatTraversal::Detach(uint32 nSession)
+@@ -950,17 +1211,22 @@ void CNatTraversal::Detach(uint32 nSession)
  
  CNatdSocketLayer::CNatdSocketLayer(uint32 dwIP, uint16 nPort, const BYTE *pToken12, uint8 byVia)
  	: m_nSession()
@@ -423,7 +423,7 @@ index d0af8a2..6953648 100644
  }
  
  // incoming connection: the socket starts as an accepted one, and the first event makes it connected
-@@ -1006,6 +1272,8 @@ void CNatdSocketLayer::Close()
+@@ -1009,6 +1275,8 @@ void CNatdSocketLayer::Close()
  	if (m_nSession != 0 && theApp.nattraversal != NULL)
  		theApp.nattraversal->Detach(m_nSession);
  	m_nSession = 0;
