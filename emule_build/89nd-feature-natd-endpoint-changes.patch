@@ -58,7 +58,7 @@ index 0717ac5..785556f 100644
  	uint16	m_iPartCount;
  	uint16	m_iED2KPartCount;
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
-index d18a00c..344d8b5 100644
+index 5314e8b..cdd4edf 100644
 --- a/srchybrid/NatTraversal.cpp
 +++ b/srchybrid/NatTraversal.cpp
 @@ -58,6 +58,7 @@ static char THIS_FILE[] = __FILE__;
@@ -145,10 +145,10 @@ index d18a00c..344d8b5 100644
  // for a file we download from the source: the only case where a punch is tried.
  uint8 CNatTraversal::PunchVia(const CUpDownClient &client) const
 diff --git a/srchybrid/NatTraversal.h b/srchybrid/NatTraversal.h
-index d5bfb4b..6b86db7 100644
+index cac6e96..371149f 100644
 --- a/srchybrid/NatTraversal.h
 +++ b/srchybrid/NatTraversal.h
-@@ -90,6 +90,12 @@ public:
+@@ -89,6 +89,12 @@ public:
  	// dwIP in network order.
  	uint32	GetPublicIP() const;
  	uint16	GetPublicPort() const;

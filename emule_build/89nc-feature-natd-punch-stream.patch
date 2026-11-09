@@ -71,13 +71,14 @@ index c2805f7..e23861e 100644
  	// 3) Normal Outgoing TCP Connection
  	if (!HasLowID() || GetKadState() == KS_CONNECTING_FWCHECK) {
 diff --git a/srchybrid/ClientUDPSocket.cpp b/srchybrid/ClientUDPSocket.cpp
-index 67e93ac..7cadf78 100644
+index 67e93ac..20475a4 100644
 --- a/srchybrid/ClientUDPSocket.cpp
 +++ b/srchybrid/ClientUDPSocket.cpp
-@@ -399,6 +399,17 @@ bool CClientUDPSocket::ProcessPacket(const BYTE *packet, UINT size, uint8 opcode
+@@ -399,7 +399,18 @@ bool CClientUDPSocket::ProcessPacket(const BYTE *packet, UINT size, uint8 opcode
  				pRequester->SetConnectOptions(byConnectOptions, true, false);
  				pRequester->SetDirectUDPCallbackSupport(false);
  				DEBUG_ONLY(DebugLog(_T("Accepting incoming DirectCallbackRequest from %s"), (LPCTSTR)pRequester->DbgGetClientInfo()));
+-				pRequester->TryToConnect();
 +				// a LowID that asks for a punch too (89nc): towards the endpoint it sent from. The
 +				// fields above are the request's (SNatCallback), off a server.
 +				uint64 nNonce;
@@ -88,10 +89,11 @@ index 67e93ac..7cadf78 100644
 +					cb.nID = 0;
 +					md4cpy(cb.abyHash, uchUserHash);
 +					theApp.nattraversal->StartIncoming(cb, nNonce, NATD_VIA_DIRECT);
-+				}
- 				pRequester->TryToConnect();
++				} else
++					pRequester->TryToConnect();
  			} else
  				DebugLogWarning(_T("Ignored DirectCallback Request because we do not accept DirectCall backs at all (%s)"), (LPCTSTR)ipstr(ip));
+ 		}
 diff --git a/srchybrid/DownloadClient.cpp b/srchybrid/DownloadClient.cpp
 index 138ff6e..ef82356 100644
 --- a/srchybrid/DownloadClient.cpp
@@ -212,7 +214,7 @@ index 15674a1..bf4adbf 100644
  				//Make sure we are still thinking about the same file
  				if (md4equ(reqfilehash, sender->GetUploadFileID())) {
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
-index 179e44d..d18a00c 100644
+index 179e44d..5314e8b 100644
 --- a/srchybrid/NatTraversal.cpp
 +++ b/srchybrid/NatTraversal.cpp
 @@ -15,20 +15,36 @@
@@ -741,7 +743,7 @@ index 179e44d..d18a00c 100644
  }
  
  bool CNatTraversal::IsPunchable() const
-@@ -294,3 +668,320 @@ uint16 CNatTraversal::GetPublicPort() const
+@@ -294,3 +668,322 @@ uint16 CNatTraversal::GetPublicPort() const
  {
  	return m_pImpl->pAgent->publicEndpoint().port;
  }
@@ -806,6 +808,8 @@ index 179e44d..d18a00c 100644
 +		AddDebugLogLine(false, _T("NAT traversal: punch requested %s, %s"), ViaStr(byVia), (LPCTSTR)client.DbgGetClientInfo());
 +	return true;
 +}
++
++static_assert(NATD_MARKER_SIZE == natd::kOfferSize, "the marker is a natd offer");
 +
 +bool CNatTraversal::ReadMarker(CSafeMemFile &data, uint64 &nNonce)
 +{
@@ -1063,7 +1067,7 @@ index 179e44d..d18a00c 100644
 +	return TRUE;
 +}
 diff --git a/srchybrid/NatTraversal.h b/srchybrid/NatTraversal.h
-index e4bf0cc..d5bfb4b 100644
+index e4bf0cc..cac6e96 100644
 --- a/srchybrid/NatTraversal.h
 +++ b/srchybrid/NatTraversal.h
 @@ -16,6 +16,7 @@
@@ -1074,7 +1078,7 @@ index e4bf0cc..d5bfb4b 100644
  
  // UDP hole punching between two LowIDs, with natd (the natd submodule): NAT discovery on the
  // client UDP port (the one Kad uses), with public STUN servers only - no server of our own.
-@@ -24,7 +25,49 @@
+@@ -24,7 +25,48 @@
  // Predictability::Stable): the endpoint a third party sees is then the one every peer sees,
  // so two punchable LowIDs can reach each other through the endpoints their buddies saw.
  //
@@ -1101,7 +1105,6 @@ index e4bf0cc..d5bfb4b 100644
 +
 +// The natd marker, at the end of a callback request: "NATD", version, type, nonce.
 +#define NATD_MARKER_SIZE		14
-+#define NATD_MARKER_VERSION		1
 +#define NATD_MARKER_PUNCH		1
 +
 +// The channels a punch request goes through
@@ -1125,7 +1128,7 @@ index e4bf0cc..d5bfb4b 100644
  class CNatTraversal
  {
  public:
-@@ -48,7 +91,78 @@ public:
+@@ -48,7 +90,78 @@ public:
  	uint32	GetPublicIP() const;
  	uint16	GetPublicPort() const;
  

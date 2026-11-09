@@ -1,5 +1,5 @@
 diff --git a/srchybrid/ClientUDPSocket.cpp b/srchybrid/ClientUDPSocket.cpp
-index 7cadf78..1c97b15 100644
+index 20475a4..b498b93 100644
 --- a/srchybrid/ClientUDPSocket.cpp
 +++ b/srchybrid/ClientUDPSocket.cpp
 @@ -51,6 +51,7 @@ CClientUDPSocket::CClientUDPSocket()
@@ -49,7 +49,7 @@ index 1414820..1712936 100644
  };
 \ No newline at end of file
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
-index 30d4635..5ffe47c 100644
+index 1e52ef5..20e74e0 100644
 --- a/srchybrid/NatTraversal.cpp
 +++ b/srchybrid/NatTraversal.cpp
 @@ -42,6 +42,11 @@

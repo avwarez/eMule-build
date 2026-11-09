@@ -1,5 +1,5 @@
 diff --git a/srchybrid/ClientUDPSocket.cpp b/srchybrid/ClientUDPSocket.cpp
-index 1c97b15..ba68440 100644
+index b498b93..6000da0 100644
 --- a/srchybrid/ClientUDPSocket.cpp
 +++ b/srchybrid/ClientUDPSocket.cpp
 @@ -84,6 +84,9 @@ void CClientUDPSocket::OnReceive(int nErrorCode)
@@ -29,7 +29,7 @@ index 1712936..08fdf06 100644
  
  protected:
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
-index 5ffe47c..3b2d9b0 100644
+index 20e74e0..001d773 100644
 --- a/srchybrid/NatTraversal.cpp
 +++ b/srchybrid/NatTraversal.cpp
 @@ -20,6 +20,7 @@
@@ -389,7 +389,7 @@ index 5ffe47c..3b2d9b0 100644
  	if (thePrefs.GetVerbose())
  		AddDebugLogLine(false, _T("NAT traversal: punch requested %s (%s), %s"), ViaStr(byVia)
  			, bObfuscated ? _T("obfuscated") : _T("in the clear"), (LPCTSTR)client.DbgGetClientInfo());
-@@ -853,6 +1111,9 @@ bool CNatTraversal::StartIncoming(const SNatCallback &cb, uint64 nNonce, uint8 b
+@@ -855,6 +1113,9 @@ bool CNatTraversal::StartIncoming(const SNatCallback &cb, uint64 nNonce, uint8 b
  
  bool CNatTraversal::Connect(CNatdSocketLayer *pLayer)
  {
@@ -399,7 +399,7 @@ index 5ffe47c..3b2d9b0 100644
  	return OpenSession(pLayer->GetIP(), pLayer->GetPort(), pLayer->GetToken(), true, pLayer, pLayer->m_byVia);
  }
  
-@@ -950,17 +1211,22 @@ void CNatTraversal::Detach(uint32 nSession)
+@@ -952,17 +1213,22 @@ void CNatTraversal::Detach(uint32 nSession)
  
  CNatdSocketLayer::CNatdSocketLayer(uint32 dwIP, uint16 nPort, const BYTE *pToken12, uint8 byVia)
  	: m_nSession()
@@ -423,7 +423,7 @@ index 5ffe47c..3b2d9b0 100644
  }
  
  // incoming connection: the socket starts as an accepted one, and the first event makes it connected
-@@ -1009,6 +1275,8 @@ void CNatdSocketLayer::Close()
+@@ -1011,6 +1277,8 @@ void CNatdSocketLayer::Close()
  	if (m_nSession != 0 && theApp.nattraversal != NULL)
  		theApp.nattraversal->Detach(m_nSession);
  	m_nSession = 0;
@@ -433,7 +433,7 @@ index 5ffe47c..3b2d9b0 100644
  }
  
 diff --git a/srchybrid/NatTraversal.h b/srchybrid/NatTraversal.h
-index 921d051..6269678 100644
+index c611583..134106e 100644
 --- a/srchybrid/NatTraversal.h
 +++ b/srchybrid/NatTraversal.h
 @@ -37,6 +37,17 @@
@@ -454,7 +454,7 @@ index 921d051..6269678 100644
  // The natd headers stay inside NatTraversal.cpp. Every method is called on the main thread,
  // but Write(), which the upload throttler calls too.
  
-@@ -54,6 +65,7 @@ class CUpDownClient;
+@@ -53,6 +64,7 @@ class CUpDownClient;
  #define NATD_VIA_NONE			0
  #define NATD_VIA_BUDDY			1	// OP_REASKCALLBACKUDP to the source's buddy
  #define NATD_VIA_DIRECT			2	// OP_DIRECTCALLBACKREQ to a source with an open UDP port
@@ -462,7 +462,7 @@ index 921d051..6269678 100644
  
  // The punch request: <ID 4><crypt 1>[<user hash 16> if crypt & NATD_CALLBACK_HASH] after the
  // endpoint the relay adds, as Lugdunum forwards it (OP_NAT_CALLBACK_*). crypt is the requester's
-@@ -117,6 +129,17 @@ public:
+@@ -116,6 +128,17 @@ public:
  	// from its user hash and the nonce. False when the punch was not started.
  	bool	StartIncoming(const SNatCallback &cb, uint64 nNonce, uint8 byVia);
  
@@ -480,7 +480,7 @@ index 921d051..6269678 100644
  	// CNatdSocketLayer; Write() also from the upload throttler thread
  	bool	Connect(CNatdSocketLayer *pLayer);
  	int		Write(uint32 nSession, const void *pBuf, int nLen);
-@@ -127,6 +150,10 @@ private:
+@@ -126,6 +149,10 @@ private:
  	// A punch session towards dwIP:nPort (network order IP): natd connects when bConnect, else
  	// accepts. pLayer: the socket's, NULL for a socket made when the stream opens.
  	bool	OpenSession(uint32 dwIP, uint16 nPort, const BYTE *pToken12, bool bConnect, CNatdSocketLayer *pLayer, uint8 byVia);
@@ -491,7 +491,7 @@ index 921d051..6269678 100644
  
  	struct Impl;
  	std::unique_ptr<Impl> m_pImpl;
-@@ -138,6 +165,7 @@ class CNatdSocketLayer : public CAsyncSocketExLayer
+@@ -137,6 +164,7 @@ class CNatdSocketLayer : public CAsyncSocketExLayer
  {
  	friend class CNatTraversal;
  public:
@@ -499,7 +499,7 @@ index 921d051..6269678 100644
  	CNatdSocketLayer(uint32 dwIP, uint16 nPort, const BYTE *pToken12, uint8 byVia);
  	virtual	~CNatdSocketLayer();
  
-@@ -170,6 +198,7 @@ protected:
+@@ -169,6 +197,7 @@ protected:
  
  private:
  	uint32	m_nSession;		// 0: none (not connected yet, or gone)

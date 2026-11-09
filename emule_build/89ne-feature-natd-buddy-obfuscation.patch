@@ -33,7 +33,7 @@ index 6b49c3f..dca620a 100644
  	// searching on global servers
  	void	StopUDPRequests();
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
-index 344d8b5..30d4635 100644
+index cdd4edf..1e52ef5 100644
 --- a/srchybrid/NatTraversal.cpp
 +++ b/srchybrid/NatTraversal.cpp
 @@ -671,6 +671,12 @@ void CNatTraversal::Process()
@@ -87,10 +87,10 @@ index 344d8b5..30d4635 100644
  }
  
 diff --git a/srchybrid/NatTraversal.h b/srchybrid/NatTraversal.h
-index 6b86db7..921d051 100644
+index 371149f..c611583 100644
 --- a/srchybrid/NatTraversal.h
 +++ b/srchybrid/NatTraversal.h
-@@ -96,6 +96,9 @@ public:
+@@ -95,6 +95,9 @@ public:
  	// The TCP connection to the buddy broke: a new public address breaks it at once. The
  	// endpoint is checked; if it changed, the punched streams end as TCP connections do.
  	void	OnBuddyLost();
