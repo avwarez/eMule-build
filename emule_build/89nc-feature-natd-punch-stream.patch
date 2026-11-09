@@ -213,7 +213,7 @@ index 15674a1..bf4adbf 100644
  				//Make sure we are still thinking about the same file
  				if (md4equ(reqfilehash, sender->GetUploadFileID())) {
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
-index 9dc3ac8..0b9e806 100644
+index d398076..2e741b9 100644
 --- a/srchybrid/NatTraversal.cpp
 +++ b/srchybrid/NatTraversal.cpp
 @@ -15,18 +15,34 @@
@@ -252,7 +252,7 @@ index 9dc3ac8..0b9e806 100644
  
  #ifdef _DEBUG
  #define new DEBUG_NEW
-@@ -34,6 +50,16 @@
+@@ -34,6 +50,18 @@
  static char THIS_FILE[] = __FILE__;
  #endif
  
@@ -264,12 +264,14 @@ index 9dc3ac8..0b9e806 100644
 +#define NATD_PATH_KEEPALIVE		0x01	// flags: no segment, for the NATs' mappings
 +#define NATD_PATH_FIN			0x02	// flags: no segment, the sender's stream is over and acknowledged
 +#define NATD_PATH_DEAD_AFTER	3		// natd's keepalive intervals with nothing from the peer
++#define NATD_PATH_FINS			3		// a FIN goes this many times, NATD_PATH_FIN_GAP apart: a lost one
++#define NATD_PATH_FIN_GAP		((DWORD)300)	// would leave the peer waiting for the path to go silent
 +#define NATD_PATH_LINGER		((DWORD)SEC2MS(10))	// a stream eMule closed, until its FIN is through
 +
  namespace
  {
  	// natd's id of the client UDP socket; the sockets natd opens itself (discovery samples) get
-@@ -47,17 +73,55 @@ namespace
+@@ -47,17 +75,55 @@ namespace
  		return str;
  	}
  
@@ -329,7 +331,7 @@ index 9dc3ac8..0b9e806 100644
  	class CNatdIo final : public natd::IDatagramIo
  	{
  	public:
-@@ -94,21 +158,191 @@ namespace
+@@ -94,15 +160,188 @@ namespace
  				return m_extra.send(id, to, pData, nLen);
  			if (theApp.clientudp == NULL || theApp.clientudp->m_hSocket == INVALID_SOCKET || nLen > 8192)
  				return false;
@@ -445,6 +447,12 @@ index 9dc3ac8..0b9e806 100644
 +			return m_pKcp->state == (IUINT32)-1;
 +		}
 +
++		// the sn of the next segment the stream is waiting for: one below it is a copy
++		IUINT32 nextExpected() const
++		{
++			return m_pKcp->rcv_nxt;
++		}
++
 +	private:
 +		static const int kWindow = 256;				// send and receive windows, in segments
 +		static const int kMaxSegmentsPerSend = 64;	// < IKCP_WND_RCV (128), see ikcp_send
@@ -508,14 +516,16 @@ index 9dc3ac8..0b9e806 100644
 +		DWORD				dwDetached = 0;		// the socket is gone: a FIN once what was written is through
 +		bool				bWantWrite = false;	// a Write() found the window full
 +		bool				bPeerFin = false;
++		IUINT32				snSentNext = 0;		// the first KCP sn not sent yet: one below it goes again
 +	};
 +}
 +
  struct CNatTraversal::Impl
  {
  	CNatdIo io;
- 	natd::StunResolver stun;	// natd's STUN servers, their names resolved off the main thread
+@@ -110,6 +349,10 @@ struct CNatTraversal::Impl
  	std::unique_ptr<natd::Agent> pAgent;
+ 	bool bLoggedPunchable = false;	// the verdict the user's log gave last
  
 +	CCriticalSection cs;	// pAgent and the sessions; Write() comes from the upload throttler thread too
 +	std::map<natd::SessionId, SSession> sessions;
@@ -524,7 +534,7 @@ index 9dc3ac8..0b9e806 100644
  	Impl()
  	{
  		natd::AgentConfig cfg;
-@@ -118,6 +352,17 @@ struct CNatTraversal::Impl
+@@ -119,6 +362,29 @@ struct CNatTraversal::Impl
  	void StartDiscovery(natd::TimePoint now);
  	void Poll(natd::TimePoint now);
  	void HandleEvents(natd::TimePoint now);
@@ -533,6 +543,18 @@ index 9dc3ac8..0b9e806 100644
 +	bool OnPath(const natd::Endpoint &from, const BYTE *pData, size_t nLen, natd::TimePoint now);
 +	void PollPaths(natd::TimePoint now);
 +	void SendPath(SSession &s, uint8 byFlags, const uint8_t *pSegment, size_t nLen);
++	void SendDatagram(natd::SocketId socket, const natd::Endpoint &remote, const natd::TxId &token, uint8 byFlags, const uint8_t *pSegment, size_t nLen);
++	void Fin(const SSession &s);
++	// the FINs still to go of the streams already over
++	struct SFin
++	{
++		natd::SocketId socket;
++		natd::Endpoint remote;
++		natd::TxId token;
++		DWORD dwNext;
++		int nLeft;
++	};
++	std::vector<SFin> fins;
 +	void EndPath(SSession &s, int nError);
 +	void Signal(SSession &s);
 +	void Erase(natd::SessionId id);
@@ -542,8 +564,8 @@ index 9dc3ac8..0b9e806 100644
  };
  
  void CNatTraversal::Impl::StartDiscovery(natd::TimePoint now)
-@@ -136,19 +381,226 @@ void CNatTraversal::Impl::Poll(natd::TimePoint now)
- 	HandleEvents(now);
+@@ -143,20 +409,299 @@ void CNatTraversal::Impl::Poll(natd::TimePoint now)
+ 	}
  }
  
 -void CNatTraversal::Impl::HandleEvents(natd::TimePoint)
@@ -558,6 +580,7 @@ index 9dc3ac8..0b9e806 100644
 +			const natd::NatProfile &profile = pAgent->profile();
 +			AddLogLine(false, _T("NAT traversal: public endpoint %s on UDP port %u - downloads between LowIDs through UDP hole punching %s")
 +				, (LPCTSTR)EndpointStr(profile.publicEndpoint), thePrefs.GetUDPPort(), pAgent->directPunchable() ? _T("possible") : _T("not possible"));
++			bLoggedPunchable = pAgent->directPunchable();
 +			if (thePrefs.GetVerbose())
 +				AddDebugLogLine(false, _T("NAT traversal: %hs, mapping %hs, filtering %hs"), natd::toString(profile.predictability)
 +					, natd::toString(profile.details.mapping), natd::toString(profile.details.filtering));
@@ -566,6 +589,7 @@ index 9dc3ac8..0b9e806 100644
 -		const natd::NatProfile &profile = pAgent->profile();
 -		AddLogLine(false, _T("NAT traversal: public endpoint %s on UDP port %u - downloads between LowIDs through UDP hole punching %s")
 -			, (LPCTSTR)EndpointStr(profile.publicEndpoint), thePrefs.GetUDPPort(), pAgent->directPunchable() ? _T("possible") : _T("not possible"));
+-		bLoggedPunchable = pAgent->directPunchable();
 -		if (thePrefs.GetVerbose())
 -			AddDebugLogLine(false, _T("NAT traversal: %hs, mapping %hs, filtering %hs"), natd::toString(profile.predictability)
 -				, natd::toString(profile.details.mapping), natd::toString(profile.details.filtering));
@@ -616,12 +640,54 @@ index 9dc3ac8..0b9e806 100644
 +		Accept(id, s);
 +}
 +
++namespace
++{
++	// The IP filter and the bans on the address a punch goes to or comes from, logged as eMule logs
++	// what it filters
++	bool IsFilteredOrBanned(uint32 dwIP)
++	{
++		if (theApp.ipfilter->IsFiltered(dwIP)) {
++			if (thePrefs.GetLogFilteredIPs())
++				AddDebugLogLine(false, _T("NAT traversal: punch with filtered IP %s (%s) ignored"), (LPCTSTR)ipstr(dwIP), (LPCTSTR)theApp.ipfilter->GetLastHit());
++			return true;
++		}
++		if (theApp.clientlist->IsBannedClient(dwIP)) {
++			if (thePrefs.GetLogBannedClients())
++				AddDebugLogLine(false, _T("NAT traversal: punch with banned IP %s ignored"), (LPCTSTR)ipstr(dwIP));
++			return true;
++		}
++		return false;
++	}
++
++	// What a datagram of KCP's carries that is not new stream data, which the socket above counts as
++	// over TCP: the segment headers, ACKs and window probes, and the data of a segment below snNew
++	// (sent before, or received before). *pSnNext, if given, goes past the new ones.
++	uint32 KcpOverhead(const uint8_t *p, size_t nLen, IUINT32 snNew, IUINT32 *pSnNext)
++	{
++		const size_t kSegmentHeader = 24;	// IKCP_OVERHEAD: conv 4, cmd 1, frg 1, wnd 2, ts 4, sn 4, una 4, len 4
++		const uint8_t kCmdPush = 81;		// IKCP_CMD_PUSH
++		uint32 nOverhead = 0;
++		while (nLen >= kSegmentHeader) {
++			const IUINT32 sn = PeekUInt32(p + 12);
++			const size_t nData = (std::min)((size_t)PeekUInt32(p + 20), nLen - kSegmentHeader);
++			nOverhead += (uint32)kSegmentHeader;
++			if (p[4] != kCmdPush || (int)(sn - snNew) < 0)
++				nOverhead += (uint32)nData;
++			else if (pSnNext != NULL && (int)(sn + 1 - *pSnNext) > 0)
++				*pSnNext = sn + 1;
++			p += kSegmentHeader + nData;
++			nLen -= kSegmentHeader + nData;
++		}
++		return nOverhead + (uint32)nLen;
++	}
++}
++
 +// Same steps as an accepted TCP connection in CListenSocket::OnAccept, but the socket has no
 +// TCP connection under it: the layer is the connection.
 +void CNatTraversal::Impl::Accept(natd::SessionId id, SSession &s)
 +{
 +	const uint32 dwIP = htonl(s.remote.ip);
-+	if (!theApp.listensocket->TooManySockets(true) && !theApp.ipfilter->IsFiltered(dwIP) && !theApp.clientlist->IsBannedClient(dwIP)) {
++	if (!theApp.listensocket->TooManySockets(true) && !IsFilteredOrBanned(dwIP)) {
 +		CClientReqSocket *pSocket = new CClientReqSocket;
 +		CNatdSocketLayer *pLayer = new CNatdSocketLayer(dwIP, s.remote.port, NULL, NATD_VIA_NONE);
 +		pSocket->AttachNatdLayer(pLayer);
@@ -632,10 +698,11 @@ index 9dc3ac8..0b9e806 100644
 +		}
 +		pSocket->Safe_Delete();
 +	}
++	Fin(s);	// the peer's socket connected: it closes now, as a refused one, not once the path is silent
 +	Erase(id);
 +}
 +
-+// cs held. A datagram of a punched path; false when it is none, and eMule's protocols read it.
++// cs held. A datagram of a punched path; false when it is none of the paths open.
 +// A peer's traffic: the IP filter and the bans apply, as to the rest that reaches the port.
 +bool CNatTraversal::Impl::OnPath(const natd::Endpoint &from, const BYTE *pData, size_t nLen, natd::TimePoint now)
 +{
@@ -653,9 +720,12 @@ index 9dc3ac8..0b9e806 100644
 +		EndPath(s, WSAECONNRESET);	// the peer runs another transport: nothing on the path is for us
 +		return true;
 +	}
++	// the stream is counted by the socket above, as over TCP: the rest of the datagram is overhead
++	const bool bSegment = (pData[2] & (NATD_PATH_FIN | NATD_PATH_KEEPALIVE)) == 0 && nLen > NATD_PATH_HEADER;
++	theStats.AddDownDataOverheadOther(bSegment ? NATD_PATH_HEADER + KcpOverhead(pData + NATD_PATH_HEADER, nLen - NATD_PATH_HEADER, s.pKcp->nextExpected(), NULL) : (uint32)nLen);
 +	if (pData[2] & NATD_PATH_FIN)
 +		s.bPeerFin = true;
-+	else if ((pData[2] & NATD_PATH_KEEPALIVE) == 0 && nLen > NATD_PATH_HEADER)
++	else if (bSegment)
 +		s.pKcp->input(pData + NATD_PATH_HEADER, nLen - NATD_PATH_HEADER);
 +	Signal(s);
 +	return true;
@@ -667,6 +737,16 @@ index 9dc3ac8..0b9e806 100644
 +void CNatTraversal::Impl::PollPaths(natd::TimePoint now)
 +{
 +	const DWORD dwNow = ::GetTickCount();
++	for (std::vector<SFin>::iterator it = fins.begin(); it != fins.end();) {
++		if ((LONG)(dwNow - it->dwNext) < 0) {
++			++it;
++			continue;
++		}
++		SendDatagram(it->socket, it->remote, it->token, NATD_PATH_FIN, NULL, 0);
++		theStats.AddUpDataOverheadOther(NATD_PATH_HEADER);
++		it->dwNext += NATD_PATH_FIN_GAP;
++		it = (--it->nLeft > 0) ? std::next(it) : fins.erase(it);
++	}
 +	for (std::map<natd::SessionId, SSession>::iterator it = sessions.begin(); it != sessions.end();) {
 +		const natd::SessionId id = it->first;
 +		SSession &s = (it++)->second;
@@ -684,7 +764,7 @@ index 9dc3ac8..0b9e806 100644
 +		}
 +		if (s.dwDetached != 0) {
 +			if (s.pKcp->flushed() || dwNow - s.dwDetached >= NATD_PATH_LINGER) {
-+				SendPath(s, NATD_PATH_FIN, NULL, 0);
++				Fin(s);
 +				Erase(id);
 +			}
 +			continue;
@@ -700,19 +780,35 @@ index 9dc3ac8..0b9e806 100644
 +// tenth of it (RFC 8085 3.5: no clients in step).
 +void CNatTraversal::Impl::SendPath(SSession &s, uint8 byFlags, const uint8_t *pSegment, size_t nLen)
 +{
-+	static_assert(NATD_PATH_HEADER == 3 + sizeof(natd::TxId), "the path header carries the token");
-+	BYTE abyDatagram[NATD_PATH_HEADER + NATD_PATH_SEGMENT];
 +	if (nLen > NATD_PATH_SEGMENT)
 +		return;
++	SendDatagram(s.path.socket, s.path.remote, s.path.token, byFlags, pSegment, nLen);
++	// the stream is counted by the socket above, as over TCP: the rest of the datagram is overhead
++	theStats.AddUpDataOverheadOther(NATD_PATH_HEADER + (nLen > 0 ? KcpOverhead(pSegment, nLen, s.snSentNext, &s.snSentNext) : 0));
++	const natd::Duration keepalive(s.path.keepalive);
++	s.tKeepalive = natd::Clock::now() + keepalive - natd::Duration(GetRandomUInt16() % (keepalive.count() / 10 + 1));
++}
++
++// cs held. <OP_UDPRESERVEDPROT1><transport><flags><token> and the segment, nLen <= NATD_PATH_SEGMENT
++void CNatTraversal::Impl::SendDatagram(natd::SocketId socket, const natd::Endpoint &remote, const natd::TxId &token, uint8 byFlags, const uint8_t *pSegment, size_t nLen)
++{
++	static_assert(NATD_PATH_HEADER == 3 + sizeof(natd::TxId), "the path header carries the token");
++	BYTE abyDatagram[NATD_PATH_HEADER + NATD_PATH_SEGMENT];
 +	abyDatagram[0] = OP_UDPRESERVEDPROT1;
 +	abyDatagram[1] = NATD_TRANSPORT_KCP;
 +	abyDatagram[2] = byFlags;
-+	memcpy(abyDatagram + 3, s.path.token.data(), s.path.token.size());
++	memcpy(abyDatagram + 3, token.data(), token.size());
 +	if (nLen > 0)
 +		memcpy(abyDatagram + NATD_PATH_HEADER, pSegment, nLen);
-+	io.send(s.path.socket, s.path.remote, abyDatagram, NATD_PATH_HEADER + nLen);
-+	const natd::Duration keepalive(s.path.keepalive);
-+	s.tKeepalive = natd::Clock::now() + keepalive - natd::Duration(GetRandomUInt16() % (keepalive.count() / 10 + 1));
++	io.send(socket, remote, abyDatagram, NATD_PATH_HEADER + nLen);
++}
++
++// cs held. The end of our stream, NATD_PATH_FINS times (PollPaths): the session can go at once.
++void CNatTraversal::Impl::Fin(const SSession &s)
++{
++	SendDatagram(s.path.socket, s.path.remote, s.path.token, NATD_PATH_FIN, NULL, 0);
++	theStats.AddUpDataOverheadOther(NATD_PATH_HEADER);
++	fins.push_back(SFin{s.path.socket, s.path.remote, s.path.token, ::GetTickCount() + NATD_PATH_FIN_GAP, NATD_PATH_FINS - 1});
 +}
 +
 +// cs held. The path is over, as a TCP connection that broke: the socket reads what arrived
@@ -778,7 +874,7 @@ index 9dc3ac8..0b9e806 100644
  	}
  }
  
-@@ -157,16 +609,46 @@ CNatTraversal::CNatTraversal()
+@@ -165,16 +710,47 @@ CNatTraversal::CNatTraversal()
  {
  }
  
@@ -793,8 +889,7 @@ index 9dc3ac8..0b9e806 100644
 +		, pszWhen, st.punchesStarted, st.punchesQueued, st.punchesEstablished, st.punchesFailed, st.punchesRefused
 +		, nPathsDead, st.endpointChecks, st.endpointChecksReused, st.endpointChanges, (unsigned)sessions.size());
 +}
- 
--// natd's and STUN's formats, which no other protocol of eMule uses: natd's, also a late answer
++
 +CNatTraversal::~CNatTraversal()
 +{
 +	CSingleLock lock(&m_pImpl->cs, TRUE);
@@ -805,7 +900,8 @@ index 9dc3ac8..0b9e806 100644
 +		}
 +	m_pImpl->sessions.clear();
 +}
-+
+ 
+-// natd's and STUN's formats, which no other protocol of eMule uses: natd's, also a late answer
 +// natd's and STUN's formats, and the paths' first byte, which no other protocol of eMule uses:
 +// all the rest of the client UDP traffic (Kad, eD2K) goes on at once, without the lock
  bool CNatTraversal::OnDatagram(const BYTE *pData, int nLen, uint32 dwIP, uint16 nPort)
@@ -824,13 +920,14 @@ index 9dc3ac8..0b9e806 100644
 +		m_pImpl->HandleEvents(now);
 +		return true;
 +	}
-+	if (!m_pImpl->OnPath(from, pData, (size_t)nLen, now))
-+		return false;
-+	m_pImpl->RaiseEvents();
++	// a path's, also a late one of a path already over (the peer's retransmissions, its FINs): no
++	// other protocol of eMule starts with that byte, and eMule would only log it as unknown
++	if (m_pImpl->OnPath(from, pData, (size_t)nLen, now))
++		m_pImpl->RaiseEvents();
  	return true;
  }
  
-@@ -174,6 +656,7 @@ void CNatTraversal::Process()
+@@ -182,6 +758,7 @@ void CNatTraversal::Process()
  {
  	Impl &impl = *m_pImpl;
  	const natd::TimePoint now = natd::Clock::now();
@@ -838,7 +935,7 @@ index 9dc3ac8..0b9e806 100644
  	// only a LowID punches: in Kad once its firewall check is over (Kad says firewalled while it
  	// checks); a HighID never asks the STUN servers
  	if (!impl.pAgent->started() && theApp.clientudp != NULL && theApp.clientudp->m_hSocket != INVALID_SOCKET && theApp.IsFirewalled()
-@@ -186,9 +669,347 @@ void CNatTraversal::Process()
+@@ -194,9 +771,347 @@ void CNatTraversal::Process()
  		impl.pAgent->onDatagram(id, from, pData, nLen, now);
  	});
  	impl.Poll(now);
@@ -962,10 +1059,10 @@ index 9dc3ac8..0b9e806 100644
 +	CSingleLock lock(&m_pImpl->cs, TRUE);
 +	// the IP filter, as for anything we would send to or read from that address: a request
 +	// through a relay carries the endpoint the relay saw, which no filter has checked yet
++	if (IsFilteredOrBanned(dwIP))
++		return false;
 +	LPCTSTR pszNot = NULL;
-+	if (theApp.ipfilter->IsFiltered(dwIP) || theApp.clientlist->IsBannedClient(dwIP))
-+		pszNot = _T("the address is filtered or banned");
-+	else if (!m_pImpl->pAgent->directPunchable())
++	if (!m_pImpl->pAgent->directPunchable())
 +		pszNot = _T("we cannot be punched to");
 +	else if (dwIP == 0 || nPort == 0)
 +		pszNot = _T("no endpoint to punch to");

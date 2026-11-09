@@ -29,7 +29,7 @@ index ca105fd..55d61f5 100644
  
  protected:
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
-index c544ded..2babd20 100644
+index 75d2795..94b283e 100644
 --- a/srchybrid/NatTraversal.cpp
 +++ b/srchybrid/NatTraversal.cpp
 @@ -20,6 +20,7 @@
@@ -49,8 +49,8 @@ index c544ded..2babd20 100644
  #include "Preferences.h"
  #include "SafeFile.h"
  #include "Statistics.h"
-@@ -65,6 +68,11 @@ static char THIS_FILE[] = __FILE__;
- #define NATD_PATH_DEAD_AFTER	3		// natd's keepalive intervals with nothing from the peer
+@@ -67,6 +70,11 @@ static char THIS_FILE[] = __FILE__;
+ #define NATD_PATH_FIN_GAP		((DWORD)300)	// would leave the peer waiting for the path to go silent
  #define NATD_PATH_LINGER		((DWORD)SEC2MS(10))	// a stream eMule closed, until its FIN is through
  #define NATD_KEEPALIVE_MARGIN	natd::Duration(SEC2MS(10))	// the keepalive goes this long before natd's mapping lifetime
 +#define NATD_SERVER_RESEND		((DWORD)SEC2MS(3))	// a request through the server goes once more after this
@@ -61,7 +61,7 @@ index c544ded..2babd20 100644
  
  namespace
  {
-@@ -120,11 +128,20 @@ namespace
+@@ -122,11 +130,20 @@ namespace
  			return _T("through the buddy");
  		case NATD_VIA_DIRECT:
  			return _T("directly");
@@ -82,7 +82,7 @@ index c544ded..2babd20 100644
  	// natd's socket interface: the client UDP socket, plus the plain sockets natd opens for its
  	// samples. Datagrams go out at once, past the UDP send queue: natd and KCP pace their own,
  	// and the stream above them was paced by the upload throttler already.
-@@ -376,6 +393,32 @@ struct CNatTraversal::Impl
+@@ -398,6 +415,32 @@ struct CNatTraversal::Impl
  	void Keepalive();
  	DWORD dwLastKeepalive = 0;
  	uint32 nKeepalives = 0;	// since the last hourly counters
@@ -115,7 +115,7 @@ index c544ded..2babd20 100644
  };
  
  void CNatTraversal::Impl::StartDiscovery(natd::TimePoint now)
-@@ -690,10 +733,11 @@ void CNatTraversal::Process()
+@@ -792,10 +835,11 @@ void CNatTraversal::Process()
  	Impl &impl = *m_pImpl;
  	const natd::TimePoint now = natd::Clock::now();
  	CSingleLock lock(&impl.cs, TRUE);
@@ -130,7 +130,7 @@ index c544ded..2babd20 100644
  	{
  		impl.StartDiscovery(now);
  	}
-@@ -710,6 +754,194 @@ void CNatTraversal::Process()
+@@ -812,6 +856,194 @@ void CNatTraversal::Process()
  		impl.nKeepalives = 0;
  	}
  	impl.Keepalive();
@@ -325,7 +325,7 @@ index c544ded..2babd20 100644
  }
  
  // A LowID that published its port as punchable keeps the NAT's mapping of it: when nothing left
-@@ -778,17 +1010,35 @@ uint8 CNatTraversal::PunchVia(const CUpDownClient &client) const
+@@ -880,17 +1112,35 @@ uint8 CNatTraversal::PunchVia(const CUpDownClient &client) const
  		if (client.HasValidBuddyID() && client.GetBuddyIP() != 0 && client.GetBuddyPort() != 0)
  			return NATD_VIA_BUDDY;
  	}
@@ -365,7 +365,7 @@ index c544ded..2babd20 100644
  	const uint64 nNonce = RandomUInt64();
  	CSafeMemFile data(64);
  	if (byVia == NATD_VIA_BUDDY) {
-@@ -802,6 +1052,16 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
+@@ -904,6 +1154,16 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
  		theStats.AddUpDataOverheadOther(packet->size);
  		// as eMule sends OP_REASKCALLBACKUDP: it does not know the buddy's user hash
  		theApp.clientudp->SendPacket(packet, client.GetBuddyIP(), client.GetBuddyPort(), false, NULL, false, 0);
@@ -382,7 +382,7 @@ index c544ded..2babd20 100644
  	} else {
  		// a source with an open UDP port: the three fields of OP_DIRECTCALLBACKREQ, which is all
  		// an unpatched client reads, are the request's (the port, the user hash, the crypt
-@@ -815,7 +1075,8 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
+@@ -917,7 +1177,8 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
  		theStats.AddUpDataOverheadOther(packet->size);
  		theApp.clientudp->SendPacket(packet, client.GetConnectIP(), client.GetKadPort(), client.ShouldReceiveCryptUDPPackets(), client.GetUserHash(), false, 0);
  	}
@@ -392,7 +392,7 @@ index c544ded..2babd20 100644
  	if (thePrefs.GetVerbose())
  		AddDebugLogLine(false, _T("NAT traversal: punch requested %s, %s"), ViaStr(byVia), (LPCTSTR)client.DbgGetClientInfo());
  	return true;
-@@ -859,6 +1120,9 @@ bool CNatTraversal::StartIncoming(const SNatCallback &cb, uint64 nNonce, uint8 b
+@@ -961,6 +1222,9 @@ bool CNatTraversal::StartIncoming(const SNatCallback &cb, uint64 nNonce, uint8 b
  
  bool CNatTraversal::Connect(CNatdSocketLayer *pLayer)
  {
@@ -402,7 +402,7 @@ index c544ded..2babd20 100644
  	return OpenSession(pLayer->GetIP(), pLayer->GetPort(), pLayer->GetToken(), true, pLayer, pLayer->m_byVia);
  }
  
-@@ -965,6 +1229,7 @@ void CNatTraversal::Detach(uint32 nSession)
+@@ -1067,6 +1331,7 @@ void CNatTraversal::Detach(uint32 nSession)
  
  CNatdSocketLayer::CNatdSocketLayer(uint32 dwIP, uint16 nPort, const BYTE *pToken12, uint8 byVia)
  	: m_nSession()
@@ -410,7 +410,7 @@ index c544ded..2babd20 100644
  	, m_dwIP(dwIP)
  	, m_nPort(nPort)
  	, m_byVia(byVia)
-@@ -984,6 +1249,8 @@ void CNatdSocketLayer::Unhook()
+@@ -1086,6 +1351,8 @@ void CNatdSocketLayer::Unhook()
  	if (m_nSession != 0 && theApp.nattraversal != NULL)
  		theApp.nattraversal->Detach(m_nSession);
  	m_nSession = 0;

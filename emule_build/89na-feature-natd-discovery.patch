@@ -82,10 +82,10 @@ index fa40464..ba85fff 100644
  	delete theApp.serverlist;				theApp.serverlist = NULL;		// CServerList::SaveServermetToFile
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
 new file mode 100644
-index 0000000..9dc3ac8
+index 0000000..d398076
 --- /dev/null
 +++ b/srchybrid/NatTraversal.cpp
-@@ -0,0 +1,194 @@
+@@ -0,0 +1,202 @@
 +//this file is part of eMule
 +//Copyright (C)2002-2026 Merkur ( strEmail.Format("%s@%s", "devteam", "emule-project.net") / https://www.emule-project.net )
 +//
@@ -196,6 +196,7 @@ index 0000000..9dc3ac8
 +	CNatdIo io;
 +	natd::StunResolver stun;	// natd's STUN servers, their names resolved off the main thread
 +	std::unique_ptr<natd::Agent> pAgent;
++	bool bLoggedPunchable = false;	// the verdict the user's log gave last
 +
 +	Impl()
 +	{
@@ -222,6 +223,12 @@ index 0000000..9dc3ac8
 +{
 +	pAgent->poll(now);
 +	HandleEvents(now);
++	// the first verdict can come from a provisional result of the discovery: the final one may differ
++	if (pAgent->profileReady() && pAgent->directPunchable() != bLoggedPunchable) {
++		bLoggedPunchable = !bLoggedPunchable;
++		AddLogLine(false, _T("NAT traversal: public endpoint %s - downloads between LowIDs through UDP hole punching now %s")
++			, (LPCTSTR)EndpointStr(pAgent->publicEndpoint()), bLoggedPunchable ? _T("possible") : _T("not possible"));
++	}
 +}
 +
 +void CNatTraversal::Impl::HandleEvents(natd::TimePoint)
@@ -234,6 +241,7 @@ index 0000000..9dc3ac8
 +		const natd::NatProfile &profile = pAgent->profile();
 +		AddLogLine(false, _T("NAT traversal: public endpoint %s on UDP port %u - downloads between LowIDs through UDP hole punching %s")
 +			, (LPCTSTR)EndpointStr(profile.publicEndpoint), thePrefs.GetUDPPort(), pAgent->directPunchable() ? _T("possible") : _T("not possible"));
++		bLoggedPunchable = pAgent->directPunchable();
 +		if (thePrefs.GetVerbose())
 +			AddDebugLogLine(false, _T("NAT traversal: %hs, mapping %hs, filtering %hs"), natd::toString(profile.predictability)
 +				, natd::toString(profile.details.mapping), natd::toString(profile.details.filtering));

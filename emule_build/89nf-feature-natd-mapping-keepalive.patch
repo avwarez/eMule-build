@@ -41,7 +41,7 @@ index 1414820..ca105fd 100644
  };
 \ No newline at end of file
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
-index 6ab7953..c544ded 100644
+index cd152d6..75d2795 100644
 --- a/srchybrid/NatTraversal.cpp
 +++ b/srchybrid/NatTraversal.cpp
 @@ -39,6 +39,11 @@
@@ -56,15 +56,15 @@ index 6ab7953..c544ded 100644
  #include "natd/natd.hpp"
  #include "natd/resolve.hpp"
  #include "natd/winsock_io.hpp"
-@@ -59,6 +64,7 @@ static char THIS_FILE[] = __FILE__;
- #define NATD_PATH_FIN			0x02	// flags: no segment, the sender's stream is over and acknowledged
- #define NATD_PATH_DEAD_AFTER	3		// natd's keepalive intervals with nothing from the peer
+@@ -61,6 +66,7 @@ static char THIS_FILE[] = __FILE__;
+ #define NATD_PATH_FINS			3		// a FIN goes this many times, NATD_PATH_FIN_GAP apart: a lost one
+ #define NATD_PATH_FIN_GAP		((DWORD)300)	// would leave the peer waiting for the path to go silent
  #define NATD_PATH_LINGER		((DWORD)SEC2MS(10))	// a stream eMule closed, until its FIN is through
 +#define NATD_KEEPALIVE_MARGIN	natd::Duration(SEC2MS(10))	// the keepalive goes this long before natd's mapping lifetime
  
  namespace
  {
-@@ -159,8 +165,11 @@ namespace
+@@ -161,8 +167,11 @@ namespace
  			if (theApp.clientudp == NULL || theApp.clientudp->m_hSocket == INVALID_SOCKET || nLen > 8192)
  				return false;
  			const sockaddr_in sa(SockAddr(htonl(to.ip), to.port));
@@ -77,7 +77,7 @@ index 6ab7953..c544ded 100644
  		}
  	};
  }
-@@ -364,6 +373,9 @@ struct CNatTraversal::Impl
+@@ -386,6 +395,9 @@ struct CNatTraversal::Impl
  	void RaiseEvents();
  	DWORD dwLastStats = 0;
  	void LogStats(LPCTSTR pszWhen) const;
@@ -87,7 +87,7 @@ index 6ab7953..c544ded 100644
  };
  
  void CNatTraversal::Impl::StartDiscovery(natd::TimePoint now)
-@@ -636,9 +648,9 @@ void CNatTraversal::Impl::LogStats(LPCTSTR pszWhen) const
+@@ -737,9 +749,9 @@ void CNatTraversal::Impl::LogStats(LPCTSTR pszWhen) const
  	if (!thePrefs.GetVerbose() || !pAgent->started())
  		return;
  	const natd::AgentStats &st = pAgent->stats();
@@ -99,7 +99,7 @@ index 6ab7953..c544ded 100644
  }
  
  CNatTraversal::~CNatTraversal()
-@@ -695,7 +707,33 @@ void CNatTraversal::Process()
+@@ -797,7 +809,33 @@ void CNatTraversal::Process()
  		if (impl.dwLastStats != 0)
  			impl.LogStats(_T("last hour"));
  		impl.dwLastStats = ::GetTickCount();
