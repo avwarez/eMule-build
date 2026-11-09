@@ -1,17 +1,19 @@
 diff --git a/srchybrid/ClientUDPSocket.cpp b/srchybrid/ClientUDPSocket.cpp
-index 5ae836c..e481ad6 100644
+index 5ae836c..a17e522 100644
 --- a/srchybrid/ClientUDPSocket.cpp
 +++ b/srchybrid/ClientUDPSocket.cpp
-@@ -79,6 +79,9 @@ void CClientUDPSocket::OnReceive(int nErrorCode)
+@@ -77,6 +77,11 @@ void CClientUDPSocket::OnReceive(int nErrorCode)
+ 	// NAT traversal first, never through the UDP obfuscation: it filters what it takes itself
+ 	if (theApp.nattraversal != NULL && theApp.nattraversal->OnDatagram(buffer, nRealLen, sockAddr.sin_addr.s_addr, ntohs(sockAddr.sin_port)))
  		return;
- 	if (theApp.ipfilter->IsFiltered(sockAddr.sin_addr.s_addr) || theApp.clientlist->IsBannedClient(sockAddr.sin_addr.s_addr) || !sockAddr.sin_port)
- 		return;
-+	// the eD2K server, answering the punch requests sent from this socket (89ng)
++	// the eD2K server, answering the punch requests sent from this socket (89ng): the server we
++	// are logged in to, which the IP filter does not keep us from (FilterServersByIP is off by
++	// default, and the server UDP socket does not filter what it receives)
 +	if (theApp.nattraversal != NULL && theApp.nattraversal->OnServerDatagram(buffer, nRealLen, sockAddr))
 +		return;
+ 	if (theApp.ipfilter->IsFiltered(sockAddr.sin_addr.s_addr) || theApp.clientlist->IsBannedClient(sockAddr.sin_addr.s_addr) || !sockAddr.sin_port)
+ 		return;
  
- 	BYTE *pBuffer;
- 	uint32 nReceiverVerifyKey;
 diff --git a/srchybrid/ClientUDPSocket.h b/srchybrid/ClientUDPSocket.h
 index ca105fd..55d61f5 100644
 --- a/srchybrid/ClientUDPSocket.h
@@ -29,7 +31,7 @@ index ca105fd..55d61f5 100644
  
  protected:
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
-index 5f888bb..26feb5f 100644
+index 5f888bb..78756e7 100644
 --- a/srchybrid/NatTraversal.cpp
 +++ b/srchybrid/NatTraversal.cpp
 @@ -20,6 +20,7 @@
@@ -82,7 +84,7 @@ index 5f888bb..26feb5f 100644
  	// natd's socket interface: the client UDP socket, plus the plain sockets natd opens for its
  	// samples. Datagrams go out at once, past the UDP send queue: natd and KCP pace their own,
  	// and the stream above them was paced by the upload throttler already.
-@@ -398,6 +415,32 @@ struct CNatTraversal::Impl
+@@ -398,6 +415,34 @@ struct CNatTraversal::Impl
  	void Keepalive();
  	DWORD dwLastKeepalive = 0;
  	uint32 nKeepalives = 0;	// since the last hourly counters
@@ -98,6 +100,7 @@ index 5f888bb..26feb5f 100644
 +		uint32	dwChallenge = 0;		// of the last status request
 +		DWORD	dwPinged = 0;
 +		uint32	nPings = 0;
++		bool	bGaveUp = false;		// the last status request went unanswered: logged
 +		bool	Ready() const		{ return dwKey != 0; }
 +	} server;
 +	// our requests, until the target's request back brings its endpoint; by the target's ID
@@ -111,11 +114,12 @@ index 5f888bb..26feb5f 100644
 +	std::deque<std::pair<uint32, DWORD>> serverAgain;	// our requests back, to send once more: ID, sent at
 +	std::map<uint32, DWORD> serverSeen;	// the peers the server brought lately: ID, when
 +	void ServerPing(DWORD dwNow);
-+	bool ServerRequest(uint32 nTargetID);
++	// pszWhy: for the log
++	bool ServerRequest(uint32 nTargetID, LPCTSTR pszWhy);
  };
  
  #define NATD_STUN_FILE			_T("stun.dat")
-@@ -827,10 +870,11 @@ void CNatTraversal::Process()
+@@ -827,10 +872,11 @@ void CNatTraversal::Process()
  	Impl &impl = *m_pImpl;
  	const natd::TimePoint now = natd::Clock::now();
  	CSingleLock lock(&impl.cs, TRUE);
@@ -130,7 +134,7 @@ index 5f888bb..26feb5f 100644
  	{
  		impl.StartDiscovery(now);
  	}
-@@ -847,6 +891,194 @@ void CNatTraversal::Process()
+@@ -847,6 +893,240 @@ void CNatTraversal::Process()
  		impl.nKeepalives = 0;
  	}
  	impl.Keepalive();
@@ -166,6 +170,12 @@ index 5f888bb..26feb5f 100644
 +	// the UDP key the requests are obfuscated with
 +	if (sv.dwKey == 0 && sv.nPings < NATD_SERVER_PINGS && (sv.nPings == 0 || dwNow - sv.dwPinged >= NATD_SERVER_PING_RETRY))
 +		impl.ServerPing(dwNow);
++	else if (sv.dwKey == 0 && !sv.bGaveUp && dwNow - sv.dwPinged >= NATD_SERVER_PING_RETRY) {
++		sv.bGaveUp = true;
++		if (thePrefs.GetVerbose())
++			AddDebugLogLine(false, _T("NAT traversal: the server %s:%u did not answer %u status requests on UDP port %u: no punches through it until the next login, and its requests to us are dropped")
++				, (LPCTSTR)ipstr(sv.dwIP), sv.nPort, sv.nPings, (unsigned)(uint16)(sv.nPort + 12));
++	}
 +	if (!sv.Ready())
 +		return;
 +	for (std::map<uint32, DWORD>::iterator it = impl.serverSeen.begin(); it != impl.serverSeen.end();)
@@ -175,7 +185,7 @@ index 5f888bb..26feb5f 100644
 +		if (dwNow - w.second.dwSent >= NATD_SERVER_WAIT)
 +			expired.push_back(w.first);
 +		else if (!w.second.bResent && dwNow - w.second.dwSent >= NATD_SERVER_RESEND) {
-+			impl.ServerRequest(w.first);
++			impl.ServerRequest(w.first, _T("ours, again: no answer yet"));
 +			w.second.bResent = true;
 +		}
 +	for (const uint32 nTargetID : expired) {
@@ -184,7 +194,7 @@ index 5f888bb..26feb5f 100644
 +		DropWait(nTargetID, WSAETIMEDOUT);
 +	}
 +	while (!impl.serverAgain.empty() && dwNow - impl.serverAgain.front().second >= NATD_SERVER_RESEND) {
-+		impl.ServerRequest(impl.serverAgain.front().first);
++		impl.ServerRequest(impl.serverAgain.front().first, _T("back, again"));
 +		impl.serverAgain.pop_front();
 +	}
 +}
@@ -206,14 +216,20 @@ index 5f888bb..26feb5f 100644
 +	++server.nPings;
 +	theStats.AddUpDataOverheadServer((uint32)nLen);
 +	io.send(kPrimarySocket, natd::Endpoint{ntohl(server.dwIP), (uint16)(server.nPort + 12)}, abyPing, nLen);
++	if (thePrefs.GetVerbose())
++		AddDebugLogLine(false, _T("NAT traversal: status request %u of %u to the server %s, UDP port %u, for its UDP key")
++			, server.nPings, (unsigned)NATD_SERVER_PINGS, (LPCTSTR)ipstr(server.dwIP), (unsigned)(uint16)(server.nPort + 12));
 +}
 +
 +// <target ID 4><our ID 4>, from the client UDP port: the server forwards it with the endpoint it
 +// saw it come from. False without the server's UDP key.
-+bool CNatTraversal::Impl::ServerRequest(uint32 nTargetID)
++bool CNatTraversal::Impl::ServerRequest(uint32 nTargetID, LPCTSTR pszWhy)
 +{
-+	if (server.dwKey == 0)
++	if (server.dwKey == 0) {
++		if (thePrefs.GetVerbose())
++			AddDebugLogLine(false, _T("NAT traversal: request to ID %u not sent (%s): no UDP key of the server yet"), nTargetID, pszWhy);
 +		return false;
++	}
 +	BYTE abyBuf[64];
 +	BYTE *pPacket = abyBuf + CClientUDPSocket::ServerOverheadSize();
 +	pPacket[0] = OP_EDONKEYPROT;
@@ -223,6 +239,8 @@ index 5f888bb..26feb5f 100644
 +	const uint32 nLen = CClientUDPSocket::EncryptForServer(abyBuf, 10, server.dwKey);
 +	theStats.AddUpDataOverheadServer(nLen);
 +	io.send(kPrimarySocket, natd::Endpoint{ntohl(server.dwIP), server.nObfuscationPort}, abyBuf, nLen);
++	if (thePrefs.GetVerbose())
++		AddDebugLogLine(false, _T("NAT traversal: request to ID %u sent to the server, UDP port %u (%s)"), nTargetID, server.nObfuscationPort, pszWhy);
 +	return true;
 +}
 +
@@ -233,12 +251,19 @@ index 5f888bb..26feb5f 100644
 +	if (sv.dwIP == 0 || from.sin_addr.s_addr != sv.dwIP || (nPort != (uint16)(sv.nPort + 12) && nPort != sv.nObfuscationPort))
 +		return false;
 +	const uint32 dwKey = sv.dwKey != 0 ? sv.dwKey : sv.dwChallenge;
-+	if (dwKey == 0)
++	if (dwKey == 0) {
++		if (thePrefs.GetVerbose())
++			AddDebugLogLine(false, _T("NAT traversal: datagram of %d bytes from the server, UDP port %u, dropped: nothing asked yet"), nLen, nPort);
 +		return true;
++	}
 +	BYTE *pPacket;
 +	const int nPacket = CClientUDPSocket::DecryptFromServer(pData, nLen, &pPacket, dwKey, from);
-+	if (nPacket < 2 || pPacket == pData || pPacket[0] != OP_EDONKEYPROT)
-+		return true;	// only obfuscated ones
++	if (nPacket < 2 || pPacket == pData || pPacket[0] != OP_EDONKEYPROT) {	// only obfuscated ones
++		if (thePrefs.GetVerbose())
++			AddDebugLogLine(false, _T("NAT traversal: datagram of %d bytes from the server, UDP port %u, dropped: not obfuscated with the %s"), nLen, nPort
++				, sv.dwKey != 0 ? _T("server's UDP key") : _T("challenge of our status request"));
++		return true;
++	}
 +	theStats.AddDownDataOverheadServer((uint32)nPacket);
 +	if (pPacket[1] == OP_GLOBSERVSTATRES) {
 +		if (sv.dwKey == 0 && nPacket >= 2 + 40 && PeekUInt32(pPacket + 2) == sv.dwChallenge) {
@@ -247,25 +272,41 @@ index 5f888bb..26feb5f 100644
 +				sv.nObfuscationPort = (uint16)(sv.nPort + 12);
 +			sv.dwKey = PeekUInt32(pPacket + 2 + 36);
 +			if (thePrefs.GetVerbose())
-+				AddDebugLogLine(false, _T("NAT traversal: punches can be asked through the server %s:%u (UDP port %u)"), (LPCTSTR)ipstr(sv.dwIP), sv.nPort, sv.nObfuscationPort);
-+		}
++				AddDebugLogLine(false, _T("NAT traversal: punches can be asked through the server %s:%u (UDP port %u)%s"), (LPCTSTR)ipstr(sv.dwIP), sv.nPort, sv.nObfuscationPort
++					, theApp.ipfilter->IsFiltered(sv.dwIP) ? _T(" - the server is in the IP filter, its answers let through") : _T(""));
++		} else if (thePrefs.GetVerbose())
++			AddDebugLogLine(false, _T("NAT traversal: status answer of the server dropped: %s"), sv.dwKey != 0 ? _T("we have its UDP key already")
++				: nPacket < 2 + 40 ? _T("too short") : _T("not the challenge of our last request"));
 +	} else if (pPacket[1] == OP_NAT_CALLBACK_UDP)
-+		OnServerCallback(pPacket + 2, (uint32)(nPacket - 2));
++		OnServerCallback(pPacket + 2, (uint32)(nPacket - 2), true);
++	else if (thePrefs.GetVerbose())
++		AddDebugLogLine(false, _T("NAT traversal: datagram from the server dropped: opcode 0x%02x"), pPacket[1]);
 +	return true;
 +}
 +
 +// Lugdunum's NAT callback: <IP 4><UDP port 2> as the server saw them, then the request
-+void CNatTraversal::OnServerCallback(const BYTE *pData, uint32 nSize)
++void CNatTraversal::OnServerCallback(const BYTE *pData, uint32 nSize, bool bUdp)
 +{
-+	if (!m_pImpl->server.Ready() || nSize < 6)
++	LPCTSTR pszHow = bUdp ? _T("UDP") : _T("TCP");
++	if (nSize < 6) {
++		if (thePrefs.GetVerbose())
++			AddDebugLogLine(false, _T("NAT traversal: punch request through the server (%s) dropped: %u bytes"), pszHow, nSize);
 +		return;
++	}
 +	CSafeMemFile data(pData, nSize);
 +	const uint32 dwIP = data.ReadUInt32();
 +	const uint16 nPort = data.ReadUInt16();
 +	SNatCallback cb;
 +	if (!ReadCallback(data, dwIP, nPort, cb) || cb.nID == 0) {
 +		if (thePrefs.GetVerbose())
-+			AddDebugLogLine(false, _T("NAT traversal: punch request through the server from %s:%u not taken: no user hash or no ID"), (LPCTSTR)ipstr(dwIP), nPort);
++			AddDebugLogLine(false, _T("NAT traversal: punch request through the server (%s) from %s:%u not taken: no user hash or no ID"), pszHow, (LPCTSTR)ipstr(dwIP), nPort);
++		return;
++	}
++	if (thePrefs.GetVerbose())
++		AddDebugLogLine(false, _T("NAT traversal: punch request through the server (%s) from ID %u at %s:%u"), pszHow, cb.nID, (LPCTSTR)ipstr(dwIP), nPort);
++	if (!m_pImpl->server.Ready()) {
++		if (thePrefs.GetVerbose())
++			AddDebugLogLine(false, _T("NAT traversal: punch request from ID %u dropped: no UDP key of the server, which our request back needs"), cb.nID);
 +		return;
 +	}
 +	OnServerPeer(cb);
@@ -296,8 +337,11 @@ index 5f888bb..26feb5f 100644
 +	const bool bConnect = impl.server.nID < cb.nID;
 +	const DWORD dwNow = ::GetTickCount();
 +	const std::map<uint32, DWORD>::const_iterator itSeen = impl.serverSeen.find(cb.nID);
-+	if (itSeen != impl.serverSeen.end() && dwNow - itSeen->second < NATD_SERVER_SEEN)
++	if (itSeen != impl.serverSeen.end() && dwNow - itSeen->second < NATD_SERVER_SEEN) {
++		if (thePrefs.GetVerbose())
++			AddDebugLogLine(false, _T("NAT traversal: punch request from ID %u already taken %u s ago"), cb.nID, (unsigned)((dwNow - itSeen->second) / SEC2MS(1)));
 +		return;
++	}
 +	impl.serverSeen[cb.nID] = dwNow;
 +	// what both sides know: the user hash of the one that starts and both IDs, its own first
 +	const natd::TxId token(bConnect ? natd::tokenFrom(thePrefs.GetUserHash(), 16, ServerNonce(impl.server.nID, cb.nID))
@@ -308,11 +352,17 @@ index 5f888bb..26feb5f 100644
 +		DropWait(cb.nID, 0);
 +		pLayer->m_dwIP = cb.dwIP;
 +		pLayer->m_nPort = cb.nPort;
-+		if (pLayer->GetLayerState() != connecting || !OpenSession(cb.dwIP, cb.nPort, token.data(), bConnect, pLayer, NATD_VIA_SERVER))
++		if (thePrefs.GetVerbose())
++			AddDebugLogLine(false, _T("NAT traversal: ID %u answered our request through the server, endpoint %s:%u"), cb.nID, (LPCTSTR)ipstr(cb.dwIP), cb.nPort);
++		if (pLayer->GetLayerState() != connecting) {
++			if (thePrefs.GetVerbose())
++				AddDebugLogLine(false, _T("NAT traversal: punch with ID %u not started: our socket is no longer connecting"), cb.nID);
++			pLayer->RaiseEvent(FD_CONNECT, WSAECONNREFUSED);
++		} else if (!OpenSession(cb.dwIP, cb.nPort, token.data(), bConnect, pLayer, NATD_VIA_SERVER))
 +			pLayer->RaiseEvent(FD_CONNECT, WSAECONNREFUSED);
 +		return;
 +	}
-+	if (OpenSession(cb.dwIP, cb.nPort, token.data(), bConnect, NULL, NATD_VIA_SERVER) && impl.ServerRequest(cb.nID))
++	if (OpenSession(cb.dwIP, cb.nPort, token.data(), bConnect, NULL, NATD_VIA_SERVER) && impl.ServerRequest(cb.nID, _T("back, so that it learns our endpoint")))
 +		impl.serverAgain.emplace_back(cb.nID, dwNow);
 +}
 +
@@ -325,7 +375,7 @@ index 5f888bb..26feb5f 100644
  }
  
  // A LowID that published its port as punchable keeps the NAT's mapping of it: when nothing left
-@@ -915,17 +1147,35 @@ uint8 CNatTraversal::PunchVia(const CUpDownClient &client) const
+@@ -915,17 +1195,35 @@ uint8 CNatTraversal::PunchVia(const CUpDownClient &client) const
  		if (client.HasValidBuddyID() && client.GetBuddyIP() != 0 && client.GetBuddyPort() != 0)
  			return NATD_VIA_BUDDY;
  	}
@@ -365,12 +415,12 @@ index 5f888bb..26feb5f 100644
  	const uint64 nNonce = RandomUInt64();
  	CSafeMemFile data(64);
  	if (byVia == NATD_VIA_BUDDY) {
-@@ -939,6 +1189,16 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
+@@ -939,6 +1237,16 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
  		theStats.AddUpDataOverheadOther(packet->size);
  		// as eMule sends OP_REASKCALLBACKUDP: it does not know the buddy's user hash
  		theApp.clientudp->SendPacket(packet, client.GetBuddyIP(), client.GetBuddyPort(), false, NULL, false, 0);
 +	} else if (byVia == NATD_VIA_SERVER) {
-+		if (!m_pImpl->ServerRequest(nTargetID))
++		if (!m_pImpl->ServerRequest(nTargetID, _T("ours")))
 +			return false;
 +		m_pImpl->serverSeen.erase(nTargetID);
 +		// one request at a time to a target: an older one gives way
@@ -382,7 +432,7 @@ index 5f888bb..26feb5f 100644
  	} else {
  		// a source with an open UDP port: the three fields of OP_DIRECTCALLBACKREQ, which is all
  		// an unpatched client reads, are the request's (the port, the user hash, the crypt
-@@ -952,7 +1212,8 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
+@@ -952,7 +1260,8 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
  		theStats.AddUpDataOverheadOther(packet->size);
  		theApp.clientudp->SendPacket(packet, client.GetConnectIP(), client.GetKadPort(), client.ShouldReceiveCryptUDPPackets(), client.GetUserHash(), false, 0);
  	}
@@ -392,7 +442,7 @@ index 5f888bb..26feb5f 100644
  	if (thePrefs.GetVerbose())
  		AddDebugLogLine(false, _T("NAT traversal: punch requested %s, %s"), ViaStr(byVia), (LPCTSTR)client.DbgGetClientInfo());
  	return true;
-@@ -996,6 +1257,9 @@ bool CNatTraversal::StartIncoming(const SNatCallback &cb, uint64 nNonce, uint8 b
+@@ -996,6 +1305,9 @@ bool CNatTraversal::StartIncoming(const SNatCallback &cb, uint64 nNonce, uint8 b
  
  bool CNatTraversal::Connect(CNatdSocketLayer *pLayer)
  {
@@ -402,7 +452,7 @@ index 5f888bb..26feb5f 100644
  	return OpenSession(pLayer->GetIP(), pLayer->GetPort(), pLayer->GetToken(), true, pLayer, pLayer->m_byVia);
  }
  
-@@ -1102,6 +1366,7 @@ void CNatTraversal::Detach(uint32 nSession)
+@@ -1102,6 +1414,7 @@ void CNatTraversal::Detach(uint32 nSession)
  
  CNatdSocketLayer::CNatdSocketLayer(uint32 dwIP, uint16 nPort, const BYTE *pToken12, uint8 byVia)
  	: m_nSession()
@@ -410,7 +460,7 @@ index 5f888bb..26feb5f 100644
  	, m_dwIP(dwIP)
  	, m_nPort(nPort)
  	, m_byVia(byVia)
-@@ -1121,6 +1386,8 @@ void CNatdSocketLayer::Unhook()
+@@ -1121,6 +1434,8 @@ void CNatdSocketLayer::Unhook()
  	if (m_nSession != 0 && theApp.nattraversal != NULL)
  		theApp.nattraversal->Detach(m_nSession);
  	m_nSession = 0;
@@ -420,7 +470,7 @@ index 5f888bb..26feb5f 100644
  
  // incoming connection: the socket starts as an accepted one, and the first event makes it connected
 diff --git a/srchybrid/NatTraversal.h b/srchybrid/NatTraversal.h
-index 476d90f..8dda8e5 100644
+index 476d90f..17c23c9 100644
 --- a/srchybrid/NatTraversal.h
 +++ b/srchybrid/NatTraversal.h
 @@ -40,6 +40,17 @@
@@ -460,8 +510,8 @@ index 476d90f..8dda8e5 100644
 +	// found that we cannot be punched to, so that no LowID asks us through the server in vain.
 +	// Before the discovery, yes: it starts only when the server has given us a LowID.
 +	bool	AnnounceServerPunch() const;
-+	// OP_NAT_CALLBACK_TCP from the server we are logged in to.
-+	void	OnServerCallback(const BYTE *pData, uint32 nSize);
++	// OP_NAT_CALLBACK_TCP from the server we are logged in to (bUdp: OP_NAT_CALLBACK_UDP).
++	void	OnServerCallback(const BYTE *pData, uint32 nSize, bool bUdp = false);
 +	// A datagram from the server on the client UDP socket (the answer to the status request
 +	// that gives its UDP key, OP_NAT_CALLBACK_UDP): true when it was one, and is done with.
 +	bool	OnServerDatagram(BYTE *pData, int nLen, const SOCKADDR_IN &from);
@@ -546,7 +596,7 @@ index 209c8d7..c7776a4 100644
  			++(*pdebug_lowiddropped);
  		return false;
 diff --git a/srchybrid/ServerConnect.cpp b/srchybrid/ServerConnect.cpp
-index 46e7096..7ae1bd2 100644
+index 46e7096..a3998c1 100644
 --- a/srchybrid/ServerConnect.cpp
 +++ b/srchybrid/ServerConnect.cpp
 @@ -33,6 +33,7 @@
@@ -557,7 +607,7 @@ index 46e7096..7ae1bd2 100644
  
  #ifdef _DEBUG
  #define new DEBUG_NEW
-@@ -189,6 +190,11 @@ void CServerConnect::ConnectionEstablished(CServerSocket *sender)
+@@ -189,6 +190,14 @@ void CServerConnect::ConnectionEstablished(CServerSocket *sender)
  		if (thePrefs.IsCryptLayerRequired())
  			dwCryptFlags |= SRVCAP_REQUIRECRYPT;
  
@@ -565,6 +615,9 @@ index 46e7096..7ae1bd2 100644
 +		// through requests obfuscated with the server's UDP key
 +		if (thePrefs.IsCryptLayerEnabled() && theApp.nattraversal->AnnounceServerPunch())
 +			dwCryptFlags |= SRVCAP_NATTRAVERSAL;
++		if (thePrefs.GetVerbose())
++			AddDebugLogLine(false, _T("NAT traversal: the login %s the NAT callback%s"), (dwCryptFlags & SRVCAP_NATTRAVERSAL) ? _T("announces") : _T("does not announce")
++				, (dwCryptFlags & SRVCAP_NATTRAVERSAL) ? _T("") : !thePrefs.IsCryptLayerEnabled() ? _T(": protocol obfuscation is off") : _T(": we cannot be punched to"));
 +
  		CTag tagFlags(CT_SERVER_FLAGS, SRVCAP_ZLIB | SRVCAP_NEWTAGS | SRVCAP_LARGEFILES | SRVCAP_UNICODE | dwCryptFlags);
  		tagFlags.WriteTagToFile(data);
