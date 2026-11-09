@@ -95,8 +95,9 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          check over; a HighID never asks the STUN servers): the client is
 #          punchable when its NAT maps that port endpoint-independently.
 #          89nb: a punchable LowID marks its Kad source records with a "natd"
-#          tag, and a punchable LowID keeps the LowID sources that carry it
-#          instead of dropping them as LowID->LowID. 89nc: towards such a
+#          tag, the stream transports it runs (0x01 KCP), and a punchable
+#          LowID keeps the LowID sources that carry one of its own instead of
+#          dropping them as LowID->LowID. 89nc: towards such a
 #          source the downloader asks for a punch, through the source's buddy
 #          (OP_REASKCALLBACKUDP, forwarded by any buddy with the endpoint it
 #          saw) or directly (OP_DIRECTCALLBACKREQ), with the natd marker at
@@ -106,7 +107,9 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          its user hash, from which with the nonce the session token comes);
 #          both punch, and the eD2K stream runs over a natd stream on the
 #          client UDP port, with eMule's own transport (CNatdKcpTransport:
-#          KCP, kcp/ below; natd knows none), under a CClientReqSocket given
+#          KCP, kcp/ below; natd knows none, and every punch packet carries
+#          the transports its sender runs, so the two agree on any path,
+#          the server's too), under a CClientReqSocket given
 #          a CNatdSocketLayer instead of TCP; a punchable LowID source is
 #          asked again at its re-ask time, not parked as LowID->LowID. 89nd:
 #          a dead stream is a lost connection, as a TCP one; then, and when
@@ -344,7 +347,7 @@ add_subdirectory(libplum EXCLUDE_FROM_ALL)
 target_compile_options(plum-static PRIVATE $<$<C_COMPILER_ID:MSVC>:/W3>)
 
 # ---------------------------------------------------------------------------
-# natd - git submodule (natd/, avwarez/natd pinned to v0.1.3), the NAT discovery and UDP
+# natd - git submodule (natd/, avwarez/natd pinned to v0.1.4), the NAT discovery and UDP
 # hole punching that emule_build/89n* add between two LowIDs: sans-I/O C++17,
 # no sockets or threads of its own (eMule moves the datagrams and the time).
 # natd runs the stream session over the punched path but knows no transport:

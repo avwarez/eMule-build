@@ -33,10 +33,10 @@ index 6b49c3f..dca620a 100644
  	// searching on global servers
  	void	StopUDPRequests();
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
-index cdd4edf..1e52ef5 100644
+index 8fdb93f..09192f3 100644
 --- a/srchybrid/NatTraversal.cpp
 +++ b/srchybrid/NatTraversal.cpp
-@@ -671,6 +671,12 @@ void CNatTraversal::Process()
+@@ -675,6 +675,12 @@ void CNatTraversal::Process()
  	}
  }
  
@@ -49,7 +49,7 @@ index cdd4edf..1e52ef5 100644
  bool CNatTraversal::IsPunchable() const
  {
  	return m_pImpl->pAgent->directPunchable();
-@@ -736,6 +742,7 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
+@@ -740,6 +746,7 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
  		return false;
  	const uint64 nNonce = RandomUInt64();
  	CSafeMemFile data(64);
@@ -57,7 +57,7 @@ index cdd4edf..1e52ef5 100644
  	if (byVia == NATD_VIA_BUDDY) {
  		// through the buddy, which checks the buddy ID and forwards the rest as it is
  		data.WriteHash16(client.GetBuddyID());
-@@ -745,8 +752,10 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
+@@ -749,8 +756,10 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
  		Packet *packet = new Packet(data, OP_EMULEPROT);
  		packet->opcode = OP_REASKCALLBACKUDP;
  		theStats.AddUpDataOverheadOther(packet->size);
@@ -70,7 +70,7 @@ index cdd4edf..1e52ef5 100644
  	} else {
  		// a source with an open UDP port: the three fields of OP_DIRECTCALLBACKREQ, which is all
  		// an unpatched client reads, are the request's (the port, the user hash, the crypt
-@@ -758,11 +767,13 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
+@@ -762,11 +771,13 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
  		Packet *packet = new Packet(data, OP_EMULEPROT);
  		packet->opcode = OP_DIRECTCALLBACKREQ;
  		theStats.AddUpDataOverheadOther(packet->size);
@@ -101,13 +101,13 @@ index 371149f..c611583 100644
  	// Downloader side. True when TCP cannot reach the client (LowID->LowID) but a punch can.
  	bool	CanPunchTo(const CUpDownClient &client) const	{ return PunchVia(client) != NATD_VIA_NONE; }
 diff --git a/srchybrid/Opcodes.h b/srchybrid/Opcodes.h
-index 0de3554..195b111 100644
+index 16eb0d5..ed49bcb 100644
 --- a/srchybrid/Opcodes.h
 +++ b/srchybrid/Opcodes.h
-@@ -429,6 +429,7 @@
- #define TAG_SOURCETYPE			"\xFF"	// <uint8>
- // A string name, unlike the eMule tags above: a mod with tags of its own uses one-byte names.
- #define TAG_NATDCLIENT			"natd"	// <uint8> NAT traversal version; the source can be punched to
+@@ -431,6 +431,7 @@
+ #define TAG_NATDCLIENT			"natd"	// <uint8> the stream transports the source runs over a punch (natd::TransportSet, NATD_TRANSPORT_*): it can be punched to
+ #define NATD_TRANSPORT_KCP		0x01	// KCP (89nc)
+ #define NATD_TRANSPORTS			NATD_TRANSPORT_KCP	// the ones we run
 +#define TAG_NATDBUDDYHASH		"natdbuddyhash"	// <hash> the buddy's user hash, when it takes obfuscated UDP: the punch request is obfuscated for it
  
  #define	TAGTYPE_NONE			0x00
@@ -135,7 +135,7 @@ index 93847a5..29bd148 100644
  	//--group aligned to int32
  	uint32	m_nBuddyIP;
 diff --git a/srchybrid/kademlia/kademlia/Search.cpp b/srchybrid/kademlia/kademlia/Search.cpp
-index b972afc..fefa5fe 100644
+index f8ba80c..3c38e37 100644
 --- a/srchybrid/kademlia/kademlia/Search.cpp
 +++ b/srchybrid/kademlia/kademlia/Search.cpp
 @@ -694,8 +694,13 @@ void CSearch::StorePacket()
@@ -144,7 +144,7 @@ index b972afc..fefa5fe 100644
  			// (the index node keeps tags it does not know, as every other client ignores them)
 -			if (theApp.IsFirewalled() && theApp.nattraversal->IsPunchable())
 +			if (theApp.IsFirewalled() && theApp.nattraversal->IsPunchable()) {
- 				listTag.push_back(new CKadTagUInt8(TAG_NATDCLIENT, 1));
+ 				listTag.push_back(new CKadTagUInt8(TAG_NATDCLIENT, NATD_TRANSPORTS));
 +				// the buddy's user hash, so that the punch request to it can be obfuscated
 +				const uchar *pBuddyHash = theApp.nattraversal->GetMyBuddyHash();
 +				if (pBuddyHash != NULL)
@@ -162,7 +162,7 @@ index b972afc..fefa5fe 100644
  	for (TagList::const_iterator itInfoList = rlistInfo.begin(); itInfoList != rlistInfo.end(); ++itInfoList) {
  		const CKadTag &cTag(**itInfoList);
 @@ -936,6 +942,11 @@ void CSearch::ProcessResultFile(const CUInt128 &uAnswer, TagList &rlistInfo)
- 			bNatd = cTag.IsInt() && cTag.GetInt() >= 1;
+ 			bNatd = cTag.IsInt() && (cTag.GetInt() & NATD_TRANSPORTS) != 0;	// a transport in common
  			continue;
  		}
 +		if (cTag.m_name.Compare(TAG_NATDBUDDYHASH) == 0) {

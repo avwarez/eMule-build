@@ -214,7 +214,7 @@ index 15674a1..bf4adbf 100644
  				//Make sure we are still thinking about the same file
  				if (md4equ(reqfilehash, sender->GetUploadFileID())) {
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
-index 179e44d..5314e8b 100644
+index 179e44d..8014d01 100644
 --- a/srchybrid/NatTraversal.cpp
 +++ b/srchybrid/NatTraversal.cpp
 @@ -15,20 +15,36 @@
@@ -350,7 +350,7 @@ index 179e44d..5314e8b 100644
  			return ::sendto(theApp.clientudp->m_hSocket, reinterpret_cast<const char*>(pData), (int)nLen, 0
  				, reinterpret_cast<const sockaddr*>(&sa), (int)sizeof sa) == (int)nLen;
  		}
-@@ -168,10 +235,178 @@ namespace
+@@ -168,10 +235,181 @@ namespace
  		else
  			AddLogLine(false, _T("NAT traversal: NAT type not determined (%hs), public %s - no UDP hole punching"), natd::toString(profile.predictability), (LPCTSTR)strEndpoint);
  	}
@@ -404,7 +404,10 @@ index 179e44d..5314e8b 100644
 +
 +		static natd::StreamTransportFactory Factory()
 +		{
++			// natd asks for the transport both peers run (NATD_TRANSPORTS, in every punch packet)
 +			return [](const natd::StreamTransportInfo &info) -> std::unique_ptr<natd::IStreamTransport> {
++				if (info.transport != NATD_TRANSPORT_KCP)
++					return nullptr;
 +				return std::make_unique<CNatdKcpTransport>(info);
 +			};
 +		}
@@ -530,7 +533,7 @@ index 179e44d..5314e8b 100644
  struct CNatTraversal::Impl
  {
  	CNatdIo io;
-@@ -179,15 +414,28 @@ struct CNatTraversal::Impl
+@@ -179,15 +417,29 @@ struct CNatTraversal::Impl
  	std::unique_ptr<natd::Agent> pAgent;
  	std::set<uint64> stunEndpoints;	// IP (host order) << 16 | port of the STUN servers natd asks
  
@@ -548,6 +551,7 @@ index 179e44d..5314e8b 100644
 +		cfg.maxSessions = NATD_MAX_SESSIONS;
 +		cfg.keepalive = natd::Duration(NATD_STREAM_KEEPALIVE);
 +		cfg.linger = natd::Duration(NATD_LINGER);
++		cfg.transports = NATD_TRANSPORTS;
 +		pAgent = std::make_unique<natd::Agent>(cfg, io, CNatdKcpTransport::Factory());
  	}
  	void StartDiscovery(natd::TimePoint now);
@@ -560,7 +564,7 @@ index 179e44d..5314e8b 100644
  };
  
  void CNatTraversal::Impl::StartDiscovery(natd::TimePoint now)
-@@ -219,18 +467,117 @@ void CNatTraversal::Impl::Poll(natd::TimePoint now)
+@@ -219,18 +471,117 @@ void CNatTraversal::Impl::Poll(natd::TimePoint now)
  	HandleEvents(now);
  }
  
@@ -686,7 +690,7 @@ index 179e44d..5314e8b 100644
  		}
  	}
  }
-@@ -241,7 +588,27 @@ CNatTraversal::CNatTraversal()
+@@ -241,7 +592,27 @@ CNatTraversal::CNatTraversal()
  	std::thread(ResolveStunServers, m_pImpl->pStun).detach();
  }
  
@@ -715,7 +719,7 @@ index 179e44d..5314e8b 100644
  
  // The servers natd sends Binding requests to: their answers are no peer's traffic, and the IP
  // filter (which lists many hosting and cloud ranges, where public STUN servers run) lets them in.
-@@ -252,6 +619,7 @@ bool CNatTraversal::IsStunServer(uint32 dwIP, uint16 nPort) const
+@@ -252,6 +623,7 @@ bool CNatTraversal::IsStunServer(uint32 dwIP, uint16 nPort) const
  
  bool CNatTraversal::OnDatagram(const BYTE *pData, int nLen, uint32 dwIP, uint16 nPort)
  {
@@ -723,7 +727,7 @@ index 179e44d..5314e8b 100644
  	if (nLen <= 0 || !m_pImpl->pAgent->mayBeOurs(pData, (size_t)nLen))
  		return false;
  	const natd::TimePoint now = natd::Clock::now();
-@@ -266,6 +634,7 @@ void CNatTraversal::Process()
+@@ -266,6 +638,7 @@ void CNatTraversal::Process()
  {
  	Impl &impl = *m_pImpl;
  	const natd::TimePoint now = natd::Clock::now();
@@ -731,7 +735,7 @@ index 179e44d..5314e8b 100644
  	// only a LowID punches: in Kad once its firewall check is over (Kad says firewalled while it
  	// checks); a HighID never asks the STUN servers
  	if (!impl.pAgent->started() && theApp.clientudp != NULL && theApp.clientudp->m_hSocket != INVALID_SOCKET && theApp.IsFirewalled()
-@@ -278,6 +647,11 @@ void CNatTraversal::Process()
+@@ -278,6 +651,11 @@ void CNatTraversal::Process()
  		impl.pAgent->onDatagram(id, from, pData, nLen, now);
  	});
  	impl.Poll(now);
@@ -743,7 +747,7 @@ index 179e44d..5314e8b 100644
  }
  
  bool CNatTraversal::IsPunchable() const
-@@ -294,3 +668,322 @@ uint16 CNatTraversal::GetPublicPort() const
+@@ -294,3 +672,322 @@ uint16 CNatTraversal::GetPublicPort() const
  {
  	return m_pImpl->pAgent->publicEndpoint().port;
  }

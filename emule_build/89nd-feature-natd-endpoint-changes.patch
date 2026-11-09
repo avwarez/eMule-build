@@ -58,7 +58,7 @@ index 0717ac5..785556f 100644
  	uint16	m_iPartCount;
  	uint16	m_iED2KPartCount;
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
-index 5314e8b..cdd4edf 100644
+index 8014d01..8fdb93f 100644
 --- a/srchybrid/NatTraversal.cpp
 +++ b/srchybrid/NatTraversal.cpp
 @@ -58,6 +58,7 @@ static char THIS_FILE[] = __FILE__;
@@ -69,15 +69,15 @@ index 5314e8b..cdd4edf 100644
  
  namespace
  {
-@@ -427,6 +428,7 @@ struct CNatTraversal::Impl
+@@ -430,6 +431,7 @@ struct CNatTraversal::Impl
  		cfg.maxSessions = NATD_MAX_SESSIONS;
  		cfg.keepalive = natd::Duration(NATD_STREAM_KEEPALIVE);
  		cfg.linger = natd::Duration(NATD_LINGER);
 +		cfg.checkReuse = natd::Duration(NATD_CHECK_REUSE);
+ 		cfg.transports = NATD_TRANSPORTS;
  		pAgent = std::make_unique<natd::Agent>(cfg, io, CNatdKcpTransport::Factory());
  	}
- 	void StartDiscovery(natd::TimePoint now);
-@@ -483,6 +485,18 @@ void CNatTraversal::Impl::HandleEvents(natd::TimePoint now)
+@@ -487,6 +489,18 @@ void CNatTraversal::Impl::HandleEvents(natd::TimePoint now)
  			}
  			continue;
  		}
@@ -96,7 +96,7 @@ index 5314e8b..cdd4edf 100644
  		const std::map<natd::SessionId, SSession>::iterator it = sessions.find(e.session);
  		if (it == sessions.end()) {
  			if (e.session != 0)
-@@ -511,15 +525,18 @@ void CNatTraversal::Impl::HandleEvents(natd::TimePoint now)
+@@ -515,15 +529,18 @@ void CNatTraversal::Impl::HandleEvents(natd::TimePoint now)
  			break;
  		case natd::AgentEventType::Closed:
  			if (thePrefs.GetVerbose() && e.error != natd::SessionError::None)
@@ -118,7 +118,7 @@ index 5314e8b..cdd4edf 100644
  			s.bOver = true;
  			switch (e.error) {
  			case natd::SessionError::None:		s.nPendingError = 0; break;
-@@ -669,6 +686,25 @@ uint16 CNatTraversal::GetPublicPort() const
+@@ -673,6 +690,25 @@ uint16 CNatTraversal::GetPublicPort() const
  	return m_pImpl->pAgent->publicEndpoint().port;
  }
  

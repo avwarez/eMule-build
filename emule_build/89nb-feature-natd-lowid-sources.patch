@@ -83,15 +83,17 @@ index d50ea33..6b49c3f 100644
  	// searching on global servers
  	void	StopUDPRequests();
 diff --git a/srchybrid/Opcodes.h b/srchybrid/Opcodes.h
-index 139f6b3..0de3554 100644
+index 139f6b3..16eb0d5 100644
 --- a/srchybrid/Opcodes.h
 +++ b/srchybrid/Opcodes.h
-@@ -427,6 +427,8 @@
+@@ -427,6 +427,10 @@
  #define TAG_SOURCEIP			"\xFE"	// <uint32>
  #define  FT_SOURCETYPE			 0xFF	// <uint8>
  #define TAG_SOURCETYPE			"\xFF"	// <uint8>
 +// A string name, unlike the eMule tags above: a mod with tags of its own uses one-byte names.
-+#define TAG_NATDCLIENT			"natd"	// <uint8> NAT traversal version; the source can be punched to
++#define TAG_NATDCLIENT			"natd"	// <uint8> the stream transports the source runs over a punch (natd::TransportSet, NATD_TRANSPORT_*): it can be punched to
++#define NATD_TRANSPORT_KCP		0x01	// KCP (89nc)
++#define NATD_TRANSPORTS			NATD_TRANSPORT_KCP	// the ones we run
  
  #define	TAGTYPE_NONE			0x00
  #define	TAGTYPE_HASH			0x01
@@ -118,7 +120,7 @@ index 5fe1ef2..93847a5 100644
  	//--group aligned to int32
  	uint32	m_nBuddyIP;
 diff --git a/srchybrid/kademlia/kademlia/Search.cpp b/srchybrid/kademlia/kademlia/Search.cpp
-index 2a22b0e..b972afc 100644
+index 2a22b0e..f8ba80c 100644
 --- a/srchybrid/kademlia/kademlia/Search.cpp
 +++ b/srchybrid/kademlia/kademlia/Search.cpp
 @@ -43,6 +43,7 @@ their client on the eMule forum.
@@ -136,7 +138,7 @@ index 2a22b0e..b972afc 100644
 +			// A LowID that can be punched to says so: a LowID downloader keeps the source only then
 +			// (the index node keeps tags it does not know, as every other client ignores them)
 +			if (theApp.IsFirewalled() && theApp.nattraversal->IsPunchable())
-+				listTag.push_back(new CKadTagUInt8(TAG_NATDCLIENT, 1));
++				listTag.push_back(new CKadTagUInt8(TAG_NATDCLIENT, NATD_TRANSPORTS));
  
  			// Send packet
  			CKademlia::GetUDPListener()->SendPublishSourcePacket(pFromContact, m_uTarget, uID, listTag);
@@ -149,7 +151,7 @@ index 2a22b0e..b972afc 100644
  	for (TagList::const_iterator itInfoList = rlistInfo.begin(); itInfoList != rlistInfo.end(); ++itInfoList) {
  		const CKadTag &cTag(**itInfoList);
 +		if (cTag.m_name.Compare(TAG_NATDCLIENT) == 0) {
-+			bNatd = cTag.IsInt() && cTag.GetInt() >= 1;
++			bNatd = cTag.IsInt() && (cTag.GetInt() & NATD_TRANSPORTS) != 0;	// a transport in common
 +			continue;
 +		}
  		if (cTag.m_name.GetLength() != 1) //all names are 1 byte strings

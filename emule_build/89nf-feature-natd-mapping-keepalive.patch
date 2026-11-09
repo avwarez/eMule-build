@@ -49,7 +49,7 @@ index 1414820..1712936 100644
  };
 \ No newline at end of file
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
-index 1e52ef5..20e74e0 100644
+index 09192f3..b6c8511 100644
 --- a/srchybrid/NatTraversal.cpp
 +++ b/srchybrid/NatTraversal.cpp
 @@ -42,6 +42,11 @@
@@ -85,7 +85,7 @@ index 1e52ef5..20e74e0 100644
  		}
  	};
  
-@@ -438,6 +447,9 @@ struct CNatTraversal::Impl
+@@ -442,6 +451,9 @@ struct CNatTraversal::Impl
  	void RaiseEvents();
  	DWORD dwLastStats = 0;
  	void LogStats(LPCTSTR pszWhen) const;
@@ -95,7 +95,7 @@ index 1e52ef5..20e74e0 100644
  };
  
  void CNatTraversal::Impl::StartDiscovery(natd::TimePoint now)
-@@ -611,9 +623,9 @@ void CNatTraversal::Impl::LogStats(LPCTSTR pszWhen) const
+@@ -615,9 +627,9 @@ void CNatTraversal::Impl::LogStats(LPCTSTR pszWhen) const
  	if (!thePrefs.GetVerbose() || !pAgent->started())
  		return;
  	const natd::AgentStats &st = pAgent->stats();
@@ -107,7 +107,7 @@ index 1e52ef5..20e74e0 100644
  }
  
  CNatTraversal::~CNatTraversal()
-@@ -668,7 +680,33 @@ void CNatTraversal::Process()
+@@ -672,7 +684,33 @@ void CNatTraversal::Process()
  		if (impl.dwLastStats != 0)
  			impl.LogStats(_T("last hour"));
  		impl.dwLastStats = ::GetTickCount();
