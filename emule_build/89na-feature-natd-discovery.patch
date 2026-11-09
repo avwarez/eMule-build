@@ -82,10 +82,10 @@ index fa40464..ba85fff 100644
  	delete theApp.serverlist;				theApp.serverlist = NULL;		// CServerList::SaveServermetToFile
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
 new file mode 100644
-index 0000000..d398076
+index 0000000..6173288
 --- /dev/null
 +++ b/srchybrid/NatTraversal.cpp
-@@ -0,0 +1,202 @@
+@@ -0,0 +1,237 @@
 +//this file is part of eMule
 +//Copyright (C)2002-2026 Merkur ( strEmail.Format("%s@%s", "devteam", "emule-project.net") / https://www.emule-project.net )
 +//
@@ -194,7 +194,7 @@ index 0000000..d398076
 +struct CNatTraversal::Impl
 +{
 +	CNatdIo io;
-+	natd::StunResolver stun;	// natd's STUN servers, their names resolved off the main thread
++	std::unique_ptr<natd::StunResolver> pStun;	// the STUN servers, their names resolved off the main thread; made when first needed
 +	std::unique_ptr<natd::Agent> pAgent;
 +	bool bLoggedPunchable = false;	// the verdict the user's log gave last
 +
@@ -209,11 +209,46 @@ index 0000000..d398076
 +	void HandleEvents(natd::TimePoint now);
 +};
 +
++#define NATD_STUN_FILE			_T("stun.dat")
++#define NATD_STUN_FILE_MAX		0x10000	// bytes read of it
++#define NATD_STUN_FILE_MIN		3		// servers it must have, or natd's list is used
++
++// The STUN servers: stun.dat in the config directory when it is there, in place of natd's list.
++// Text, a server a line as natd reads it (natd::stun::parseServerList): "host[:port] [alt=port]",
++// '#' for a comment. The user's choice of who sees the client's address; natd_stunlist checks a
++// list and writes one. Nothing makes the file or fetches it.
++static std::vector<natd::stun::ServerEntry> StunServers()
++{
++	const CString strPath(thePrefs.GetMuleDirectory(EMULE_CONFIGDIR) + NATD_STUN_FILE);
++	CFile file;
++	if (!file.Open(strPath, CFile::modeRead | CFile::shareDenyWrite | CFile::typeBinary))
++		return natd::stun::builtinServers();
++	std::string strText;
++	try {
++		strText.resize((size_t)(std::min)(file.GetLength(), (ULONGLONG)NATD_STUN_FILE_MAX));
++		strText.resize(strText.empty() ? 0 : file.Read(&strText[0], (UINT)strText.size()));
++	} catch (CFileException *ex) {
++		ex->Delete();
++		strText.clear();
++	}
++	const std::vector<natd::stun::ServerEntry> list(natd::stun::parseServerList(strText));
++	if (list.size() < NATD_STUN_FILE_MIN) {
++		AddLogLine(false, _T("NAT traversal: %s has %u STUN servers, fewer than %u - the built-in list is used"), NATD_STUN_FILE, (unsigned)list.size(), (unsigned)NATD_STUN_FILE_MIN);
++		return natd::stun::builtinServers();
++	}
++	AddLogLine(false, _T("NAT traversal: %u STUN servers from %s"), (unsigned)list.size(), NATD_STUN_FILE);
++	return list;
++}
++
 +void CNatTraversal::Impl::StartDiscovery(natd::TimePoint now)
 +{
-+	if (!stun.ready())
++	if (!pStun) {	// a HighID never gets here: it resolves no STUN server either
++		pStun = std::make_unique<natd::StunResolver>(StunServers());
 +		return;
-+	const std::vector<natd::StunEndpoint> servers(stun.servers());
++	}
++	if (!pStun->ready())
++		return;
++	const std::vector<natd::StunEndpoint> servers(pStun->servers());
 +	pAgent->start(now, servers);	// each client its own order of the servers
 +	if (thePrefs.GetVerbose())
 +		AddDebugLogLine(false, _T("NAT traversal: discovery started on UDP port %u with %u STUN servers"), thePrefs.GetUDPPort(), (unsigned)servers.size());
@@ -290,10 +325,10 @@ index 0000000..d398076
 +}
 diff --git a/srchybrid/NatTraversal.h b/srchybrid/NatTraversal.h
 new file mode 100644
-index 0000000..cf9c508
+index 0000000..025f4c9
 --- /dev/null
 +++ b/srchybrid/NatTraversal.h
-@@ -0,0 +1,50 @@
+@@ -0,0 +1,51 @@
 +//this file is part of eMule
 +//Copyright (C)2002-2026 Merkur ( strEmail.Format("%s@%s", "devteam", "emule-project.net") / https://www.emule-project.net )
 +//
@@ -314,7 +349,8 @@ index 0000000..cf9c508
 +#include <memory>
 +
 +// UDP hole punching between two LowIDs, with natd (the natd submodule): NAT discovery on the
-+// client UDP port (the one Kad uses), with public STUN servers only - no server of our own.
++// client UDP port (the one Kad uses), with public STUN servers only - no server of our own:
++// natd's list, or the user's in stun.dat (config directory).
 +//
 +// The client is "punchable" when its NAT maps that port endpoint-independently (natd
 +// Predictability::Stable): the endpoint a third party sees is then the one every peer sees,

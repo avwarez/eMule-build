@@ -213,7 +213,7 @@ index 15674a1..bf4adbf 100644
  				//Make sure we are still thinking about the same file
  				if (md4equ(reqfilehash, sender->GetUploadFileID())) {
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
-index d398076..2e741b9 100644
+index 6173288..5d4b950 100644
 --- a/srchybrid/NatTraversal.cpp
 +++ b/srchybrid/NatTraversal.cpp
 @@ -15,18 +15,34 @@
@@ -563,8 +563,8 @@ index d398076..2e741b9 100644
 +	void LogStats(LPCTSTR pszWhen) const;
  };
  
- void CNatTraversal::Impl::StartDiscovery(natd::TimePoint now)
-@@ -143,20 +409,299 @@ void CNatTraversal::Impl::Poll(natd::TimePoint now)
+ #define NATD_STUN_FILE			_T("stun.dat")
+@@ -178,20 +444,299 @@ void CNatTraversal::Impl::Poll(natd::TimePoint now)
  	}
  }
  
@@ -874,7 +874,7 @@ index d398076..2e741b9 100644
  	}
  }
  
-@@ -165,16 +710,47 @@ CNatTraversal::CNatTraversal()
+@@ -200,16 +745,47 @@ CNatTraversal::CNatTraversal()
  {
  }
  
@@ -927,7 +927,7 @@ index d398076..2e741b9 100644
  	return true;
  }
  
-@@ -182,6 +758,7 @@ void CNatTraversal::Process()
+@@ -217,6 +793,7 @@ void CNatTraversal::Process()
  {
  	Impl &impl = *m_pImpl;
  	const natd::TimePoint now = natd::Clock::now();
@@ -935,7 +935,7 @@ index d398076..2e741b9 100644
  	// only a LowID punches: in Kad once its firewall check is over (Kad says firewalled while it
  	// checks); a HighID never asks the STUN servers
  	if (!impl.pAgent->started() && theApp.clientudp != NULL && theApp.clientudp->m_hSocket != INVALID_SOCKET && theApp.IsFirewalled()
-@@ -194,9 +771,347 @@ void CNatTraversal::Process()
+@@ -229,9 +806,347 @@ void CNatTraversal::Process()
  		impl.pAgent->onDatagram(id, from, pData, nLen, now);
  	});
  	impl.Poll(now);
@@ -1284,7 +1284,7 @@ index d398076..2e741b9 100644
 +	return TRUE;
 +}
 diff --git a/srchybrid/NatTraversal.h b/srchybrid/NatTraversal.h
-index cf9c508..8faf1a9 100644
+index 025f4c9..bf1d06a 100644
 --- a/srchybrid/NatTraversal.h
 +++ b/srchybrid/NatTraversal.h
 @@ -16,6 +16,7 @@
@@ -1294,8 +1294,8 @@ index cf9c508..8faf1a9 100644
 +#include "AsyncSocketExLayer.h"
  
  // UDP hole punching between two LowIDs, with natd (the natd submodule): NAT discovery on the
- // client UDP port (the one Kad uses), with public STUN servers only - no server of our own.
-@@ -24,7 +25,49 @@
+ // client UDP port (the one Kad uses), with public STUN servers only - no server of our own:
+@@ -25,7 +26,49 @@
  // Predictability::Stable): the endpoint a third party sees is then the one every peer sees,
  // so two punchable LowIDs can reach each other through the endpoints their buddies saw.
  //
@@ -1346,7 +1346,7 @@ index cf9c508..8faf1a9 100644
  class CNatTraversal
  {
  public:
-@@ -44,7 +87,79 @@ public:
+@@ -45,7 +88,79 @@ public:
  	// The discovery found an endpoint-independent mapping of the client UDP port.
  	bool	IsPunchable() const;
  

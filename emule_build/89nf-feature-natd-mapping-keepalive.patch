@@ -41,7 +41,7 @@ index 1414820..ca105fd 100644
  };
 \ No newline at end of file
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
-index cd152d6..75d2795 100644
+index eafe26a..5f888bb 100644
 --- a/srchybrid/NatTraversal.cpp
 +++ b/srchybrid/NatTraversal.cpp
 @@ -39,6 +39,11 @@
@@ -86,8 +86,8 @@ index cd152d6..75d2795 100644
 +	uint32 nKeepalives = 0;	// since the last hourly counters
  };
  
- void CNatTraversal::Impl::StartDiscovery(natd::TimePoint now)
-@@ -737,9 +749,9 @@ void CNatTraversal::Impl::LogStats(LPCTSTR pszWhen) const
+ #define NATD_STUN_FILE			_T("stun.dat")
+@@ -772,9 +784,9 @@ void CNatTraversal::Impl::LogStats(LPCTSTR pszWhen) const
  	if (!thePrefs.GetVerbose() || !pAgent->started())
  		return;
  	const natd::AgentStats &st = pAgent->stats();
@@ -99,7 +99,7 @@ index cd152d6..75d2795 100644
  }
  
  CNatTraversal::~CNatTraversal()
-@@ -797,7 +809,33 @@ void CNatTraversal::Process()
+@@ -832,7 +844,33 @@ void CNatTraversal::Process()
  		if (impl.dwLastStats != 0)
  			impl.LogStats(_T("last hour"));
  		impl.dwLastStats = ::GetTickCount();

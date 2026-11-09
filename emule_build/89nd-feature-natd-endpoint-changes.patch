@@ -59,7 +59,7 @@ index 0717ac5..785556f 100644
  	uint16	m_iPartCount;
  	uint16	m_iED2KPartCount;
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
-index 2e741b9..cd152d6 100644
+index 5d4b950..eafe26a 100644
 --- a/srchybrid/NatTraversal.cpp
 +++ b/srchybrid/NatTraversal.cpp
 @@ -352,6 +352,7 @@ struct CNatTraversal::Impl
@@ -70,7 +70,7 @@ index 2e741b9..cd152d6 100644
  
  	Impl()
  	{
-@@ -425,6 +426,24 @@ void CNatTraversal::Impl::HandleEvents(natd::TimePoint now)
+@@ -460,6 +461,24 @@ void CNatTraversal::Impl::HandleEvents(natd::TimePoint now)
  					, natd::toString(profile.details.mapping), natd::toString(profile.details.filtering));
  			continue;
  		}
@@ -95,7 +95,7 @@ index 2e741b9..cd152d6 100644
  		const std::map<natd::SessionId, SSession>::iterator it = sessions.find(e.session);
  		if (it == sessions.end()) {
  			if (e.type == natd::AgentEventType::Punched)
-@@ -563,7 +582,8 @@ bool CNatTraversal::Impl::OnPath(const natd::Endpoint &from, const BYTE *pData,
+@@ -598,7 +617,8 @@ bool CNatTraversal::Impl::OnPath(const natd::Endpoint &from, const BYTE *pData,
  }
  
  // cs held. Each path: KCP's timers; ended when it went silent for NATD_PATH_DEAD_AFTER keepalive
@@ -105,7 +105,7 @@ index 2e741b9..cd152d6 100644
  // natd's interval; a FIN once the stream of a socket that went is through.
  void CNatTraversal::Impl::PollPaths(natd::TimePoint now)
  {
-@@ -586,9 +606,10 @@ void CNatTraversal::Impl::PollPaths(natd::TimePoint now)
+@@ -621,9 +641,10 @@ void CNatTraversal::Impl::PollPaths(natd::TimePoint now)
  		s.pKcp->poll(now);
  		if (s.pKcp->failed() || now - s.tHeard >= s.path.keepalive * NATD_PATH_DEAD_AFTER) {
  			if (thePrefs.GetVerbose())
@@ -117,7 +117,7 @@ index 2e741b9..cd152d6 100644
  			if (s.pLayer == NULL)
  				Erase(id);
  			continue;
-@@ -716,9 +737,9 @@ void CNatTraversal::Impl::LogStats(LPCTSTR pszWhen) const
+@@ -751,9 +772,9 @@ void CNatTraversal::Impl::LogStats(LPCTSTR pszWhen) const
  	if (!thePrefs.GetVerbose() || !pAgent->started())
  		return;
  	const natd::AgentStats &st = pAgent->stats();
@@ -129,7 +129,7 @@ index 2e741b9..cd152d6 100644
  }
  
  CNatTraversal::~CNatTraversal()
-@@ -784,6 +805,25 @@ bool CNatTraversal::IsPunchable() const
+@@ -819,6 +840,25 @@ bool CNatTraversal::IsPunchable() const
  	return m_pImpl->pAgent->directPunchable();
  }
  
@@ -156,10 +156,10 @@ index 2e741b9..cd152d6 100644
  // for a file we download from the source: the only case where a punch is tried.
  uint8 CNatTraversal::PunchVia(const CUpDownClient &client) const
 diff --git a/srchybrid/NatTraversal.h b/srchybrid/NatTraversal.h
-index 8faf1a9..cceaaff 100644
+index bf1d06a..476d90f 100644
 --- a/srchybrid/NatTraversal.h
 +++ b/srchybrid/NatTraversal.h
-@@ -86,6 +86,12 @@ public:
+@@ -87,6 +87,12 @@ public:
  
  	// The discovery found an endpoint-independent mapping of the client UDP port.
  	bool	IsPunchable() const;
