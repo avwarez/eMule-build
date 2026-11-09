@@ -1,8 +1,8 @@
 diff --git a/srchybrid/ClientUDPSocket.cpp b/srchybrid/ClientUDPSocket.cpp
-index b498b93..6000da0 100644
+index 433cf77..7f76353 100644
 --- a/srchybrid/ClientUDPSocket.cpp
 +++ b/srchybrid/ClientUDPSocket.cpp
-@@ -84,6 +84,9 @@ void CClientUDPSocket::OnReceive(int nErrorCode)
+@@ -83,6 +83,9 @@ void CClientUDPSocket::OnReceive(int nErrorCode)
  	// NAT traversal (STUN answers, punch and stream datagrams) never goes through the UDP obfuscation
  	if (theApp.nattraversal != NULL && theApp.nattraversal->OnDatagram(buffer, nRealLen, sockAddr.sin_addr.s_addr, ntohs(sockAddr.sin_port)))
  		return;
@@ -13,7 +13,7 @@ index b498b93..6000da0 100644
  		return;
  
 diff --git a/srchybrid/ClientUDPSocket.h b/srchybrid/ClientUDPSocket.h
-index 1712936..08fdf06 100644
+index ca105fd..55d61f5 100644
 --- a/srchybrid/ClientUDPSocket.h
 +++ b/srchybrid/ClientUDPSocket.h
 @@ -50,6 +50,11 @@ public:
@@ -29,7 +29,7 @@ index 1712936..08fdf06 100644
  
  protected:
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
-index f3d081f..61bd932 100644
+index 748dce2..f2372b7 100644
 --- a/srchybrid/NatTraversal.cpp
 +++ b/srchybrid/NatTraversal.cpp
 @@ -20,6 +20,7 @@
@@ -82,7 +82,7 @@ index f3d081f..61bd932 100644
  	// The STUN servers, resolved off the main thread (getaddrinfo blocks). The thread owns a
  	// reference: it may still run when eMule closes, and then writes to nobody.
  	struct SStunList
-@@ -451,6 +468,32 @@ struct CNatTraversal::Impl
+@@ -447,6 +464,32 @@ struct CNatTraversal::Impl
  	void Keepalive();
  	DWORD dwLastKeepalive = 0;
  	uint32 nKeepalives = 0;	// since the last hourly counters
@@ -115,7 +115,7 @@ index f3d081f..61bd932 100644
  };
  
  void CNatTraversal::Impl::StartDiscovery(natd::TimePoint now)
-@@ -797,10 +840,11 @@ void CNatTraversal::Process()
+@@ -785,10 +828,11 @@ void CNatTraversal::Process()
  	Impl &impl = *m_pImpl;
  	const natd::TimePoint now = natd::Clock::now();
  	CSingleLock lock(&impl.cs, TRUE);
@@ -130,7 +130,7 @@ index f3d081f..61bd932 100644
  	{
  		impl.StartDiscovery(now);
  	}
-@@ -818,6 +862,194 @@ void CNatTraversal::Process()
+@@ -806,6 +850,194 @@ void CNatTraversal::Process()
  		impl.nKeepalives = 0;
  	}
  	impl.Keepalive();
@@ -325,7 +325,7 @@ index f3d081f..61bd932 100644
  }
  
  // A LowID that published its port as punchable keeps the NAT's mapping of it: when nothing left
-@@ -892,17 +1124,30 @@ uint8 CNatTraversal::PunchVia(const CUpDownClient &client) const
+@@ -880,17 +1112,30 @@ uint8 CNatTraversal::PunchVia(const CUpDownClient &client) const
  		if (client.HasValidBuddyID() && client.GetBuddyIP() != 0 && client.GetBuddyPort() != 0)
  			return NATD_VIA_BUDDY;
  	}
@@ -360,7 +360,7 @@ index f3d081f..61bd932 100644
  	const uint64 nNonce = RandomUInt64();
  	CSafeMemFile data(64);
  	bool bObfuscated;
-@@ -919,6 +1164,17 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
+@@ -907,6 +1152,17 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
  		// as eMule sends OP_REASKCALLBACKUDP, which does not know that hash
  		bObfuscated = thePrefs.IsCryptLayerEnabled() && !isnulmd4(client.GetNatdBuddyHash());
  		theApp.clientudp->SendPacket(packet, client.GetBuddyIP(), client.GetBuddyPort(), bObfuscated, bObfuscated ? client.GetNatdBuddyHash() : NULL, false, 0);
@@ -378,7 +378,7 @@ index f3d081f..61bd932 100644
  	} else {
  		// a source with an open UDP port: the three fields of OP_DIRECTCALLBACKREQ, which is all
  		// an unpatched client reads, are the request's (the port, the user hash, the crypt
-@@ -933,7 +1189,8 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
+@@ -921,7 +1177,8 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
  		bObfuscated = client.ShouldReceiveCryptUDPPackets();
  		theApp.clientudp->SendPacket(packet, client.GetConnectIP(), client.GetKadPort(), bObfuscated, client.GetUserHash(), false, 0);
  	}
@@ -388,7 +388,7 @@ index f3d081f..61bd932 100644
  	if (thePrefs.GetVerbose())
  		AddDebugLogLine(false, _T("NAT traversal: punch requested %s (%s), %s"), ViaStr(byVia)
  			, bObfuscated ? _T("obfuscated") : _T("in the clear"), (LPCTSTR)client.DbgGetClientInfo());
-@@ -980,6 +1237,9 @@ bool CNatTraversal::StartIncoming(const SNatCallback &cb, uint64 nNonce, uint8 b
+@@ -966,6 +1223,9 @@ bool CNatTraversal::StartIncoming(const SNatCallback &cb, uint64 nNonce, uint8 b
  
  bool CNatTraversal::Connect(CNatdSocketLayer *pLayer)
  {
@@ -398,7 +398,7 @@ index f3d081f..61bd932 100644
  	return OpenSession(pLayer->GetIP(), pLayer->GetPort(), pLayer->GetToken(), true, pLayer, pLayer->m_byVia);
  }
  
-@@ -1086,6 +1346,7 @@ void CNatTraversal::Detach(uint32 nSession)
+@@ -1072,6 +1332,7 @@ void CNatTraversal::Detach(uint32 nSession)
  
  CNatdSocketLayer::CNatdSocketLayer(uint32 dwIP, uint16 nPort, const BYTE *pToken12, uint8 byVia)
  	: m_nSession()
@@ -406,7 +406,7 @@ index f3d081f..61bd932 100644
  	, m_dwIP(dwIP)
  	, m_nPort(nPort)
  	, m_byVia(byVia)
-@@ -1105,6 +1366,8 @@ void CNatdSocketLayer::Unhook()
+@@ -1091,6 +1352,8 @@ void CNatdSocketLayer::Unhook()
  	if (m_nSession != 0 && theApp.nattraversal != NULL)
  		theApp.nattraversal->Detach(m_nSession);
  	m_nSession = 0;
@@ -416,7 +416,7 @@ index f3d081f..61bd932 100644
  
  // incoming connection: the socket starts as an accepted one, and the first event makes it connected
 diff --git a/srchybrid/NatTraversal.h b/srchybrid/NatTraversal.h
-index 438256c..b72ebda 100644
+index ac175fc..7a0d931 100644
 --- a/srchybrid/NatTraversal.h
 +++ b/srchybrid/NatTraversal.h
 @@ -39,6 +39,17 @@
@@ -437,7 +437,7 @@ index 438256c..b72ebda 100644
  // The natd headers stay inside NatTraversal.cpp. Every method is called on the main thread,
  // but Write(), which the upload throttler calls too.
  
-@@ -55,6 +66,7 @@ class CUpDownClient;
+@@ -54,6 +65,7 @@ class CUpDownClient;
  #define NATD_VIA_NONE			0
  #define NATD_VIA_BUDDY			1	// OP_REASKCALLBACKUDP to the source's buddy
  #define NATD_VIA_DIRECT			2	// OP_DIRECTCALLBACKREQ to a source with an open UDP port
@@ -445,7 +445,7 @@ index 438256c..b72ebda 100644
  
  // The punch request: <ID 4><crypt 1>[<user hash 16> if crypt & NATD_CALLBACK_HASH] after the
  // endpoint the relay adds, as Lugdunum forwards it (OP_NAT_CALLBACK_*). crypt is the requester's
-@@ -114,6 +126,17 @@ public:
+@@ -113,6 +125,17 @@ public:
  	// from its user hash and the nonce. False when the punch was not started.
  	bool	StartIncoming(const SNatCallback &cb, uint64 nNonce, uint8 byVia);
  
@@ -463,7 +463,7 @@ index 438256c..b72ebda 100644
  	// CNatdSocketLayer; Write() also from the upload throttler thread
  	bool	Connect(CNatdSocketLayer *pLayer);
  	int		Write(uint32 nSession, const void *pBuf, int nLen);
-@@ -124,6 +147,10 @@ private:
+@@ -123,6 +146,10 @@ private:
  	// A punch session towards dwIP:nPort (network order IP): natd connects when bConnect, else
  	// accepts. pLayer: the socket's, NULL for a socket made when the stream opens.
  	bool	OpenSession(uint32 dwIP, uint16 nPort, const BYTE *pToken12, bool bConnect, CNatdSocketLayer *pLayer, uint8 byVia);
@@ -474,7 +474,7 @@ index 438256c..b72ebda 100644
  
  	struct Impl;
  	std::unique_ptr<Impl> m_pImpl;
-@@ -135,6 +162,7 @@ class CNatdSocketLayer : public CAsyncSocketExLayer
+@@ -134,6 +161,7 @@ class CNatdSocketLayer : public CAsyncSocketExLayer
  {
  	friend class CNatTraversal;
  public:
@@ -482,7 +482,7 @@ index 438256c..b72ebda 100644
  	CNatdSocketLayer(uint32 dwIP, uint16 nPort, const BYTE *pToken12, uint8 byVia);
  	virtual	~CNatdSocketLayer();
  
-@@ -166,9 +194,10 @@ protected:
+@@ -164,9 +192,10 @@ protected:
  	virtual BOOL ShutDown(int nHow = CAsyncSocket::sends);
  
  private:

@@ -33,10 +33,10 @@ index 6b49c3f..dca620a 100644
  	// searching on global servers
  	void	StopUDPRequests();
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
-index be0695b..612643e 100644
+index 1e9d9c2..6109bb7 100644
 --- a/srchybrid/NatTraversal.cpp
 +++ b/srchybrid/NatTraversal.cpp
-@@ -806,6 +806,12 @@ void CNatTraversal::Process()
+@@ -794,6 +794,12 @@ void CNatTraversal::Process()
  	}
  }
  
@@ -49,7 +49,7 @@ index be0695b..612643e 100644
  bool CNatTraversal::IsPunchable() const
  {
  	return m_pImpl->pAgent->directPunchable();
-@@ -861,6 +867,7 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
+@@ -849,6 +855,7 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
  		return false;
  	const uint64 nNonce = RandomUInt64();
  	CSafeMemFile data(64);
@@ -57,7 +57,7 @@ index be0695b..612643e 100644
  	if (byVia == NATD_VIA_BUDDY) {
  		// through the buddy, which checks the buddy ID and forwards the rest as it is
  		data.WriteHash16(client.GetBuddyID());
-@@ -870,8 +877,10 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
+@@ -858,8 +865,10 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
  		Packet *packet = new Packet(data, OP_EMULEPROT);
  		packet->opcode = OP_REASKCALLBACKUDP;
  		theStats.AddUpDataOverheadOther(packet->size);
@@ -70,7 +70,7 @@ index be0695b..612643e 100644
  	} else {
  		// a source with an open UDP port: the three fields of OP_DIRECTCALLBACKREQ, which is all
  		// an unpatched client reads, are the request's (the port, the user hash, the crypt
-@@ -883,11 +892,13 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
+@@ -871,11 +880,13 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
  		Packet *packet = new Packet(data, OP_EMULEPROT);
  		packet->opcode = OP_DIRECTCALLBACKREQ;
  		theStats.AddUpDataOverheadOther(packet->size);
@@ -87,10 +87,10 @@ index be0695b..612643e 100644
  }
  
 diff --git a/srchybrid/NatTraversal.h b/srchybrid/NatTraversal.h
-index d7cde38..438256c 100644
+index 84af0df..ac175fc 100644
 --- a/srchybrid/NatTraversal.h
 +++ b/srchybrid/NatTraversal.h
-@@ -93,6 +93,9 @@ public:
+@@ -92,6 +92,9 @@ public:
  	// The TCP connection to the buddy broke: a new public address breaks it at once. The
  	// endpoint is checked; if it changed, the punched streams end as TCP connections do.
  	void	OnBuddyLost();

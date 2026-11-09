@@ -156,7 +156,7 @@ index 8d73530..6f54038 100644
  
  int CEMSocket::OnLayerCallback(std::vector<t_callbackMsg> &callbacks)
 diff --git a/srchybrid/EMSocket.h b/srchybrid/EMSocket.h
-index bb97efe..ef1c09e 100644
+index bb97efe..996ec86 100644
 --- a/srchybrid/EMSocket.h
 +++ b/srchybrid/EMSocket.h
 @@ -20,6 +20,7 @@
@@ -167,16 +167,15 @@ index bb97efe..ef1c09e 100644
  
  #define EMS_DISCONNECTED	0xFF
  #define EMS_NOTCONNECTED	0x00
-@@ -66,6 +67,8 @@ public:
+@@ -66,6 +67,7 @@ public:
  
  	void InitProxySupport();
  	virtual void RemoveAllLayers();
 +	void AttachNatdLayer(CNatdSocketLayer *pLayer);
-+	bool IsPunched() const									{ return m_pNatdLayer != NULL; }
  	const CString GetLastProxyError() const					{ return m_strLastProxyError; }
  	bool GetProxyConnectFailed() const						{ return m_bProxyConnectFailed; }
  
-@@ -96,6 +99,7 @@ protected:
+@@ -96,6 +98,7 @@ protected:
  	virtual bool	PacketReceived(Packet *packet) = 0;
  	virtual void	OnError(int nErrorCode) = 0;
  	CAsyncProxySocketLayer *m_pProxyLayer;
@@ -214,7 +213,7 @@ index 15674a1..bf4adbf 100644
  				//Make sure we are still thinking about the same file
  				if (md4equ(reqfilehash, sender->GetUploadFileID())) {
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
-index 901c8a8..7026657 100644
+index 901c8a8..9aa4341 100644
 --- a/srchybrid/NatTraversal.cpp
 +++ b/srchybrid/NatTraversal.cpp
 @@ -15,20 +15,36 @@
@@ -347,7 +346,7 @@ index 901c8a8..7026657 100644
  			return ::sendto(theApp.clientudp->m_hSocket, reinterpret_cast<const char*>(pData), (int)nLen, 0
  				, reinterpret_cast<const sockaddr*>(&sa), (int)sizeof sa) == (int)nLen;
  		}
-@@ -168,10 +232,179 @@ namespace
+@@ -168,10 +232,177 @@ namespace
  		else
  			AddLogLine(false, _T("NAT traversal: NAT type not determined (%hs), public %s - no UDP hole punching"), natd::toString(profile.predictability), (LPCTSTR)strEndpoint);
  	}
@@ -384,13 +383,13 @@ index 901c8a8..7026657 100644
 +		CNatdKcpTransport(const CNatdKcpTransport&) = delete;
 +		CNatdKcpTransport& operator=(const CNatdKcpTransport&) = delete;
 +
-+		void input(const uint8_t *pData, size_t nLen, natd::TimePoint)
++		void input(const uint8_t *pData, size_t nLen)
 +		{
 +			ikcp_input(m_pKcp, reinterpret_cast<const char*>(pData), (long)nLen);
 +			Drain();
 +		}
 +
-+		size_t write(const uint8_t *pData, size_t nLen, natd::TimePoint)
++		size_t write(const uint8_t *pData, size_t nLen)
 +		{
 +			const int nRoom = 2 * kWindow - ikcp_waitsnd(m_pKcp);
 +			if (nRoom <= 0 || nLen == 0)
@@ -434,7 +433,7 @@ index 901c8a8..7026657 100644
 +			return n;
 +		}
 +
-+		natd::TimePoint poll(natd::TimePoint now)
++		void poll(natd::TimePoint now)
 +		{
 +			const IUINT32 cur = Ms(now);
 +			ikcp_update(m_pKcp, cur);
@@ -444,7 +443,6 @@ index 901c8a8..7026657 100644
 +			// nothing until the grid point. Retransmit what is due at once.
 +			if (ikcp_check(m_pKcp, cur) == cur)
 +				ikcp_flush(m_pKcp);
-+			return now + natd::Duration(ikcp_check(m_pKcp, cur) - cur);
 +		}
 +
 +		bool flushed() const
@@ -509,7 +507,6 @@ index 901c8a8..7026657 100644
 +		natd::Endpoint		remote;				// the peer's: as asked, the punched one once punched
 +		long				lPendingEvents = 0;	// FD_*, raised to the socket by the main thread
 +		int					nPendingError = 0;
-+		bool				bConnected = false;
 +		bool				bReadPosted = false;	// an FD_READ is on its way to the socket
 +		bool				bClosePosted = false;
 +		bool				bOver = false;		// the punch failed, or the path ended
@@ -529,22 +526,18 @@ index 901c8a8..7026657 100644
  struct CNatTraversal::Impl
  {
  	CNatdIo io;
-@@ -179,15 +412,32 @@ struct CNatTraversal::Impl
+@@ -179,6 +410,10 @@ struct CNatTraversal::Impl
  	std::unique_ptr<natd::Agent> pAgent;
  	std::set<uint64> stunEndpoints;	// IP (host order) << 16 | port of the STUN servers natd asks
  
 +	CCriticalSection cs;	// pAgent and the sessions; Write() comes from the upload throttler thread too
 +	std::map<natd::SessionId, SSession> sessions;
-+	std::map<std::pair<natd::SocketId, uint64>, natd::SessionId> paths;	// the punched ones, by socket and the peer's endpoint
 +	uint64 nPathsDead = 0;
 +
  	Impl()
  	{
  		natd::AgentConfig cfg;
- 		cfg.discovery.primarySocket = kPrimarySocket;	// the caps and waits of the punches: natd's
- 		pAgent = std::make_unique<natd::Agent>(cfg, io);
- 	}
-+	static uint64 EpKey(const natd::Endpoint &ep)	{ return ((uint64)ep.ip << 16) | ep.port; }
+@@ -188,6 +423,17 @@ struct CNatTraversal::Impl
  	void StartDiscovery(natd::TimePoint now);
  	void Poll(natd::TimePoint now);
  	void HandleEvents(natd::TimePoint now);
@@ -562,7 +555,7 @@ index 901c8a8..7026657 100644
  };
  
  void CNatTraversal::Impl::StartDiscovery(natd::TimePoint now)
-@@ -219,18 +469,236 @@ void CNatTraversal::Impl::Poll(natd::TimePoint now)
+@@ -219,18 +465,228 @@ void CNatTraversal::Impl::Poll(natd::TimePoint now)
  	HandleEvents(now);
  }
  
@@ -627,8 +620,6 @@ index 901c8a8..7026657 100644
 +	s.pKcp = std::make_unique<CNatdKcpTransport>(r.token, [this, pSession](const uint8_t *pSegment, size_t nLen) { SendPath(*pSession, 0, pSegment, nLen); }, now);
 +	s.tHeard = now;
 +	s.tKeepalive = now + r.keepalive;
-+	paths[{r.socket, EpKey(r.remote)}] = id;
-+	s.bConnected = true;
 +	if (thePrefs.GetVerbose())
 +		AddDebugLogLine(false, _T("NAT traversal: punched to %s, stream open, keepalive every %u s"), (LPCTSTR)EndpointStr(r.remote)
 +			, (unsigned)(std::chrono::duration_cast<std::chrono::seconds>(r.keepalive).count()));
@@ -662,12 +653,13 @@ index 901c8a8..7026657 100644
 +{
 +	if (nLen < NATD_PATH_HEADER || pData[0] != OP_UDPRESERVEDPROT1)
 +		return false;
-+	const std::map<std::pair<natd::SocketId, uint64>, natd::SessionId>::const_iterator ix = paths.find({sock, EpKey(from)});
-+	if (ix == paths.end())
++	std::map<natd::SessionId, SSession>::iterator it = sessions.begin();	// a few: no index
++	while (it != sessions.end() && (!it->second.pKcp || it->second.bOver || it->second.path.socket != sock || !(it->second.path.remote == from)
++		|| memcmp(pData + 3, it->second.path.token.data(), it->second.path.token.size()) != 0))
++		++it;
++	if (it == sessions.end())
 +		return false;
-+	SSession &s = sessions.at(ix->second);
-+	if (memcmp(pData + 3, s.path.token.data(), s.path.token.size()) != 0)
-+		return false;
++	SSession &s = it->second;
 +	s.tHeard = now;
 +	if (pData[1] != NATD_TRANSPORT_KCP) {
 +		EndPath(s, WSAECONNRESET);	// the peer runs another transport: nothing on the path is for us
@@ -676,7 +668,7 @@ index 901c8a8..7026657 100644
 +	if (pData[2] & NATD_PATH_FIN)
 +		s.bPeerFin = true;
 +	else if ((pData[2] & NATD_PATH_KEEPALIVE) == 0 && nLen > NATD_PATH_HEADER)
-+		s.pKcp->input(pData + NATD_PATH_HEADER, nLen - NATD_PATH_HEADER, now);
++		s.pKcp->input(pData + NATD_PATH_HEADER, nLen - NATD_PATH_HEADER);
 +	Signal(s);
 +	return true;
 +}
@@ -743,9 +735,6 @@ index 901c8a8..7026657 100644
 +		return;
 +	s.bOver = true;
 +	s.nPendingError = nError;
-+	const std::map<std::pair<natd::SocketId, uint64>, natd::SessionId>::iterator ix = paths.find({s.path.socket, EpKey(s.path.remote)});
-+	if (ix != paths.end() && &sessions.at(ix->second) == &s)
-+		paths.erase(ix);
 +	Signal(s);
 +}
 +
@@ -753,7 +742,7 @@ index 901c8a8..7026657 100644
 +// what arrived before it is read.
 +void CNatTraversal::Impl::Signal(SSession &s)
 +{
-+	if (!s.bConnected || s.pLayer == NULL || !s.pKcp)
++	if (s.pLayer == NULL || !s.pKcp)
 +		return;
 +	if (s.pKcp->readable() > 0)
 +		s.lPendingEvents |= FD_READ;
@@ -773,14 +762,10 @@ index 901c8a8..7026657 100644
 +	if (it == sessions.end())
 +		return;
 +	SSession &s = it->second;
-+	if (s.pKcp) {
-+		const std::map<std::pair<natd::SocketId, uint64>, natd::SessionId>::iterator ix = paths.find({s.path.socket, EpKey(s.path.remote)});
-+		if (ix != paths.end() && ix->second == id)
-+			paths.erase(ix);
-+		if (s.path.socket != kPrimarySocket)
-+			io.closeSocket(s.path.socket);
-+	} else
++	if (!s.pKcp)
 +		pAgent->cancel(id, natd::Clock::now());
++	else if (s.path.socket != kPrimarySocket)
++		io.closeSocket(s.path.socket);
 +	sessions.erase(it);
 +}
 +
@@ -794,7 +779,7 @@ index 901c8a8..7026657 100644
 +		const long lEvents = s.lPendingEvents;
 +		s.lPendingEvents = 0;
 +		if (lEvents & FD_CONNECT)
-+			s.pLayer->RaiseEvent(FD_CONNECT, s.bConnected && !s.bOver ? 0 : (s.nPendingError ? s.nPendingError : WSAETIMEDOUT));
++			s.pLayer->RaiseEvent(FD_CONNECT, s.pKcp && !s.bOver ? 0 : (s.nPendingError ? s.nPendingError : WSAETIMEDOUT));
 +		if ((lEvents & FD_READ) && !s.bReadPosted) {
 +			s.bReadPosted = true;
 +			s.pLayer->RaiseEvent(FD_READ, 0);
@@ -807,7 +792,7 @@ index 901c8a8..7026657 100644
  		}
  	}
  }
-@@ -241,7 +709,27 @@ CNatTraversal::CNatTraversal()
+@@ -241,7 +697,27 @@ CNatTraversal::CNatTraversal()
  	std::thread(ResolveStunServers, m_pImpl->pStun).detach();
  }
  
@@ -836,27 +821,28 @@ index 901c8a8..7026657 100644
  
  // The servers natd sends Binding requests to: their answers are no peer's traffic, and the IP
  // filter (which lists many hosting and cloud ranges, where public STUN servers run) lets them in.
-@@ -252,20 +740,30 @@ bool CNatTraversal::IsStunServer(uint32 dwIP, uint16 nPort) const
+@@ -252,20 +728,30 @@ bool CNatTraversal::IsStunServer(uint32 dwIP, uint16 nPort) const
  
  bool CNatTraversal::OnDatagram(const BYTE *pData, int nLen, uint32 dwIP, uint16 nPort)
  {
 -	if (nLen <= 0 || !m_pImpl->pAgent->mayBeOurs(pData, (size_t)nLen))
-+	if (nLen <= 0)
++	// all the rest of the client UDP traffic (Kad, eD2K) goes on without the lock: natd's and
++	// STUN's formats, and the paths' first byte, no other protocol of eMule uses
++	const bool bNatd = nLen > 0 && (natd::proto::isNatdPacket(pData, (size_t)nLen) || natd::stun::isStunPacket(pData, (size_t)nLen));
++	if (!bNatd && (nLen <= 0 || pData[0] != OP_UDPRESERVEDPROT1))
  		return false;
 +	CSingleLock lock(&m_pImpl->cs, TRUE);
  	const natd::TimePoint now = natd::Clock::now();
 -	// true also for a late answer, or a packet of a session already over: no other protocol of
-+	const natd::Endpoint from{ntohl(dwIP), nPort};
-+	// true also for a late answer, or a packet of a punch already over: no other protocol of
- 	// eMule reads natd's or STUN's format
+-	// eMule reads natd's or STUN's format
 -	const bool bOurs = m_pImpl->pAgent->onDatagram(kPrimarySocket, natd::Endpoint{ntohl(dwIP), nPort}, pData, (size_t)nLen, now);
 -	m_pImpl->HandleEvents(now);
 -	return bOurs;
-+	if (m_pImpl->pAgent->mayBeOurs(pData, (size_t)nLen)) {
-+		const bool bOurs = m_pImpl->pAgent->onDatagram(kPrimarySocket, from, pData, (size_t)nLen, now);
++	const natd::Endpoint from{ntohl(dwIP), nPort};
++	if (bNatd) {	// natd's, also a late answer or a packet of a punch already over
++		m_pImpl->pAgent->onDatagram(kPrimarySocket, from, pData, (size_t)nLen, now);
 +		m_pImpl->HandleEvents(now);
-+		if (bOurs)
-+			return true;
++		return true;
 +	}
 +	if (!m_pImpl->OnPath(kPrimarySocket, from, pData, (size_t)nLen, now))
 +		return false;
@@ -872,7 +858,7 @@ index 901c8a8..7026657 100644
  	// only a LowID punches: in Kad once its firewall check is over (Kad says firewalled while it
  	// checks); a HighID never asks the STUN servers
  	if (!impl.pAgent->started() && theApp.clientudp != NULL && theApp.clientudp->m_hSocket != INVALID_SOCKET && theApp.IsFirewalled()
-@@ -275,12 +773,353 @@ void CNatTraversal::Process()
+@@ -275,12 +761,351 @@ void CNatTraversal::Process()
  	}
  	// the sockets natd opened itself: what arrived since the last call, without waiting
  	impl.io.m_extra.wait(now, [&impl, now](natd::SocketId id, const natd::Endpoint &from, const uint8_t *pData, size_t nLen) {
@@ -955,14 +941,12 @@ index 901c8a8..7026657 100644
 +	return true;
 +}
 +
-+static_assert(NATD_MARKER_SIZE == natd::kOfferSize, "the marker is a natd offer");
-+
 +bool CNatTraversal::ReadMarker(CSafeMemFile &data, uint64 &nNonce)
 +{
-+	if (data.GetLength() - data.GetPosition() < NATD_MARKER_SIZE)
++	if (data.GetLength() - data.GetPosition() < natd::kOfferSize)
 +		return false;
 +	const ULONGLONG nPos = data.GetPosition();
-+	BYTE abyOffer[NATD_MARKER_SIZE];
++	BYTE abyOffer[natd::kOfferSize];
 +	data.Read(abyOffer, sizeof abyOffer);
 +	const std::optional<natd::Offer> offer(natd::decodeOffer(abyOffer, sizeof abyOffer));
 +	if (!offer || offer->kind != NATD_MARKER_PUNCH) {
@@ -1047,7 +1031,7 @@ index 901c8a8..7026657 100644
 +		return SOCKET_ERROR;
 +	}
 +	// 0: the window is full, an FD_WRITE follows
-+	const size_t nWritten = it->second.pKcp->write(static_cast<const uint8_t*>(pBuf), (size_t)nLen, natd::Clock::now());
++	const size_t nWritten = it->second.pKcp->write(static_cast<const uint8_t*>(pBuf), (size_t)nLen);
 +	if (nWritten == 0) {
 +		it->second.bWantWrite = true;
 +		WSASetLastError(WSAEWOULDBLOCK);
@@ -1060,7 +1044,7 @@ index 901c8a8..7026657 100644
 +{
 +	CSingleLock lock(&m_pImpl->cs, TRUE);
 +	const std::map<natd::SessionId, SSession>::iterator it = m_pImpl->sessions.find(nSession);
-+	if (it == m_pImpl->sessions.end() || !it->second.bConnected) {
++	if (it == m_pImpl->sessions.end() || !it->second.pKcp) {
 +		WSASetLastError(WSAENOTCONN);
 +		return SOCKET_ERROR;
 +	}
@@ -1228,7 +1212,7 @@ index 901c8a8..7026657 100644
 +	return TRUE;
 +}
 diff --git a/srchybrid/NatTraversal.h b/srchybrid/NatTraversal.h
-index 39200b4..7c6f15e 100644
+index 39200b4..f267df0 100644
 --- a/srchybrid/NatTraversal.h
 +++ b/srchybrid/NatTraversal.h
 @@ -16,6 +16,7 @@
@@ -1239,7 +1223,7 @@ index 39200b4..7c6f15e 100644
  
  // UDP hole punching between two LowIDs, with natd (the natd submodule): NAT discovery on the
  // client UDP port (the one Kad uses), with public STUN servers only - no server of our own.
-@@ -24,7 +25,50 @@
+@@ -24,7 +25,49 @@
  // Predictability::Stable): the endpoint a third party sees is then the one every peer sees,
  // so two punchable LowIDs can reach each other through the endpoints their buddies saw.
  //
@@ -1267,7 +1251,6 @@ index 39200b4..7c6f15e 100644
 +class CUpDownClient;
 +
 +// The natd marker, at the end of a callback request: "NATD", version, type, nonce.
-+#define NATD_MARKER_SIZE		14
 +#define NATD_MARKER_PUNCH		1
 +
 +// The channels a punch request goes through
@@ -1291,7 +1274,7 @@ index 39200b4..7c6f15e 100644
  class CNatTraversal
  {
  public:
-@@ -44,7 +88,80 @@ public:
+@@ -44,7 +87,79 @@ public:
  	// The discovery found an endpoint-independent mapping of the client UDP port.
  	bool	IsPunchable() const;
  
@@ -1340,7 +1323,6 @@ index 39200b4..7c6f15e 100644
 +	void	Accepted(uint32 nSession);
 +	void	RaiseEvent(long lEvent, int nErrorCode);
 +	void	Orphan()								{ m_nSession = 0; }
-+	uint32	GetSession() const						{ return m_nSession; }
 +	uint32	GetIP() const							{ return m_dwIP; }
 +	uint16	GetPort() const							{ return m_nPort; }
 +	const BYTE* GetToken() const					{ return m_abyToken; }
