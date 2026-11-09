@@ -90,10 +90,10 @@ index fa40464..ba85fff 100644
  	delete theApp.serverlist;				theApp.serverlist = NULL;		// CServerList::SaveServermetToFile
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
 new file mode 100644
-index 0000000..179e44d
+index 0000000..725668f
 --- /dev/null
 +++ b/srchybrid/NatTraversal.cpp
-@@ -0,0 +1,296 @@
+@@ -0,0 +1,286 @@
 +//this file is part of eMule
 +//Copyright (C)2002-2026 Merkur ( strEmail.Format("%s@%s", "devteam", "emule-project.net") / https://www.emule-project.net )
 +//
@@ -380,22 +380,12 @@ index 0000000..179e44d
 +{
 +	return m_pImpl->pAgent->directPunchable();
 +}
-+
-+uint32 CNatTraversal::GetPublicIP() const
-+{
-+	return htonl(m_pImpl->pAgent->publicEndpoint().ip);
-+}
-+
-+uint16 CNatTraversal::GetPublicPort() const
-+{
-+	return m_pImpl->pAgent->publicEndpoint().port;
-+}
 diff --git a/srchybrid/NatTraversal.h b/srchybrid/NatTraversal.h
 new file mode 100644
-index 0000000..e4bf0cc
+index 0000000..39200b4
 --- /dev/null
 +++ b/srchybrid/NatTraversal.h
-@@ -0,0 +1,54 @@
+@@ -0,0 +1,50 @@
 +//this file is part of eMule
 +//Copyright (C)2002-2026 Merkur ( strEmail.Format("%s@%s", "devteam", "emule-project.net") / https://www.emule-project.net )
 +//
@@ -441,10 +431,6 @@ index 0000000..e4bf0cc
 +
 +	// The discovery found an endpoint-independent mapping of the client UDP port.
 +	bool	IsPunchable() const;
-+	// The public endpoint of the client UDP port, as the STUN servers see it (0 if unknown).
-+	// dwIP in network order.
-+	uint32	GetPublicIP() const;
-+	uint16	GetPublicPort() const;
 +
 +private:
 +	struct Impl;

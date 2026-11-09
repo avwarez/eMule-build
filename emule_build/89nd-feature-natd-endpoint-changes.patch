@@ -58,26 +58,10 @@ index 0717ac5..785556f 100644
  	uint16	m_iPartCount;
  	uint16	m_iED2KPartCount;
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
-index 8014d01..8fdb93f 100644
+index badf743..12611f9 100644
 --- a/srchybrid/NatTraversal.cpp
 +++ b/srchybrid/NatTraversal.cpp
-@@ -58,6 +58,7 @@ static char THIS_FILE[] = __FILE__;
- #define NATD_MAX_SESSIONS		64		// punches and streams
- #define NATD_STREAM_KEEPALIVE	SEC2MS(20)
- #define NATD_LINGER				((DWORD)SEC2MS(10))	// a stream closed by eMule, until its FIN is through
-+#define NATD_CHECK_REUSE		((DWORD)MIN2MS(1))	// an endpoint check stands this long: the STUN servers are someone else's
- 
- namespace
- {
-@@ -430,6 +431,7 @@ struct CNatTraversal::Impl
- 		cfg.maxSessions = NATD_MAX_SESSIONS;
- 		cfg.keepalive = natd::Duration(NATD_STREAM_KEEPALIVE);
- 		cfg.linger = natd::Duration(NATD_LINGER);
-+		cfg.checkReuse = natd::Duration(NATD_CHECK_REUSE);
- 		cfg.transports = NATD_TRANSPORTS;
- 		pAgent = std::make_unique<natd::Agent>(cfg, io, CNatdKcpTransport::Factory());
- 	}
-@@ -487,6 +489,18 @@ void CNatTraversal::Impl::HandleEvents(natd::TimePoint now)
+@@ -467,6 +467,18 @@ void CNatTraversal::Impl::HandleEvents(natd::TimePoint now)
  			}
  			continue;
  		}
@@ -96,7 +80,7 @@ index 8014d01..8fdb93f 100644
  		const std::map<natd::SessionId, SSession>::iterator it = sessions.find(e.session);
  		if (it == sessions.end()) {
  			if (e.session != 0)
-@@ -515,15 +529,18 @@ void CNatTraversal::Impl::HandleEvents(natd::TimePoint now)
+@@ -495,15 +507,18 @@ void CNatTraversal::Impl::HandleEvents(natd::TimePoint now)
  			break;
  		case natd::AgentEventType::Closed:
  			if (thePrefs.GetVerbose() && e.error != natd::SessionError::None)
@@ -118,8 +102,8 @@ index 8014d01..8fdb93f 100644
  			s.bOver = true;
  			switch (e.error) {
  			case natd::SessionError::None:		s.nPendingError = 0; break;
-@@ -673,6 +690,25 @@ uint16 CNatTraversal::GetPublicPort() const
- 	return m_pImpl->pAgent->publicEndpoint().port;
+@@ -643,6 +658,25 @@ bool CNatTraversal::IsPunchable() const
+ 	return m_pImpl->pAgent->directPunchable();
  }
  
 +uint64 CNatTraversal::GetPunchEndpoint() const
@@ -130,7 +114,7 @@ index 8014d01..8fdb93f 100644
 +	return ((uint64)ep.ip << 16) | ep.port;
 +}
 +
-+// One check at a time, none within NATD_CHECK_REUSE of the last one, whose result stands.
++// One check at a time, none within natd's checkReuse (a minute) of the last one, whose result stands.
 +void CNatTraversal::OnBuddyLost()
 +{
 +	CSingleLock lock(&m_pImpl->cs, TRUE);
@@ -145,13 +129,13 @@ index 8014d01..8fdb93f 100644
  // for a file we download from the source: the only case where a punch is tried.
  uint8 CNatTraversal::PunchVia(const CUpDownClient &client) const
 diff --git a/srchybrid/NatTraversal.h b/srchybrid/NatTraversal.h
-index cac6e96..371149f 100644
+index 5309477..59427cf 100644
 --- a/srchybrid/NatTraversal.h
 +++ b/srchybrid/NatTraversal.h
-@@ -89,6 +89,12 @@ public:
- 	// dwIP in network order.
- 	uint32	GetPublicIP() const;
- 	uint16	GetPublicPort() const;
+@@ -85,6 +85,12 @@ public:
+ 
+ 	// The discovery found an endpoint-independent mapping of the client UDP port.
+ 	bool	IsPunchable() const;
 +	// The public endpoint as one number while punchable, 0 otherwise: a source record carries
 +	// it (the IP and UDP port the index node sees), so a change means publishing again.
 +	uint64	GetPunchEndpoint() const;

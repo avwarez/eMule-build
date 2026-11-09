@@ -33,10 +33,10 @@ index 6b49c3f..dca620a 100644
  	// searching on global servers
  	void	StopUDPRequests();
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
-index 8fdb93f..09192f3 100644
+index 12611f9..bdde90b 100644
 --- a/srchybrid/NatTraversal.cpp
 +++ b/srchybrid/NatTraversal.cpp
-@@ -675,6 +675,12 @@ void CNatTraversal::Process()
+@@ -653,6 +653,12 @@ void CNatTraversal::Process()
  	}
  }
  
@@ -49,7 +49,7 @@ index 8fdb93f..09192f3 100644
  bool CNatTraversal::IsPunchable() const
  {
  	return m_pImpl->pAgent->directPunchable();
-@@ -740,6 +746,7 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
+@@ -708,6 +714,7 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
  		return false;
  	const uint64 nNonce = RandomUInt64();
  	CSafeMemFile data(64);
@@ -57,7 +57,7 @@ index 8fdb93f..09192f3 100644
  	if (byVia == NATD_VIA_BUDDY) {
  		// through the buddy, which checks the buddy ID and forwards the rest as it is
  		data.WriteHash16(client.GetBuddyID());
-@@ -749,8 +756,10 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
+@@ -717,8 +724,10 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
  		Packet *packet = new Packet(data, OP_EMULEPROT);
  		packet->opcode = OP_REASKCALLBACKUDP;
  		theStats.AddUpDataOverheadOther(packet->size);
@@ -70,7 +70,7 @@ index 8fdb93f..09192f3 100644
  	} else {
  		// a source with an open UDP port: the three fields of OP_DIRECTCALLBACKREQ, which is all
  		// an unpatched client reads, are the request's (the port, the user hash, the crypt
-@@ -762,11 +771,13 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
+@@ -730,11 +739,13 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
  		Packet *packet = new Packet(data, OP_EMULEPROT);
  		packet->opcode = OP_DIRECTCALLBACKREQ;
  		theStats.AddUpDataOverheadOther(packet->size);
@@ -78,7 +78,7 @@ index 8fdb93f..09192f3 100644
 +		bObfuscated = client.ShouldReceiveCryptUDPPackets();
 +		theApp.clientudp->SendPacket(packet, client.GetConnectIP(), client.GetKadPort(), bObfuscated, client.GetUserHash(), false, 0);
  	}
- 	pSocket->AttachNatdLayer(new CNatdSocketLayer(client.GetConnectIP(), client.GetKadPort(), TokenFrom(thePrefs.GetUserHash(), nNonce).data(), byVia));
+ 	pSocket->AttachNatdLayer(new CNatdSocketLayer(client.GetConnectIP(), client.GetKadPort(), natd::tokenFrom(thePrefs.GetUserHash(), 16, nNonce).data(), byVia));
  	if (thePrefs.GetVerbose())
 -		AddDebugLogLine(false, _T("NAT traversal: punch requested %s, %s"), ViaStr(byVia), (LPCTSTR)client.DbgGetClientInfo());
 +		AddDebugLogLine(false, _T("NAT traversal: punch requested %s (%s), %s"), ViaStr(byVia)
@@ -87,10 +87,10 @@ index 8fdb93f..09192f3 100644
  }
  
 diff --git a/srchybrid/NatTraversal.h b/srchybrid/NatTraversal.h
-index 371149f..c611583 100644
+index 59427cf..9059305 100644
 --- a/srchybrid/NatTraversal.h
 +++ b/srchybrid/NatTraversal.h
-@@ -95,6 +95,9 @@ public:
+@@ -91,6 +91,9 @@ public:
  	// The TCP connection to the buddy broke: a new public address breaks it at once. The
  	// endpoint is checked; if it changed, the punched streams end as TCP connections do.
  	void	OnBuddyLost();
