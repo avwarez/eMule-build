@@ -71,10 +71,10 @@ index c2805f7..e23861e 100644
  	// 3) Normal Outgoing TCP Connection
  	if (!HasLowID() || GetKadState() == KS_CONNECTING_FWCHECK) {
 diff --git a/srchybrid/ClientUDPSocket.cpp b/srchybrid/ClientUDPSocket.cpp
-index 67e93ac..20475a4 100644
+index 53a6fca..89f859a 100644
 --- a/srchybrid/ClientUDPSocket.cpp
 +++ b/srchybrid/ClientUDPSocket.cpp
-@@ -399,7 +399,18 @@ bool CClientUDPSocket::ProcessPacket(const BYTE *packet, UINT size, uint8 opcode
+@@ -393,7 +393,18 @@ bool CClientUDPSocket::ProcessPacket(const BYTE *packet, UINT size, uint8 opcode
  				pRequester->SetConnectOptions(byConnectOptions, true, false);
  				pRequester->SetDirectUDPCallbackSupport(false);
  				DEBUG_ONLY(DebugLog(_T("Accepting incoming DirectCallbackRequest from %s"), (LPCTSTR)pRequester->DbgGetClientInfo()));
@@ -213,10 +213,10 @@ index 15674a1..bf4adbf 100644
  				//Make sure we are still thinking about the same file
  				if (md4equ(reqfilehash, sender->GetUploadFileID())) {
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
-index 901c8a8..9aa4341 100644
+index b823009..95e2ad4 100644
 --- a/srchybrid/NatTraversal.cpp
 +++ b/srchybrid/NatTraversal.cpp
-@@ -15,20 +15,36 @@
+@@ -15,18 +15,34 @@
  //along with this program; if not, write to the Free Software
  //Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  #include "stdafx.h"
@@ -226,9 +226,6 @@ index 901c8a8..9aa4341 100644
 +#include <deque>
 +#include <functional>
 +#include <map>
- #include <mutex>
- #include <set>
- #include <thread>
  #include <vector>
  #include "emule.h"
  #include "NatTraversal.h"
@@ -249,12 +246,13 @@ index 901c8a8..9aa4341 100644
  #include "kademlia/kademlia/Kademlia.h"
  #include "kademlia/kademlia/Prefs.h"
  #include "natd/natd.hpp"
+ #include "natd/resolve.hpp"
  #include "natd/winsock_io.hpp"
 +#include "kcp/ikcp.h"
  
  #ifdef _DEBUG
  #define new DEBUG_NEW
-@@ -36,6 +52,16 @@
+@@ -34,6 +50,16 @@
  static char THIS_FILE[] = __FILE__;
  #endif
  
@@ -271,7 +269,7 @@ index 901c8a8..9aa4341 100644
  namespace
  {
  	// natd's id of the client UDP socket; the sockets natd opens itself (discovery samples) get
-@@ -49,15 +75,52 @@ namespace
+@@ -47,17 +73,55 @@ namespace
  		return str;
  	}
  
@@ -324,12 +322,6 @@ index 901c8a8..9aa4341 100644
 +		}
 +	}
 +
- 	// The STUN servers, resolved off the main thread (getaddrinfo blocks). The thread owns a
- 	// reference: it may still run when eMule closes, and then writes to nobody.
- 	struct SStunList
-@@ -92,7 +155,8 @@ namespace
- 	}
- 
  	// natd's socket interface: the client UDP socket, plus the plain sockets natd opens for its
 -	// samples. Datagrams go out at once, past the UDP send queue: natd paces its own.
 +	// samples. Datagrams go out at once, past the UDP send queue: natd and KCP pace their own,
@@ -337,7 +329,7 @@ index 901c8a8..9aa4341 100644
  	class CNatdIo final : public natd::IDatagramIo
  	{
  	public:
-@@ -129,7 +193,7 @@ namespace
+@@ -94,7 +158,7 @@ namespace
  				return m_extra.send(id, to, pData, nLen);
  			if (theApp.clientudp == NULL || theApp.clientudp->m_hSocket == INVALID_SOCKET || nLen > 8192)
  				return false;
@@ -346,7 +338,7 @@ index 901c8a8..9aa4341 100644
  			return ::sendto(theApp.clientudp->m_hSocket, reinterpret_cast<const char*>(pData), (int)nLen, 0
  				, reinterpret_cast<const sockaddr*>(&sa), (int)sizeof sa) == (int)nLen;
  		}
-@@ -168,10 +232,177 @@ namespace
+@@ -133,16 +197,187 @@ namespace
  		else
  			AddLogLine(false, _T("NAT traversal: NAT type not determined (%hs), public %s - no UDP hole punching"), natd::toString(profile.predictability), (LPCTSTR)strEndpoint);
  	}
@@ -526,9 +518,8 @@ index 901c8a8..9aa4341 100644
  struct CNatTraversal::Impl
  {
  	CNatdIo io;
-@@ -179,6 +410,10 @@ struct CNatTraversal::Impl
+ 	natd::StunResolver stun;	// natd's STUN servers, their names resolved off the main thread
  	std::unique_ptr<natd::Agent> pAgent;
- 	std::set<uint64> stunEndpoints;	// IP (host order) << 16 | port of the STUN servers natd asks
  
 +	CCriticalSection cs;	// pAgent and the sessions; Write() comes from the upload throttler thread too
 +	std::map<natd::SessionId, SSession> sessions;
@@ -537,7 +528,7 @@ index 901c8a8..9aa4341 100644
  	Impl()
  	{
  		natd::AgentConfig cfg;
-@@ -188,6 +423,17 @@ struct CNatTraversal::Impl
+@@ -152,6 +387,17 @@ struct CNatTraversal::Impl
  	void StartDiscovery(natd::TimePoint now);
  	void Poll(natd::TimePoint now);
  	void HandleEvents(natd::TimePoint now);
@@ -555,7 +546,7 @@ index 901c8a8..9aa4341 100644
  };
  
  void CNatTraversal::Impl::StartDiscovery(natd::TimePoint now)
-@@ -219,18 +465,228 @@ void CNatTraversal::Impl::Poll(natd::TimePoint now)
+@@ -170,18 +416,229 @@ void CNatTraversal::Impl::Poll(natd::TimePoint now)
  	HandleEvents(now);
  }
  
@@ -649,9 +640,10 @@ index 901c8a8..9aa4341 100644
 +}
 +
 +// cs held. A datagram of a punched path; false when it is none, and eMule's protocols read it.
++// A peer's traffic: the IP filter and the bans apply, as to the rest that reaches the port.
 +bool CNatTraversal::Impl::OnPath(natd::SocketId sock, const natd::Endpoint &from, const BYTE *pData, size_t nLen, natd::TimePoint now)
 +{
-+	if (nLen < NATD_PATH_HEADER || pData[0] != OP_UDPRESERVEDPROT1)
++	if (nLen < NATD_PATH_HEADER || pData[0] != OP_UDPRESERVEDPROT1 || theApp.ipfilter->IsFiltered(htonl(from.ip)) || theApp.clientlist->IsBannedClient(htonl(from.ip)))
 +		return false;
 +	std::map<natd::SessionId, SSession>::iterator it = sessions.begin();	// a few: no index
 +	while (it != sessions.end() && (!it->second.pKcp || it->second.bOver || it->second.path.socket != sock || !(it->second.path.remote == from)
@@ -792,8 +784,8 @@ index 901c8a8..9aa4341 100644
  		}
  	}
  }
-@@ -241,7 +697,27 @@ CNatTraversal::CNatTraversal()
- 	std::thread(ResolveStunServers, m_pImpl->pStun).detach();
+@@ -191,16 +648,46 @@ CNatTraversal::CNatTraversal()
+ {
  }
  
 -CNatTraversal::~CNatTraversal() = default;
@@ -807,7 +799,8 @@ index 901c8a8..9aa4341 100644
 +		, pszWhen, st.punchesStarted, st.punchesQueued, st.punchesEstablished, st.punchesFailed, st.punchesRefused
 +		, nPathsDead, st.endpointChecks, st.endpointChecksReused, st.endpointChanges, (unsigned)sessions.size());
 +}
-+
+ 
+-// natd's and STUN's formats, which no other protocol of eMule uses: natd's, also a late answer
 +CNatTraversal::~CNatTraversal()
 +{
 +	CSingleLock lock(&m_pImpl->cs, TRUE);
@@ -818,26 +811,19 @@ index 901c8a8..9aa4341 100644
 +		}
 +	m_pImpl->sessions.clear();
 +}
- 
- // The servers natd sends Binding requests to: their answers are no peer's traffic, and the IP
- // filter (which lists many hosting and cloud ranges, where public STUN servers run) lets them in.
-@@ -252,20 +728,30 @@ bool CNatTraversal::IsStunServer(uint32 dwIP, uint16 nPort) const
- 
++
++// natd's and STUN's formats, and the paths' first byte, which no other protocol of eMule uses:
++// all the rest of the client UDP traffic (Kad, eD2K) goes on at once, without the lock
  bool CNatTraversal::OnDatagram(const BYTE *pData, int nLen, uint32 dwIP, uint16 nPort)
  {
--	if (nLen <= 0 || !m_pImpl->pAgent->mayBeOurs(pData, (size_t)nLen))
-+	// all the rest of the client UDP traffic (Kad, eD2K) goes on without the lock: natd's and
-+	// STUN's formats, and the paths' first byte, no other protocol of eMule uses
+-	if (nLen <= 0 || !(natd::proto::isNatdPacket(pData, (size_t)nLen) || natd::stun::isStunPacket(pData, (size_t)nLen)))
 +	const bool bNatd = nLen > 0 && (natd::proto::isNatdPacket(pData, (size_t)nLen) || natd::stun::isStunPacket(pData, (size_t)nLen));
 +	if (!bNatd && (nLen <= 0 || pData[0] != OP_UDPRESERVEDPROT1))
  		return false;
 +	CSingleLock lock(&m_pImpl->cs, TRUE);
  	const natd::TimePoint now = natd::Clock::now();
--	// true also for a late answer, or a packet of a session already over: no other protocol of
--	// eMule reads natd's or STUN's format
--	const bool bOurs = m_pImpl->pAgent->onDatagram(kPrimarySocket, natd::Endpoint{ntohl(dwIP), nPort}, pData, (size_t)nLen, now);
+-	m_pImpl->pAgent->onDatagram(kPrimarySocket, natd::Endpoint{ntohl(dwIP), nPort}, pData, (size_t)nLen, now);
 -	m_pImpl->HandleEvents(now);
--	return bOurs;
 +	const natd::Endpoint from{ntohl(dwIP), nPort};
 +	if (bNatd) {	// natd's, also a late answer or a packet of a punch already over
 +		m_pImpl->pAgent->onDatagram(kPrimarySocket, from, pData, (size_t)nLen, now);
@@ -847,10 +833,10 @@ index 901c8a8..9aa4341 100644
 +	if (!m_pImpl->OnPath(kPrimarySocket, from, pData, (size_t)nLen, now))
 +		return false;
 +	m_pImpl->RaiseEvents();
-+	return true;
+ 	return true;
  }
  
- void CNatTraversal::Process()
+@@ -208,6 +695,7 @@ void CNatTraversal::Process()
  {
  	Impl &impl = *m_pImpl;
  	const natd::TimePoint now = natd::Clock::now();
@@ -858,7 +844,7 @@ index 901c8a8..9aa4341 100644
  	// only a LowID punches: in Kad once its firewall check is over (Kad says firewalled while it
  	// checks); a HighID never asks the STUN servers
  	if (!impl.pAgent->started() && theApp.clientudp != NULL && theApp.clientudp->m_hSocket != INVALID_SOCKET && theApp.IsFirewalled()
-@@ -275,12 +761,351 @@ void CNatTraversal::Process()
+@@ -217,12 +705,351 @@ void CNatTraversal::Process()
  	}
  	// the sockets natd opened itself: what arrived since the last call, without waiting
  	impl.io.m_extra.wait(now, [&impl, now](natd::SocketId id, const natd::Endpoint &from, const uint8_t *pData, size_t nLen) {
@@ -1212,7 +1198,7 @@ index 901c8a8..9aa4341 100644
 +	return TRUE;
 +}
 diff --git a/srchybrid/NatTraversal.h b/srchybrid/NatTraversal.h
-index 39200b4..f267df0 100644
+index cf9c508..8faf1a9 100644
 --- a/srchybrid/NatTraversal.h
 +++ b/srchybrid/NatTraversal.h
 @@ -16,6 +16,7 @@

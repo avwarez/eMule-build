@@ -58,10 +58,10 @@ index 0717ac5..785556f 100644
  	uint16	m_iPartCount;
  	uint16	m_iED2KPartCount;
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
-index 9aa4341..1e9d9c2 100644
+index 95e2ad4..425296f 100644
 --- a/srchybrid/NatTraversal.cpp
 +++ b/srchybrid/NatTraversal.cpp
-@@ -413,6 +413,7 @@ struct CNatTraversal::Impl
+@@ -377,6 +377,7 @@ struct CNatTraversal::Impl
  	CCriticalSection cs;	// pAgent and the sessions; Write() comes from the upload throttler thread too
  	std::map<natd::SessionId, SSession> sessions;
  	uint64 nPathsDead = 0;
@@ -69,7 +69,7 @@ index 9aa4341..1e9d9c2 100644
  
  	Impl()
  	{
-@@ -481,6 +482,24 @@ void CNatTraversal::Impl::HandleEvents(natd::TimePoint now)
+@@ -432,6 +433,24 @@ void CNatTraversal::Impl::HandleEvents(natd::TimePoint now)
  			}
  			continue;
  		}
@@ -94,7 +94,7 @@ index 9aa4341..1e9d9c2 100644
  		const std::map<natd::SessionId, SSession>::iterator it = sessions.find(e.session);
  		if (it == sessions.end()) {
  			if (e.type == natd::AgentEventType::Punched)
-@@ -572,7 +591,8 @@ bool CNatTraversal::Impl::OnPath(natd::SocketId sock, const natd::Endpoint &from
+@@ -524,7 +543,8 @@ bool CNatTraversal::Impl::OnPath(natd::SocketId sock, const natd::Endpoint &from
  }
  
  // cs held. Each path: KCP's timers; ended when it went silent for NATD_PATH_DEAD_AFTER keepalive
@@ -104,7 +104,7 @@ index 9aa4341..1e9d9c2 100644
  // natd's interval; a FIN once the stream of a socket that went is through.
  void CNatTraversal::Impl::PollPaths(natd::TimePoint now)
  {
-@@ -585,9 +605,10 @@ void CNatTraversal::Impl::PollPaths(natd::TimePoint now)
+@@ -537,9 +557,10 @@ void CNatTraversal::Impl::PollPaths(natd::TimePoint now)
  		s.pKcp->poll(now);
  		if (s.pKcp->failed() || now - s.tHeard >= s.path.keepalive * NATD_PATH_DEAD_AFTER) {
  			if (thePrefs.GetVerbose())
@@ -116,7 +116,7 @@ index 9aa4341..1e9d9c2 100644
  			if (s.pLayer == NULL)
  				Erase(id);
  			continue;
-@@ -703,9 +724,9 @@ void CNatTraversal::Impl::LogStats(LPCTSTR pszWhen) const
+@@ -654,9 +675,9 @@ void CNatTraversal::Impl::LogStats(LPCTSTR pszWhen) const
  	if (!thePrefs.GetVerbose() || !pAgent->started())
  		return;
  	const natd::AgentStats &st = pAgent->stats();
@@ -128,7 +128,7 @@ index 9aa4341..1e9d9c2 100644
  }
  
  CNatTraversal::~CNatTraversal()
-@@ -778,6 +799,25 @@ bool CNatTraversal::IsPunchable() const
+@@ -722,6 +743,25 @@ bool CNatTraversal::IsPunchable() const
  	return m_pImpl->pAgent->directPunchable();
  }
  
@@ -155,7 +155,7 @@ index 9aa4341..1e9d9c2 100644
  // for a file we download from the source: the only case where a punch is tried.
  uint8 CNatTraversal::PunchVia(const CUpDownClient &client) const
 diff --git a/srchybrid/NatTraversal.h b/srchybrid/NatTraversal.h
-index f267df0..84af0df 100644
+index 8faf1a9..cceaaff 100644
 --- a/srchybrid/NatTraversal.h
 +++ b/srchybrid/NatTraversal.h
 @@ -86,6 +86,12 @@ public:

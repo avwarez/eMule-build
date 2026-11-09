@@ -1,8 +1,8 @@
 diff --git a/srchybrid/ClientUDPSocket.cpp b/srchybrid/ClientUDPSocket.cpp
-index 20475a4..433cf77 100644
+index 89f859a..5ae836c 100644
 --- a/srchybrid/ClientUDPSocket.cpp
 +++ b/srchybrid/ClientUDPSocket.cpp
-@@ -510,6 +510,7 @@ int CClientUDPSocket::SendTo(uchar *lpBuf, int nBufLen, uint32 dwIP, uint16 nPor
+@@ -504,6 +504,7 @@ int CClientUDPSocket::SendTo(uchar *lpBuf, int nBufLen, uint32 dwIP, uint16 nPor
  			DebugLogError(_T("Error: Client UDP socket, failed to send data to %s:%u: %s"), (LPCTSTR)ipstr(dwIP), nPort, (LPCTSTR)GetErrorMessage(dwError, 1));
  		return 0; //error
  	}
@@ -41,10 +41,10 @@ index 1414820..ca105fd 100644
  };
 \ No newline at end of file
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
-index 6109bb7..748dce2 100644
+index 64aec1e..e41b476 100644
 --- a/srchybrid/NatTraversal.cpp
 +++ b/srchybrid/NatTraversal.cpp
-@@ -42,6 +42,11 @@
+@@ -39,6 +39,11 @@
  #include "Log.h"
  #include "kademlia/kademlia/Kademlia.h"
  #include "kademlia/kademlia/Prefs.h"
@@ -54,9 +54,9 @@ index 6109bb7..748dce2 100644
 +#include "kademlia/utils/KadUDPKey.h"
 +#include "kademlia/utils/UInt128.h"
  #include "natd/natd.hpp"
+ #include "natd/resolve.hpp"
  #include "natd/winsock_io.hpp"
- #include "kcp/ikcp.h"
-@@ -61,6 +66,7 @@ static char THIS_FILE[] = __FILE__;
+@@ -59,6 +64,7 @@ static char THIS_FILE[] = __FILE__;
  #define NATD_PATH_FIN			0x02	// flags: no segment, the sender's stream is over and acknowledged
  #define NATD_PATH_DEAD_AFTER	3		// natd's keepalive intervals with nothing from the peer
  #define NATD_PATH_LINGER		((DWORD)SEC2MS(10))	// a stream eMule closed, until its FIN is through
@@ -64,7 +64,7 @@ index 6109bb7..748dce2 100644
  
  namespace
  {
-@@ -194,8 +200,11 @@ namespace
+@@ -159,8 +165,11 @@ namespace
  			if (theApp.clientudp == NULL || theApp.clientudp->m_hSocket == INVALID_SOCKET || nLen > 8192)
  				return false;
  			const sockaddr_in sa(SockAddr(htonl(to.ip), to.port));
@@ -77,7 +77,7 @@ index 6109bb7..748dce2 100644
  		}
  	};
  
-@@ -435,6 +444,9 @@ struct CNatTraversal::Impl
+@@ -399,6 +408,9 @@ struct CNatTraversal::Impl
  	void RaiseEvents();
  	DWORD dwLastStats = 0;
  	void LogStats(LPCTSTR pszWhen) const;
@@ -87,7 +87,7 @@ index 6109bb7..748dce2 100644
  };
  
  void CNatTraversal::Impl::StartDiscovery(natd::TimePoint now)
-@@ -724,9 +736,9 @@ void CNatTraversal::Impl::LogStats(LPCTSTR pszWhen) const
+@@ -675,9 +687,9 @@ void CNatTraversal::Impl::LogStats(LPCTSTR pszWhen) const
  	if (!thePrefs.GetVerbose() || !pAgent->started())
  		return;
  	const natd::AgentStats &st = pAgent->stats();
@@ -99,7 +99,7 @@ index 6109bb7..748dce2 100644
  }
  
  CNatTraversal::~CNatTraversal()
-@@ -791,7 +803,33 @@ void CNatTraversal::Process()
+@@ -735,7 +747,33 @@ void CNatTraversal::Process()
  		if (impl.dwLastStats != 0)
  			impl.LogStats(_T("last hour"));
  		impl.dwLastStats = ::GetTickCount();
