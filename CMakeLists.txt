@@ -105,17 +105,17 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          servers forward between two LowIDs (Lugdunum's NAT callback: the
 #          requester's ID on the server, 0 off one, its crypt settings and
 #          its user hash, from which with the nonce the session token comes);
-#          both punch, and the eD2K stream runs over a natd stream on the
-#          client UDP port, with eMule's own transport (CNatdKcpTransport:
-#          KCP, kcp/ below; natd knows none, and every punch packet carries
-#          the transports its sender runs, so the two agree on any path,
-#          the server's too), under a CClientReqSocket given
-#          a CNatdSocketLayer instead of TCP; a punchable LowID source is
+#          both punch; natd hands over the punched path (socket, endpoints,
+#          keepalive interval) and the eD2K stream runs over it in eMule's
+#          own datagrams on the client UDP port (OP_UDPRESERVEDPROT1, the
+#          transport - KCP, kcp/ below -, the token; keepalives at natd's
+#          interval, dead after three silent ones, a FIN at the end), under
+#          a CClientReqSocket given a CNatdSocketLayer instead of TCP; a punchable LowID source is
 #          asked again at its re-ask time, not parked as LowID->LowID. 89nd:
 #          a dead stream is a lost connection, as a TCP one; then, and when
 #          the buddy is lost, the client checks its public endpoint again
 #          (natd QuickCheck, at most once a minute), ends its streams if it
-#          changed with the buddy lost, and publishes its sources again when
+#          changed, and publishes its sources again when
 #          the endpoint changed, as it does when the buddy changes. 89ne
 #          obfuscates the punch request to the buddy: the LowID gives its
 #          buddy's user hash (when the buddy takes obfuscated UDP) in its
@@ -347,11 +347,11 @@ add_subdirectory(libplum EXCLUDE_FROM_ALL)
 target_compile_options(plum-static PRIVATE $<$<C_COMPILER_ID:MSVC>:/W3>)
 
 # ---------------------------------------------------------------------------
-# natd - git submodule (natd/, avwarez/natd pinned to v0.1.4), the NAT discovery and UDP
+# natd - git submodule (natd/, avwarez/natd pinned to v0.2.0), the NAT discovery and UDP
 # hole punching that emule_build/89n* add between two LowIDs: sans-I/O C++17,
-# no sockets or threads of its own (eMule moves the datagrams and the time).
-# natd runs the stream session over the punched path but knows no transport:
-# eMule gives it one (KCP, below). Has its own CMakeLists.txt; its examples
+# no sockets or threads of its own (eMule moves the datagrams and the time),
+# no dependencies. It ends where the hole is open: what goes over the punched
+# path is eMule's (KCP, below). Has its own CMakeLists.txt; its examples
 # and tests stay out. Built at the standard eMule is built at, so that its
 # headers mean the same in its own translation units and in eMule's.
 # ---------------------------------------------------------------------------
@@ -362,7 +362,7 @@ target_compile_features(natd PRIVATE cxx_std_23)
 
 # ---------------------------------------------------------------------------
 # KCP - vanilla git submodule (kcp/, skywind3000/kcp pinned to 1.7, MIT): the
-# stream transport 89nc gives to natd (CNatdKcpTransport in NatTraversal.cpp,
+# transport of the eD2K stream over a punched path (CNatdKcpTransport in NatTraversal.cpp,
 # which includes "kcp/ikcp.h" through CMAKE_SOURCE_DIR). One C file, no
 # CMakeLists.txt of its own that fits a static library: built here.
 # ---------------------------------------------------------------------------

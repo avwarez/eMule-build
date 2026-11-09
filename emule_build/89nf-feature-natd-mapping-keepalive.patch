@@ -49,7 +49,7 @@ index 1414820..1712936 100644
  };
 \ No newline at end of file
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
-index bdde90b..5355262 100644
+index 612643e..f3d081f 100644
 --- a/srchybrid/NatTraversal.cpp
 +++ b/srchybrid/NatTraversal.cpp
 @@ -42,6 +42,11 @@
@@ -64,16 +64,15 @@ index bdde90b..5355262 100644
  #include "natd/natd.hpp"
  #include "natd/winsock_io.hpp"
  #include "kcp/ikcp.h"
-@@ -52,6 +57,8 @@
- static char THIS_FILE[] = __FILE__;
- #endif
- 
+@@ -61,6 +66,7 @@ static char THIS_FILE[] = __FILE__;
+ #define NATD_PATH_FIN			0x02	// flags: no segment, the sender's stream is over and acknowledged
+ #define NATD_PATH_DEAD_AFTER	3		// natd's keepalive intervals with nothing from the peer
+ #define NATD_PATH_LINGER		((DWORD)SEC2MS(10))	// a stream eMule closed, until its FIN is through
 +#define NATD_KEEPALIVE_MARGIN	natd::Duration(SEC2MS(10))	// the keepalive goes this long before natd's mapping lifetime
-+
+ 
  namespace
  {
- 	// natd's id of the client UDP socket; the sockets natd opens itself (discovery samples) get
-@@ -184,8 +191,11 @@ namespace
+@@ -194,8 +200,11 @@ namespace
  			if (theApp.clientudp == NULL || theApp.clientudp->m_hSocket == INVALID_SOCKET || nLen > 8192)
  				return false;
  			const sockaddr_in sa(SockAddr(htonl(to.ip), to.port));
@@ -86,7 +85,7 @@ index bdde90b..5355262 100644
  		}
  	};
  
-@@ -420,6 +430,9 @@ struct CNatTraversal::Impl
+@@ -439,6 +448,9 @@ struct CNatTraversal::Impl
  	void RaiseEvents();
  	DWORD dwLastStats = 0;
  	void LogStats(LPCTSTR pszWhen) const;
@@ -96,19 +95,19 @@ index bdde90b..5355262 100644
  };
  
  void CNatTraversal::Impl::StartDiscovery(natd::TimePoint now)
-@@ -593,9 +606,9 @@ void CNatTraversal::Impl::LogStats(LPCTSTR pszWhen) const
+@@ -736,9 +748,9 @@ void CNatTraversal::Impl::LogStats(LPCTSTR pszWhen) const
  	if (!thePrefs.GetVerbose() || !pAgent->started())
  		return;
  	const natd::AgentStats &st = pAgent->stats();
 -	AddDebugLogLine(false, _T("NAT traversal: counters (%s): punches started %I64u, queued %I64u, established %I64u, failed %I64u, refused %I64u; streams dead %I64u, ended for an address change %I64u; endpoint checks %I64u, reused %I64u, changes %I64u; sessions now %u")
 +	AddDebugLogLine(false, _T("NAT traversal: counters (%s): punches started %I64u, queued %I64u, established %I64u, failed %I64u, refused %I64u; streams dead %I64u, ended for an address change %I64u; endpoint checks %I64u, reused %I64u, changes %I64u; sessions now %u; mapping keepalives %u")
  		, pszWhen, st.punchesStarted, st.punchesQueued, st.punchesEstablished, st.punchesFailed, st.punchesRefused
--		, st.streamsDead, st.streamsAddressChanged, st.endpointChecks, st.endpointChecksReused, st.endpointChanges, (unsigned)pAgent->sessionCount());
-+		, st.streamsDead, st.streamsAddressChanged, st.endpointChecks, st.endpointChecksReused, st.endpointChanges, (unsigned)pAgent->sessionCount(), nKeepalives);
+-		, nPathsDead, nPathsAddressChanged, st.endpointChecks, st.endpointChecksReused, st.endpointChanges, (unsigned)sessions.size());
++		, nPathsDead, nPathsAddressChanged, st.endpointChecks, st.endpointChecksReused, st.endpointChanges, (unsigned)sessions.size(), nKeepalives);
  }
  
  CNatTraversal::~CNatTraversal()
-@@ -650,7 +663,33 @@ void CNatTraversal::Process()
+@@ -803,7 +815,33 @@ void CNatTraversal::Process()
  		if (impl.dwLastStats != 0)
  			impl.LogStats(_T("last hour"));
  		impl.dwLastStats = ::GetTickCount();

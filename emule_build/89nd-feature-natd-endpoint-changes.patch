@@ -58,18 +58,32 @@ index 0717ac5..785556f 100644
  	uint16	m_iPartCount;
  	uint16	m_iED2KPartCount;
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
-index badf743..12611f9 100644
+index 7026657..be0695b 100644
 --- a/srchybrid/NatTraversal.cpp
 +++ b/srchybrid/NatTraversal.cpp
-@@ -467,6 +467,18 @@ void CNatTraversal::Impl::HandleEvents(natd::TimePoint now)
+@@ -416,6 +416,7 @@ struct CNatTraversal::Impl
+ 	std::map<natd::SessionId, SSession> sessions;
+ 	std::map<std::pair<natd::SocketId, uint64>, natd::SessionId> paths;	// the punched ones, by socket and the peer's endpoint
+ 	uint64 nPathsDead = 0;
++	uint64 nPathsAddressChanged = 0;
+ 
+ 	Impl()
+ 	{
+@@ -485,6 +486,24 @@ void CNatTraversal::Impl::HandleEvents(natd::TimePoint now)
  			}
  			continue;
  		}
 +		if (e.type == natd::AgentEventType::EndpointChanged) {
-+			// natd ends the streams whose path is gone (AddressChanged, below); the sources are
-+			// published again with the new endpoint (CKnownFile::PublishSrc, GetPunchEndpoint)
++			// the paths went with the old endpoint: their streams end as the TCP connections of a
++			// client whose address changed. The sources are published again with the new endpoint
++			// (CKnownFile::PublishSrc, GetPunchEndpoint).
 +			AddLogLine(false, _T("NAT traversal: public endpoint changed to %s - downloads between LowIDs through UDP hole punching %s"), (LPCTSTR)EndpointStr(pAgent->publicEndpoint())
 +				, pAgent->directPunchable() ? _T("still possible") : _T("not possible"));
++			for (std::map<natd::SessionId, SSession>::iterator it = sessions.begin(); it != sessions.end(); ++it)
++				if (it->second.pKcp && !it->second.bOver) {
++					++nPathsAddressChanged;
++					EndPath(it->second, WSAECONNRESET);
++				}
 +			continue;
 +		}
 +		if (e.type == natd::AgentEventType::EndpointChecked) {
@@ -79,30 +93,42 @@ index badf743..12611f9 100644
 +		}
  		const std::map<natd::SessionId, SSession>::iterator it = sessions.find(e.session);
  		if (it == sessions.end()) {
- 			if (e.session != 0)
-@@ -495,15 +507,18 @@ void CNatTraversal::Impl::HandleEvents(natd::TimePoint now)
- 			break;
- 		case natd::AgentEventType::Closed:
- 			if (thePrefs.GetVerbose() && e.error != natd::SessionError::None)
--				AddDebugLogLine(false, s.bConnected ? _T("NAT traversal: stream with %s ended: %hs") : _T("NAT traversal: punch towards %s failed: %hs")
--					, (LPCTSTR)EndpointStr(pAgent->remote(e.session)), natd::toString(e.error));
-+				AddDebugLogLine(false, s.bConnected ? _T("NAT traversal: stream with %s ended: %hs%s") : _T("NAT traversal: punch towards %s failed: %hs%s")
-+					, (LPCTSTR)EndpointStr(pAgent->remote(e.session)), natd::toString(e.error)
-+					, e.error == natd::SessionError::Reset ? _T(", checking the public endpoint") : _T(""));
- 			if (s.pLayer == NULL) {
- 				// a punch that did not get through before the socket was made, or a socket already gone
- 				pAgent->release(e.session, now);
- 				sessions.erase(it);
- 				break;
- 			}
--			// as a TCP connection: refused, timed out, or lost
-+			// as a TCP connection: refused, timed out, or lost; a stream that died, or whose
-+			// endpoint changed (AddressChanged), ends as the TCP connections of a client whose
-+			// address changed. natd checked our endpoint after a dead stream already.
- 			s.bOver = true;
- 			switch (e.error) {
- 			case natd::SessionError::None:		s.nPendingError = 0; break;
-@@ -643,6 +658,25 @@ bool CNatTraversal::IsPunchable() const
+ 			if (e.type == natd::AgentEventType::Punched)
+@@ -577,7 +596,8 @@ bool CNatTraversal::Impl::OnPath(natd::SocketId sock, const natd::Endpoint &from
+ }
+ 
+ // cs held. Each path: KCP's timers; ended when it went silent for NATD_PATH_DEAD_AFTER keepalive
+-// intervals or KCP gave up, as a TCP connection that broke; a keepalive when nothing went for
++// intervals or KCP gave up, as a TCP connection that broke, and then our endpoint is checked (the
++// NAT may have lost its mappings, or the address changed); a keepalive when nothing went for
+ // natd's interval; a FIN once the stream of a socket that went is through.
+ void CNatTraversal::Impl::PollPaths(natd::TimePoint now)
+ {
+@@ -590,9 +610,10 @@ void CNatTraversal::Impl::PollPaths(natd::TimePoint now)
+ 		s.pKcp->poll(now);
+ 		if (s.pKcp->failed() || now - s.tHeard >= s.path.keepalive * NATD_PATH_DEAD_AFTER) {
+ 			if (thePrefs.GetVerbose())
+-				AddDebugLogLine(false, _T("NAT traversal: stream with %s ended: nothing from it for %u keepalive intervals"), (LPCTSTR)EndpointStr(s.remote), (unsigned)NATD_PATH_DEAD_AFTER);
++				AddDebugLogLine(false, _T("NAT traversal: stream with %s ended: nothing from it for %u keepalive intervals, checking the public endpoint"), (LPCTSTR)EndpointStr(s.remote), (unsigned)NATD_PATH_DEAD_AFTER);
+ 			++nPathsDead;
+ 			EndPath(s, WSAECONNRESET);
++			pAgent->checkEndpoint(now);
+ 			if (s.pLayer == NULL)
+ 				Erase(id);
+ 			continue;
+@@ -715,9 +736,9 @@ void CNatTraversal::Impl::LogStats(LPCTSTR pszWhen) const
+ 	if (!thePrefs.GetVerbose() || !pAgent->started())
+ 		return;
+ 	const natd::AgentStats &st = pAgent->stats();
+-	AddDebugLogLine(false, _T("NAT traversal: counters (%s): punches started %I64u, queued %I64u, established %I64u, failed %I64u, refused %I64u; streams dead %I64u; endpoint checks %I64u, reused %I64u, changes %I64u; sessions now %u")
++	AddDebugLogLine(false, _T("NAT traversal: counters (%s): punches started %I64u, queued %I64u, established %I64u, failed %I64u, refused %I64u; streams dead %I64u, ended for an address change %I64u; endpoint checks %I64u, reused %I64u, changes %I64u; sessions now %u")
+ 		, pszWhen, st.punchesStarted, st.punchesQueued, st.punchesEstablished, st.punchesFailed, st.punchesRefused
+-		, nPathsDead, st.endpointChecks, st.endpointChecksReused, st.endpointChanges, (unsigned)sessions.size());
++		, nPathsDead, nPathsAddressChanged, st.endpointChecks, st.endpointChecksReused, st.endpointChanges, (unsigned)sessions.size());
+ }
+ 
+ CNatTraversal::~CNatTraversal()
+@@ -790,6 +811,25 @@ bool CNatTraversal::IsPunchable() const
  	return m_pImpl->pAgent->directPunchable();
  }
  
@@ -121,7 +147,7 @@ index badf743..12611f9 100644
 +	if (m_pImpl->pAgent->directPunchable()) {
 +		if (thePrefs.GetVerbose())
 +			AddDebugLogLine(false, _T("NAT traversal: buddy lost, checking the public endpoint%s"), m_pImpl->pAgent->checking() ? _T(" (a check is on already)") : _T(""));
-+		m_pImpl->pAgent->checkEndpoint(natd::Clock::now(), true);
++		m_pImpl->pAgent->checkEndpoint(natd::Clock::now());
 +	}
 +}
 +
@@ -129,10 +155,10 @@ index badf743..12611f9 100644
  // for a file we download from the source: the only case where a punch is tried.
  uint8 CNatTraversal::PunchVia(const CUpDownClient &client) const
 diff --git a/srchybrid/NatTraversal.h b/srchybrid/NatTraversal.h
-index 5309477..59427cf 100644
+index 7c6f15e..d7cde38 100644
 --- a/srchybrid/NatTraversal.h
 +++ b/srchybrid/NatTraversal.h
-@@ -85,6 +85,12 @@ public:
+@@ -87,6 +87,12 @@ public:
  
  	// The discovery found an endpoint-independent mapping of the client UDP port.
  	bool	IsPunchable() const;

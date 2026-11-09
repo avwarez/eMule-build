@@ -33,10 +33,10 @@ index 6b49c3f..dca620a 100644
  	// searching on global servers
  	void	StopUDPRequests();
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
-index 12611f9..bdde90b 100644
+index be0695b..612643e 100644
 --- a/srchybrid/NatTraversal.cpp
 +++ b/srchybrid/NatTraversal.cpp
-@@ -653,6 +653,12 @@ void CNatTraversal::Process()
+@@ -806,6 +806,12 @@ void CNatTraversal::Process()
  	}
  }
  
@@ -49,7 +49,7 @@ index 12611f9..bdde90b 100644
  bool CNatTraversal::IsPunchable() const
  {
  	return m_pImpl->pAgent->directPunchable();
-@@ -708,6 +714,7 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
+@@ -861,6 +867,7 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
  		return false;
  	const uint64 nNonce = RandomUInt64();
  	CSafeMemFile data(64);
@@ -57,7 +57,7 @@ index 12611f9..bdde90b 100644
  	if (byVia == NATD_VIA_BUDDY) {
  		// through the buddy, which checks the buddy ID and forwards the rest as it is
  		data.WriteHash16(client.GetBuddyID());
-@@ -717,8 +724,10 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
+@@ -870,8 +877,10 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
  		Packet *packet = new Packet(data, OP_EMULEPROT);
  		packet->opcode = OP_REASKCALLBACKUDP;
  		theStats.AddUpDataOverheadOther(packet->size);
@@ -70,7 +70,7 @@ index 12611f9..bdde90b 100644
  	} else {
  		// a source with an open UDP port: the three fields of OP_DIRECTCALLBACKREQ, which is all
  		// an unpatched client reads, are the request's (the port, the user hash, the crypt
-@@ -730,11 +739,13 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
+@@ -883,11 +892,13 @@ bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &cli
  		Packet *packet = new Packet(data, OP_EMULEPROT);
  		packet->opcode = OP_DIRECTCALLBACKREQ;
  		theStats.AddUpDataOverheadOther(packet->size);
@@ -87,10 +87,10 @@ index 12611f9..bdde90b 100644
  }
  
 diff --git a/srchybrid/NatTraversal.h b/srchybrid/NatTraversal.h
-index 59427cf..9059305 100644
+index d7cde38..438256c 100644
 --- a/srchybrid/NatTraversal.h
 +++ b/srchybrid/NatTraversal.h
-@@ -91,6 +91,9 @@ public:
+@@ -93,6 +93,9 @@ public:
  	// The TCP connection to the buddy broke: a new public address breaks it at once. The
  	// endpoint is checked; if it changed, the punched streams end as TCP connections do.
  	void	OnBuddyLost();
@@ -101,11 +101,11 @@ index 59427cf..9059305 100644
  	// Downloader side. True when TCP cannot reach the client (LowID->LowID) but a punch can.
  	bool	CanPunchTo(const CUpDownClient &client) const	{ return PunchVia(client) != NATD_VIA_NONE; }
 diff --git a/srchybrid/Opcodes.h b/srchybrid/Opcodes.h
-index 16eb0d5..ed49bcb 100644
+index db08dbb..9a95f3c 100644
 --- a/srchybrid/Opcodes.h
 +++ b/srchybrid/Opcodes.h
 @@ -431,6 +431,7 @@
- #define TAG_NATDCLIENT			"natd"	// <uint8> the stream transports the source runs over a punch (natd::TransportSet, NATD_TRANSPORT_*): it can be punched to
+ #define TAG_NATDCLIENT			"natd"	// <uint8> the stream transports the source runs over a punched path (NATD_TRANSPORT_*): it can be punched to
  #define NATD_TRANSPORT_KCP		0x01	// KCP (89nc)
  #define NATD_TRANSPORTS			NATD_TRANSPORT_KCP	// the ones we run
 +#define TAG_NATDBUDDYHASH		"natdbuddyhash"	// <hash> the buddy's user hash, when it takes obfuscated UDP: the punch request is obfuscated for it
