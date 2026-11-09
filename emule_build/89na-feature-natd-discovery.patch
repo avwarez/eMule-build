@@ -82,10 +82,10 @@ index fa40464..ba85fff 100644
  	delete theApp.serverlist;				theApp.serverlist = NULL;		// CServerList::SaveServermetToFile
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
 new file mode 100644
-index 0000000..b823009
+index 0000000..9dc3ac8
 --- /dev/null
 +++ b/srchybrid/NatTraversal.cpp
-@@ -0,0 +1,228 @@
+@@ -0,0 +1,194 @@
 +//this file is part of eMule
 +//Copyright (C)2002-2026 Merkur ( strEmail.Format("%s@%s", "devteam", "emule-project.net") / https://www.emule-project.net )
 +//
@@ -187,40 +187,6 @@ index 0000000..b823009
 +				, reinterpret_cast<const sockaddr*>(&sa), (int)sizeof sa) == (int)nLen;
 +		}
 +	};
-+
-+	LPCTSTR FilteringStr(natd::FilteringBehavior f)
-+	{
-+		switch (f) {
-+		case natd::FilteringBehavior::EndpointIndependent:
-+			return _T(", endpoint-independent filtering");
-+		case natd::FilteringBehavior::AddressDependent:
-+			return _T(", address-dependent filtering");
-+		case natd::FilteringBehavior::AddressPortDependent:
-+			return _T(", address and port dependent filtering");
-+		default:
-+			return _T("");	// not measured from STUN servers alone
-+		}
-+	}
-+
-+	// The user's log: what kind of NAT the client UDP port is behind and what it means for
-+	// downloads between LowIDs. Public STUN servers show how the NAT behaves, not whose it is
-+	// (a home router or a carrier's CGNAT).
-+	void LogNatType(const natd::Agent &agent)
-+	{
-+		const natd::NatProfile &profile = agent.profile();
-+		const natd::NatDetails &d = profile.details;
-+		const CString strEndpoint(EndpointStr(profile.publicEndpoint));
-+		if (profile.predictability == natd::Predictability::UdpBlocked)
-+			AddLogLine(false, _T("NAT traversal: no STUN server answered on UDP port %u - NAT type unknown, no UDP hole punching"), thePrefs.GetUDPPort());
-+		else if (!d.behindNat)
-+			AddLogLine(false, _T("NAT traversal: no NAT on UDP port %u (public %s) - downloads between LowIDs through UDP hole punching possible"), thePrefs.GetUDPPort(), (LPCTSTR)strEndpoint);
-+		else if (agent.directPunchable())
-+			AddLogLine(false, _T("NAT traversal: NAT with endpoint-independent mapping%s, public %s - downloads between LowIDs through UDP hole punching possible"), FilteringStr(d.filtering), (LPCTSTR)strEndpoint);
-+		else if (d.mapping == natd::MappingBehavior::AddressDependent || d.mapping == natd::MappingBehavior::AddressPortDependent)
-+			AddLogLine(false, _T("NAT traversal: NAT with %s mapping (the public port changes with the destination), public %s - downloads between LowIDs through UDP hole punching not possible"), d.mapping == natd::MappingBehavior::AddressDependent ? _T("address-dependent") : _T("address and port dependent"), (LPCTSTR)strEndpoint);
-+		else
-+			AddLogLine(false, _T("NAT traversal: NAT type not determined (%hs), public %s - no UDP hole punching"), natd::toString(profile.predictability), (LPCTSTR)strEndpoint);
-+	}
 +}
 +
 +// natd::Agent does the work: discovery, endpoint checks, punch sessions and their streams.
@@ -262,15 +228,15 @@ index 0000000..b823009
 +{
 +	natd::AgentEvent e;
 +	while (pAgent->nextEvent(e)) {
-+		if (e.type == natd::AgentEventType::ProfileReady)
-+			LogNatType(*pAgent);
-+		if (e.type == natd::AgentEventType::ProfileReady && thePrefs.GetVerbose()) {
-+			const natd::NatProfile &profile = pAgent->profile();
-+			AddDebugLogLine(false, _T("NAT traversal: %hs, mapping %hs, filtering %hs, public endpoint %s, %s")
-+				, natd::toString(profile.predictability), natd::toString(profile.details.mapping)
-+				, natd::toString(profile.details.filtering), (LPCTSTR)EndpointStr(profile.publicEndpoint)
-+				, pAgent->directPunchable() ? _T("punchable") : _T("not punchable"));
-+		}
++		if (e.type != natd::AgentEventType::ProfileReady)
++			continue;
++		// the user's log: whether downloads between LowIDs can go through UDP hole punching here
++		const natd::NatProfile &profile = pAgent->profile();
++		AddLogLine(false, _T("NAT traversal: public endpoint %s on UDP port %u - downloads between LowIDs through UDP hole punching %s")
++			, (LPCTSTR)EndpointStr(profile.publicEndpoint), thePrefs.GetUDPPort(), pAgent->directPunchable() ? _T("possible") : _T("not possible"));
++		if (thePrefs.GetVerbose())
++			AddDebugLogLine(false, _T("NAT traversal: %hs, mapping %hs, filtering %hs"), natd::toString(profile.predictability)
++				, natd::toString(profile.details.mapping), natd::toString(profile.details.filtering));
 +	}
 +}
 +

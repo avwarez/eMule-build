@@ -213,7 +213,7 @@ index 15674a1..bf4adbf 100644
  				//Make sure we are still thinking about the same file
  				if (md4equ(reqfilehash, sender->GetUploadFileID())) {
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
-index b823009..95e2ad4 100644
+index 9dc3ac8..0b9e806 100644
 --- a/srchybrid/NatTraversal.cpp
 +++ b/srchybrid/NatTraversal.cpp
 @@ -15,18 +15,34 @@
@@ -329,7 +329,7 @@ index b823009..95e2ad4 100644
  	class CNatdIo final : public natd::IDatagramIo
  	{
  	public:
-@@ -94,7 +158,7 @@ namespace
+@@ -94,21 +158,191 @@ namespace
  				return m_extra.send(id, to, pData, nLen);
  			if (theApp.clientudp == NULL || theApp.clientudp->m_hSocket == INVALID_SOCKET || nLen > 8192)
  				return false;
@@ -338,13 +338,11 @@ index b823009..95e2ad4 100644
  			return ::sendto(theApp.clientudp->m_hSocket, reinterpret_cast<const char*>(pData), (int)nLen, 0
  				, reinterpret_cast<const sockaddr*>(&sa), (int)sizeof sa) == (int)nLen;
  		}
-@@ -133,16 +197,187 @@ namespace
- 		else
- 			AddLogLine(false, _T("NAT traversal: NAT type not determined (%hs), public %s - no UDP hole punching"), natd::toString(profile.predictability), (LPCTSTR)strEndpoint);
- 	}
-+
-+}
-+
+ 	};
+ }
+ 
+-// natd::Agent does the work: discovery, endpoint checks, punch sessions and their streams.
+-// What stays here is eMule's: the socket, when to start, and what the events mean to eMule.
 +// natd::Agent does the NAT's part: discovery, endpoint checks and the punch, which hands the path
 +// over (natd::PunchResult). What goes over the path is eMule's: the sessions below, an eD2K
 +// stream each, under the sockets of the punched connections.
@@ -511,10 +509,8 @@ index b823009..95e2ad4 100644
 +		bool				bWantWrite = false;	// a Write() found the window full
 +		bool				bPeerFin = false;
 +	};
- }
- 
--// natd::Agent does the work: discovery, endpoint checks, punch sessions and their streams.
--// What stays here is eMule's: the socket, when to start, and what the events mean to eMule.
++}
++
  struct CNatTraversal::Impl
  {
  	CNatdIo io;
@@ -528,13 +524,13 @@ index b823009..95e2ad4 100644
  	Impl()
  	{
  		natd::AgentConfig cfg;
-@@ -152,6 +387,17 @@ struct CNatTraversal::Impl
+@@ -118,6 +352,17 @@ struct CNatTraversal::Impl
  	void StartDiscovery(natd::TimePoint now);
  	void Poll(natd::TimePoint now);
  	void HandleEvents(natd::TimePoint now);
 +	void Punched(natd::SessionId id, SSession &s, const natd::PunchResult &r, natd::TimePoint now);
 +	void Accept(natd::SessionId id, SSession &s);
-+	bool OnPath(natd::SocketId sock, const natd::Endpoint &from, const BYTE *pData, size_t nLen, natd::TimePoint now);
++	bool OnPath(const natd::Endpoint &from, const BYTE *pData, size_t nLen, natd::TimePoint now);
 +	void PollPaths(natd::TimePoint now);
 +	void SendPath(SSession &s, uint8 byFlags, const uint8_t *pSegment, size_t nLen);
 +	void EndPath(SSession &s, int nError);
@@ -546,7 +542,7 @@ index b823009..95e2ad4 100644
  };
  
  void CNatTraversal::Impl::StartDiscovery(natd::TimePoint now)
-@@ -170,18 +416,229 @@ void CNatTraversal::Impl::Poll(natd::TimePoint now)
+@@ -136,19 +381,226 @@ void CNatTraversal::Impl::Poll(natd::TimePoint now)
  	HandleEvents(now);
  }
  
@@ -556,23 +552,23 @@ index b823009..95e2ad4 100644
  {
  	natd::AgentEvent e;
  	while (pAgent->nextEvent(e)) {
--		if (e.type == natd::AgentEventType::ProfileReady)
+-		if (e.type != natd::AgentEventType::ProfileReady)
 +		if (e.type == natd::AgentEventType::ProfileReady) {
- 			LogNatType(*pAgent);
--		if (e.type == natd::AgentEventType::ProfileReady && thePrefs.GetVerbose()) {
--			const natd::NatProfile &profile = pAgent->profile();
--			AddDebugLogLine(false, _T("NAT traversal: %hs, mapping %hs, filtering %hs, public endpoint %s, %s")
--				, natd::toString(profile.predictability), natd::toString(profile.details.mapping)
--				, natd::toString(profile.details.filtering), (LPCTSTR)EndpointStr(profile.publicEndpoint)
--				, pAgent->directPunchable() ? _T("punchable") : _T("not punchable"));
-+			if (thePrefs.GetVerbose()) {
-+				const natd::NatProfile &profile = pAgent->profile();
-+				AddDebugLogLine(false, _T("NAT traversal: %hs, mapping %hs, filtering %hs, public endpoint %s, %s")
-+					, natd::toString(profile.predictability), natd::toString(profile.details.mapping)
-+					, natd::toString(profile.details.filtering), (LPCTSTR)EndpointStr(profile.publicEndpoint)
-+					, pAgent->directPunchable() ? _T("punchable") : _T("not punchable"));
-+			}
-+			continue;
++			// the user's log: whether downloads between LowIDs can go through UDP hole punching here
++			const natd::NatProfile &profile = pAgent->profile();
++			AddLogLine(false, _T("NAT traversal: public endpoint %s on UDP port %u - downloads between LowIDs through UDP hole punching %s")
++				, (LPCTSTR)EndpointStr(profile.publicEndpoint), thePrefs.GetUDPPort(), pAgent->directPunchable() ? _T("possible") : _T("not possible"));
++			if (thePrefs.GetVerbose())
++				AddDebugLogLine(false, _T("NAT traversal: %hs, mapping %hs, filtering %hs"), natd::toString(profile.predictability)
++					, natd::toString(profile.details.mapping), natd::toString(profile.details.filtering));
+ 			continue;
+-		// the user's log: whether downloads between LowIDs can go through UDP hole punching here
+-		const natd::NatProfile &profile = pAgent->profile();
+-		AddLogLine(false, _T("NAT traversal: public endpoint %s on UDP port %u - downloads between LowIDs through UDP hole punching %s")
+-			, (LPCTSTR)EndpointStr(profile.publicEndpoint), thePrefs.GetUDPPort(), pAgent->directPunchable() ? _T("possible") : _T("not possible"));
+-		if (thePrefs.GetVerbose())
+-			AddDebugLogLine(false, _T("NAT traversal: %hs, mapping %hs, filtering %hs"), natd::toString(profile.predictability)
+-				, natd::toString(profile.details.mapping), natd::toString(profile.details.filtering));
 +		}
 +		const std::map<natd::SessionId, SSession>::iterator it = sessions.find(e.session);
 +		if (it == sessions.end()) {
@@ -641,12 +637,12 @@ index b823009..95e2ad4 100644
 +
 +// cs held. A datagram of a punched path; false when it is none, and eMule's protocols read it.
 +// A peer's traffic: the IP filter and the bans apply, as to the rest that reaches the port.
-+bool CNatTraversal::Impl::OnPath(natd::SocketId sock, const natd::Endpoint &from, const BYTE *pData, size_t nLen, natd::TimePoint now)
++bool CNatTraversal::Impl::OnPath(const natd::Endpoint &from, const BYTE *pData, size_t nLen, natd::TimePoint now)
 +{
 +	if (nLen < NATD_PATH_HEADER || pData[0] != OP_UDPRESERVEDPROT1 || theApp.ipfilter->IsFiltered(htonl(from.ip)) || theApp.clientlist->IsBannedClient(htonl(from.ip)))
 +		return false;
 +	std::map<natd::SessionId, SSession>::iterator it = sessions.begin();	// a few: no index
-+	while (it != sessions.end() && (!it->second.pKcp || it->second.bOver || it->second.path.socket != sock || !(it->second.path.remote == from)
++	while (it != sessions.end() && (!it->second.pKcp || it->second.bOver || !(it->second.path.remote == from)
 +		|| memcmp(pData + 3, it->second.path.token.data(), it->second.path.token.size()) != 0))
 +		++it;
 +	if (it == sessions.end())
@@ -746,18 +742,15 @@ index b823009..95e2ad4 100644
 +		s.lPendingEvents |= FD_CLOSE;
 +}
 +
-+// cs held. The session goes: a punch still on is cancelled, a path and a socket natd opened for
-+// it are closed.
++// cs held. The session goes: a punch still on is cancelled. A path is on the client UDP socket
++// (eMule asks natd for direct punches only), which stays.
 +void CNatTraversal::Impl::Erase(natd::SessionId id)
 +{
 +	const std::map<natd::SessionId, SSession>::iterator it = sessions.find(id);
 +	if (it == sessions.end())
 +		return;
-+	SSession &s = it->second;
-+	if (!s.pKcp)
++	if (!it->second.pKcp)
 +		pAgent->cancel(id, natd::Clock::now());
-+	else if (s.path.socket != kPrimarySocket)
-+		io.closeSocket(s.path.socket);
 +	sessions.erase(it);
 +}
 +
@@ -781,10 +774,11 @@ index b823009..95e2ad4 100644
 +		if ((lEvents & FD_CLOSE) && !s.bClosePosted) {
 +			s.bClosePosted = true;
 +			s.pLayer->RaiseEvent(FD_CLOSE, s.nPendingError);
- 		}
++		}
  	}
  }
-@@ -191,16 +648,46 @@ CNatTraversal::CNatTraversal()
+ 
+@@ -157,16 +609,46 @@ CNatTraversal::CNatTraversal()
  {
  }
  
@@ -830,13 +824,13 @@ index b823009..95e2ad4 100644
 +		m_pImpl->HandleEvents(now);
 +		return true;
 +	}
-+	if (!m_pImpl->OnPath(kPrimarySocket, from, pData, (size_t)nLen, now))
++	if (!m_pImpl->OnPath(from, pData, (size_t)nLen, now))
 +		return false;
 +	m_pImpl->RaiseEvents();
  	return true;
  }
  
-@@ -208,6 +695,7 @@ void CNatTraversal::Process()
+@@ -174,6 +656,7 @@ void CNatTraversal::Process()
  {
  	Impl &impl = *m_pImpl;
  	const natd::TimePoint now = natd::Clock::now();
@@ -844,13 +838,8 @@ index b823009..95e2ad4 100644
  	// only a LowID punches: in Kad once its firewall check is over (Kad says firewalled while it
  	// checks); a HighID never asks the STUN servers
  	if (!impl.pAgent->started() && theApp.clientudp != NULL && theApp.clientudp->m_hSocket != INVALID_SOCKET && theApp.IsFirewalled()
-@@ -217,12 +705,351 @@ void CNatTraversal::Process()
- 	}
- 	// the sockets natd opened itself: what arrived since the last call, without waiting
- 	impl.io.m_extra.wait(now, [&impl, now](natd::SocketId id, const natd::Endpoint &from, const uint8_t *pData, size_t nLen) {
--		impl.pAgent->onDatagram(id, from, pData, nLen, now);
-+		if (!impl.pAgent->onDatagram(id, from, pData, nLen, now))
-+			impl.OnPath(id, from, pData, nLen, now);	// a path punched on one of them
+@@ -186,9 +669,347 @@ void CNatTraversal::Process()
+ 		impl.pAgent->onDatagram(id, from, pData, nLen, now);
  	});
  	impl.Poll(now);
 +	impl.PollPaths(now);

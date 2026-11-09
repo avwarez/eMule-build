@@ -116,11 +116,9 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          the buddy is lost, the client checks its public endpoint again
 #          (natd QuickCheck, at most once a minute), ends its streams if it
 #          changed, and publishes its sources again when
-#          the endpoint changed, as it does when the buddy changes. 89ne
-#          obfuscates the punch request to the buddy: the LowID gives its
-#          buddy's user hash (when the buddy takes obfuscated UDP) in its
-#          source records, and the request goes to the buddy obfuscated with
-#          it, as eMule's own UDP between two clients.
+#          the endpoint changed, as it does when the buddy changes. (89ne,
+#          which obfuscated the request to the buddy, is gone: eMule sends
+#          OP_REASKCALLBACKUDP in the clear, and so does the punch request.)
 #          89nf keeps the mapping of the port such a LowID published in Kad:
 #          when nothing left the client UDP port for the mapping lifetime
 #          natd gives (natd::mappingLifetime: measured, else RFC 4787's 2

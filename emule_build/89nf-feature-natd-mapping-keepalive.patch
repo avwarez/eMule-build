@@ -41,7 +41,7 @@ index 1414820..ca105fd 100644
  };
 \ No newline at end of file
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
-index 64aec1e..e41b476 100644
+index 6ab7953..c544ded 100644
 --- a/srchybrid/NatTraversal.cpp
 +++ b/srchybrid/NatTraversal.cpp
 @@ -39,6 +39,11 @@
@@ -76,8 +76,8 @@ index 64aec1e..e41b476 100644
 +			return bSent;
  		}
  	};
- 
-@@ -399,6 +408,9 @@ struct CNatTraversal::Impl
+ }
+@@ -364,6 +373,9 @@ struct CNatTraversal::Impl
  	void RaiseEvents();
  	DWORD dwLastStats = 0;
  	void LogStats(LPCTSTR pszWhen) const;
@@ -87,7 +87,7 @@ index 64aec1e..e41b476 100644
  };
  
  void CNatTraversal::Impl::StartDiscovery(natd::TimePoint now)
-@@ -675,9 +687,9 @@ void CNatTraversal::Impl::LogStats(LPCTSTR pszWhen) const
+@@ -636,9 +648,9 @@ void CNatTraversal::Impl::LogStats(LPCTSTR pszWhen) const
  	if (!thePrefs.GetVerbose() || !pAgent->started())
  		return;
  	const natd::AgentStats &st = pAgent->stats();
@@ -99,7 +99,7 @@ index 64aec1e..e41b476 100644
  }
  
  CNatTraversal::~CNatTraversal()
-@@ -735,7 +747,33 @@ void CNatTraversal::Process()
+@@ -695,7 +707,33 @@ void CNatTraversal::Process()
  		if (impl.dwLastStats != 0)
  			impl.LogStats(_T("last hour"));
  		impl.dwLastStats = ::GetTickCount();
@@ -132,4 +132,4 @@ index 64aec1e..e41b476 100644
 +	Kademlia::CKademlia::GetUDPListener()->SendNullPacket(KADEMLIA2_PING, pContact->GetIPAddress(), pContact->GetUDPPort(), pContact->GetUDPKey(), &uTargetID);
  }
  
- const uchar* CNatTraversal::GetMyBuddyHash() const
+ bool CNatTraversal::IsPunchable() const
