@@ -87,92 +87,37 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          PowerShare does to the debug log, and 89g keeps a PowerShare
 #          upload going past the session limit while no other PowerShare
 #          request or friend slot is waiting for the slot.
-#          89n* let two LowIDs reach each other through UDP hole punching,
-#          with natd (below) and nothing but Kad, the buddies and public STUN
-#          servers; nothing changes towards a client without them, nor
-#          between clients where TCP works. 89na runs natd's NAT discovery
-#          on the client UDP port once the client is a LowID (Kad's firewall
-#          check over; a HighID never asks the STUN servers): the client is
-#          punchable when its NAT maps that port endpoint-independently.
-#          89nb: a punchable LowID marks its Kad source records with a "natd"
-#          tag, the stream transports it runs (0x01 KCP), and a punchable
-#          LowID keeps the LowID sources that carry one of its own instead of
-#          dropping them as LowID->LowID. 89nc: towards such a
-#          source the downloader asks for a punch, through the source's buddy
-#          (OP_REASKCALLBACKUDP, forwarded by any buddy with the endpoint it
-#          saw) or directly (OP_DIRECTCALLBACKREQ), with the natd marker at
-#          the end of the packet and the request in the format the eD2K
-#          servers forward between two LowIDs (Lugdunum's NAT callback: the
-#          requester's ID on the server, 0 off one, its crypt settings and
-#          its user hash, from which with the nonce the session token comes);
-#          both punch; natd hands over the punched path (socket, endpoints,
-#          keepalive interval) and the eD2K stream runs over it in eMule's
-#          own datagrams on the client UDP port (OP_UDPRESERVEDPROT1, the
-#          transport - KCP, kcp/ below -, the token; keepalives at natd's
-#          interval, dead after three silent ones, a FIN at the end), under
-#          a CClientReqSocket given a CNatdSocketLayer instead of TCP; a punchable LowID source is
-#          asked again at its re-ask time, not parked as LowID->LowID. 89nd:
-#          a dead stream is a lost connection, as a TCP one; then, and when
-#          the buddy is lost, the client checks its public endpoint again
-#          (natd QuickCheck, at most once a minute), ends its streams if it
-#          changed, and publishes its sources again when
-#          the endpoint changed, as it does when the buddy changes. (89ne,
-#          which obfuscated the request to the buddy, is gone: eMule sends
-#          OP_REASKCALLBACKUDP in the clear, and so does the punch request.)
-#          89nf keeps the mapping of the port such a LowID published in Kad:
-#          when nothing left the client UDP port for the mapping lifetime
-#          natd gives (natd::mappingLifetime: measured, else RFC 4787's 2
-#          minutes for an endpoint-independent mapping) less 10 s, a Kad
-#          ping to a random contact, as eMule's external port lookup sends.
-#          89ng adds the eD2K server as a channel: two LowIDs logged in to a
-#          server that coordinates punches, Kad or not (discovery then runs
-#          for an eD2K LowID too), by Lugdunum's NAT callback (SRVCAP_
-#          NATTRAVERSAL, announced at login; the Rust ed2k-server takes it
-#          too): the requester sends OP_NAT_CALLBACK_REQUEST from the client
-#          UDP port, obfuscated with the server's UDP key, the server
-#          forwards it with the endpoint it saw, and the source asks back the
-#          same way, which brings its endpoint to the requester. With no
-#          marker there, both sides derive the session: the lower ID starts
-#          the punch and the token comes from its user hash and both IDs, so
-#          two LowIDs asking each other at once still meet. A peer the server
-#          brings more than once counts once; such a LowID source (odd ID) is
-#          kept, not dropped. 89nh lets the server's punch reach a NAT that
-#          maps the client UDP port to random ports inside a block (natd
-#          Bounded, mobile CGNs), which the server cannot tell: the
-#          endpoint-independent side punches the endpoint the server saw and,
-#          from the second round on, the block of ports around it too
-#          (natd::PeerNat::Unknown); the Bounded side punches the endpoint
-#          from the client UDP port. Kad stays endpoint-independent only
-#          (until 89nn).
-#          89ni ends the punched streams with their FINs when eMule closes,
-#          as TCP connections get theirs, instead of the peer waiting for
-#          the path to go silent.
-#          89nj (natd 0.4.0) takes a NAT with sequential ports (natd
-#          Predictable) through the server too: the endpoint-independent
-#          side also sprays the ports just past the endpoint the server saw,
-#          and the request back goes before our first punch packet.
-#          89nk (natd 0.5.0) assumes no block size nor alignment: from the
-#          second round on, the endpoint-independent side sprays the ports
-#          nearest to the endpoint the server saw, twice as many each round.
-#          89nl (natd 0.6.0): a punch through the server that timed out is
-#          asked for once more while the socket has been connecting for less
-#          than CONNECTION_TIMEOUT (as TCP sends its SYN again); the log
-#          gives the packets and rounds of every punch.
-#          89nm runs the NAT discovery before the connection to the server
-#          and to Kad, after UPnP and whatever the ID: the login announces
-#          what it found, and its mappings do not mix with the connection's.
-#          At startup the connect buttons stay disabled until UPnP (when
-#          enabled) and the discovery are over.
-#          89nn makes the two Kad buddies do what the server does: the
-#          request carries the requester's buddy, the source sends its
-#          request back through it before punching, so both punch endpoints
-#          seen a moment ago; Kad then takes Bounded and Predictable NATs
-#          too, and a timed-out punch is asked for once more as in 89nl.
-#          89no drops what kept the endpoint published in Kad fresh (the
-#          89nf keepalive, the republishing on an endpoint change of 89nd):
-#          only a relay - the server, the two buddies - brings the endpoints
-#          now; a request without the requester's buddy is not taken; a
-#          LowID keeps an open-UDP Kad source only if it can punch to it.
+#          89n lets two LowIDs reach each other through UDP hole punching,
+#          with natd (below) and public STUN servers; nothing changes towards
+#          a HighID, nor between clients where TCP works. At startup, after
+#          UPnP and before the server and Kad, natd's NAT discovery runs on
+#          the client UDP port (the connect buttons wait for it, at most a
+#          minute); the login announces Lugdunum's NAT callback (SRVCAP_
+#          NATTRAVERSAL) and a LowID's Kad source records carry a "natd" tag
+#          when the client can be punched to, and a LowID keeps the LowID
+#          sources it can punch to instead of parking them as LowID->LowID.
+#          Two LowIDs learn each other's public endpoint only through a relay
+#          that sees both, the eD2K server or their two Kad buddies, the same
+#          way: the requester's request goes from the client UDP port to the
+#          relay, which forwards it with the endpoint it saw; the source
+#          sends its own request back the same way before punching, so both
+#          punch endpoints seen a moment ago. Through the server it is
+#          Lugdunum's OP_NAT_CALLBACK_* (obfuscated with the server's UDP
+#          key; the lower ID starts, the token comes from both IDs); through
+#          the buddies OP_REASKCALLBACKUDP/TCP, which any buddy forwards,
+#          with a natd marker (nonce) and the requester's buddy for the
+#          answer. A source with an open UDP port is asked directly
+#          (OP_DIRECTCALLBACKREQ). An endpoint-independent NAT, one with
+#          random ports in a block (mobile CGNs) or sequential ports can be
+#          punched to: the endpoint-independent side sprays the ports nearest
+#          to the endpoint the relay saw, more each round. Unanswered
+#          requests go once more, and a timed-out punch is asked for again
+#          while the socket is within CONNECTION_TIMEOUT, as TCP resends its
+#          SYN. natd hands over the path and the eD2K stream runs over it in
+#          eMule's own datagrams (KCP, kcp/ below) on the client UDP port,
+#          under a CClientReqSocket given a CNatdSocketLayer: keepalives at
+#          natd's interval, dead after three silent ones (then the public
+#          endpoint is checked again), FINs at the end and when eMule closes.
 #   90-94  the code compiles but /Wall flags it; these bring the warning
 #          count back to zero.
 #   95-96  the code compiles and is warning-clean but is not correct on
@@ -382,7 +327,7 @@ target_compile_options(plum-static PRIVATE $<$<C_COMPILER_ID:MSVC>:/W3>)
 
 # ---------------------------------------------------------------------------
 # natd - git submodule (natd/, avwarez/natd pinned to v0.2.1), the NAT discovery and UDP
-# hole punching that emule_build/89n* add between two LowIDs: sans-I/O C++17,
+# hole punching that emule_build/89n adds between two LowIDs: sans-I/O C++17,
 # no sockets or threads of its own (eMule moves the datagrams and the time),
 # no dependencies. It ends where the hole is open: what goes over the punched
 # path is eMule's (KCP, below). Has its own CMakeLists.txt; its examples
