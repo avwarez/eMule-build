@@ -1,0 +1,296 @@
+diff --git a/srchybrid/ClientUDPSocket.cpp b/srchybrid/ClientUDPSocket.cpp
+index a17e522..182bcba 100644
+--- a/srchybrid/ClientUDPSocket.cpp
++++ b/srchybrid/ClientUDPSocket.cpp
+@@ -509,7 +509,6 @@ int CClientUDPSocket::SendTo(uchar *lpBuf, int nBufLen, uint32 dwIP, uint16 nPor
+ 			DebugLogError(_T("Error: Client UDP socket, failed to send data to %s:%u: %s"), (LPCTSTR)ipstr(dwIP), nPort, (LPCTSTR)GetErrorMessage(dwError, 1));
+ 		return 0; //error
+ 	}
+-	SetSentNow();
+ 	return result; //success
+ }
+ 
+diff --git a/srchybrid/ClientUDPSocket.h b/srchybrid/ClientUDPSocket.h
+index 55d61f5..19301ba 100644
+--- a/srchybrid/ClientUDPSocket.h
++++ b/srchybrid/ClientUDPSocket.h
+@@ -15,7 +15,6 @@
+ //along with this program; if not, write to the Free Software
+ //Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ #pragma once
+-#include <atomic>
+ #include "UploadBandwidthThrottler.h" // ZZ:UploadBandWithThrottler (UDP)
+ #include "EncryptedDatagramSocket.h"
+ 
+@@ -47,15 +46,11 @@ public:
+ 	uint16	GetConnectedPort() const	{ return m_port; }
+ 	bool	SendPacket(Packet *packet, uint32 dwIP, uint16 nPort, bool bEncrypt, const uchar *pachTargetClientHashORKadID, bool bKad, uint32 nReceiverVerifyKey);
+ 	SocketSentBytes  SendControlData(uint32 maxNumberOfBytesToSend, uint32 /*minFragSize*/); // ZZ:UploadBandWithThrottler (UDP)
+-	// the last datagram that left the socket (GetTickCount), eMule's or natd's: the NAT
+-	// keeps the port's mapping only while something goes out (RFC 4787 REQ-6)
+-	DWORD	GetLastSent() const			{ return m_dwLastSent; }
+ 	// the eD2K server's UDP obfuscation, for the punch requests (89ng), which leave from this
+ 	// socket so that the server sees the endpoint to punch to
+ 	static int		ServerOverheadSize()	{ return EncryptOverheadSize(false); }
+ 	static uint32	EncryptForServer(uchar *pbyBuf, uint32 nBufLen, uint32 dwBaseKey)	{ return EncryptSendServer(pbyBuf, nBufLen, dwBaseKey); }
+ 	static int		DecryptFromServer(BYTE *pbyBufIn, int nBufLen, BYTE **ppbyBufOut, uint32 dwBaseKey, const SOCKADDR_IN &dbgIP)	{ return DecryptReceivedServer(pbyBufIn, nBufLen, ppbyBufOut, dwBaseKey, dbgIP); }
+-	void	SetSentNow()				{ m_dwLastSent = ::GetTickCount(); }
+ 
+ protected:
+ 	bool	ProcessPacket(const BYTE *packet, UINT size, uint8 opcode, uint32 ip, uint16 port);
+@@ -73,5 +68,4 @@ private:
+ 
+ 	uint16	m_port;
+ 	bool	m_bWouldBlock;
+-	std::atomic<DWORD> m_dwLastSent{0};	// SendTo runs on the upload throttler thread
+ };
+\ No newline at end of file
+diff --git a/srchybrid/DownloadQueue.cpp b/srchybrid/DownloadQueue.cpp
+index 949f0b5..bc3e65b 100644
+--- a/srchybrid/DownloadQueue.cpp
++++ b/srchybrid/DownloadQueue.cpp
+@@ -1521,12 +1521,13 @@ bool CDownloadQueue::DoKademliaFileRequest() const
+ 	return ::GetTickCount() >= m_lastkademliafilerequest + KADEMLIAASKTIME;
+ }
+ 
+-// A LowID Kad source is of use to a LowID only when both of them can be punched to (89nb)
+-static bool KeepFirewalledSource(bool bNatd, uint32 dwIP, const CPartFile &file)
++// A LowID Kad source is of use to a LowID only when both of them can be punched to (89nb); one
++// with an open UDP port (bDirect) only when our NAT maps endpoint-independently (89no)
++static bool KeepFirewalledSource(bool bNatd, bool bDirect, uint32 dwIP, const CPartFile &file)
+ {
+ 	if (!theApp.IsFirewalled())
+ 		return true;
+-	const bool bKeep = bNatd && theApp.nattraversal->IsPunchable();
++	const bool bKeep = bNatd && (bDirect ? theApp.nattraversal->IsDirectPunchable() : theApp.nattraversal->IsPunchable());
+ 	if (bNatd && thePrefs.GetVerbose())
+ 		AddDebugLogLine(false, bKeep ? _T("NAT traversal: LowID source %s for \"%s\" not dropped as LowID-to-LowID: both of us can be punched to")
+ 			: _T("NAT traversal: LowID source %s for \"%s\" dropped: it can be punched to, we cannot"), (LPCTSTR)ipstr(dwIP), (LPCTSTR)file.GetFileName());
+@@ -1582,7 +1583,7 @@ void CDownloadQueue::KademliaSearchFile(uint32 nSearchID, const Kademlia::CUInt1
+ 		//This will be a firewalled client connected to Kad only.
+ 		// if we are firewalled ourself, the source is useless to us
+ 		// - unless both of us can be punched to (TAG_NATDCLIENT)
+-		if (!KeepFirewalledSource(bNatd, ED2Kip, *temp))
++		if (!KeepFirewalledSource(bNatd, false, ED2Kip, *temp))
+ 			break;
+ 
+ 		if (theApp.ipfilter->IsFiltered(dwBuddyIP)) {
+@@ -1618,7 +1619,7 @@ void CDownloadQueue::KademliaSearchFile(uint32 nSearchID, const Kademlia::CUInt1
+ 		// firewalled source which supports direct UDP callback
+ 		// if we are firewalled ourselves, the source is useless to us
+ 		// - unless both of us can be punched to (TAG_NATDCLIENT)
+-		if (!KeepFirewalledSource(bNatd, ED2Kip, *temp))
++		if (!KeepFirewalledSource(bNatd, true, ED2Kip, *temp))
+ 			break;
+ 
+ 		if ((byCryptOptions & 0x08) == 0)
+diff --git a/srchybrid/KnownFile.cpp b/srchybrid/KnownFile.cpp
+index cfe8c99..6eac80a 100644
+--- a/srchybrid/KnownFile.cpp
++++ b/srchybrid/KnownFile.cpp
+@@ -1631,13 +1631,12 @@ bool CKnownFile::PublishSrc()
+ 		if (!buddy)
+ 			return false;
+ 		lastBuddyIP = buddy->GetIP();
+-		// the same for the other datum of the record a punch depends on: the public endpoint the
+-		// index node sees (a new one, the client just found punchable, or no longer so: the record
+-		// then goes again without TAG_NATDCLIENT)
+-		const uint64 nPunchEndpoint = theApp.nattraversal->GetPunchEndpoint();
+-		if (lastBuddyIP != m_lastBuddyIP || nPunchEndpoint != m_nLastPunchEndpoint) {
++		// the same for the other datum of the record a punch depends on: whether it carries
++		// TAG_NATDCLIENT (the client just found punchable, or no longer so)
++		const bool bPunchable = theApp.nattraversal->IsPunchable();
++		if (lastBuddyIP != m_lastBuddyIP || bPunchable != m_bLastPunchable) {
+ 			SetLastPublishTimeKadSrc(tNow + KADEMLIAREPUBLISHTIMES, lastBuddyIP);
+-			m_nLastPunchEndpoint = nPunchEndpoint;
++			m_bLastPunchable = bPunchable;
+ 			return true;
+ 		}
+ 	} else
+diff --git a/srchybrid/KnownFile.h b/srchybrid/KnownFile.h
+index 785556f..8c0c71a 100644
+--- a/srchybrid/KnownFile.h
++++ b/srchybrid/KnownFile.h
+@@ -176,7 +176,7 @@ private:
+ 	time_t	m_lastPublishTimeKadNotes;
+ 	uint32	kadFileSearchID;
+ 	uint32	m_lastBuddyIP;
+-	uint64	m_nLastPunchEndpoint = 0;	// NAT traversal: the public endpoint the last source record carried
++	bool	m_bLastPunchable = false;	// NAT traversal: whether the last source record carried TAG_NATDCLIENT
+ 	UINT	m_uMetaDataVer;
+ 	uint16	m_iPartCount;
+ 	uint16	m_iED2KPartCount;
+diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
+index ed1110e..7b232ee 100644
+--- a/srchybrid/NatTraversal.cpp
++++ b/srchybrid/NatTraversal.cpp
+@@ -70,7 +70,6 @@ static char THIS_FILE[] = __FILE__;
+ #define NATD_PATH_FINS			3		// a FIN goes this many times, NATD_PATH_FIN_GAP apart: a lost one
+ #define NATD_PATH_FIN_GAP		((DWORD)300)	// would leave the peer waiting for the path to go silent
+ #define NATD_PATH_LINGER		((DWORD)SEC2MS(10))	// a stream eMule closed, until its FIN is through
+-#define NATD_KEEPALIVE_MARGIN	natd::Duration(SEC2MS(10))	// the keepalive goes this long before natd's mapping lifetime
+ #define NATD_SERVER_RESEND		((DWORD)SEC2MS(3))	// a request through the server goes once more after this
+ #define NATD_SERVER_WAIT		((DWORD)SEC2MS(20))	// for the target's request back, with its endpoint
+ #define NATD_SERVER_PINGS		5		// status requests for the server's UDP key, 20 s apart
+@@ -220,11 +219,8 @@ namespace
+ 			if (theApp.clientudp == NULL || theApp.clientudp->m_hSocket == INVALID_SOCKET || nLen > 8192)
+ 				return false;
+ 			const sockaddr_in sa(SockAddr(htonl(to.ip), to.port));
+-			const bool bSent = ::sendto(theApp.clientudp->m_hSocket, reinterpret_cast<const char*>(pData), (int)nLen, 0
++			return ::sendto(theApp.clientudp->m_hSocket, reinterpret_cast<const char*>(pData), (int)nLen, 0
+ 				, reinterpret_cast<const sockaddr*>(&sa), (int)sizeof sa) == (int)nLen;
+-			if (bSent)
+-				theApp.clientudp->SetSentNow();
+-			return bSent;
+ 		}
+ 	};
+ }
+@@ -464,9 +460,6 @@ struct CNatTraversal::Impl
+ 	// the wait began (0: not asked), and whether the dialog still waits to be told it is over
+ 	DWORD dwConnectWait = 0;
+ 	bool bConnectWaiting = false;
+-	void Keepalive();
+-	DWORD dwLastKeepalive = 0;
+-	uint32 nKeepalives = 0;	// since the last hourly counters
+ 
+ 	// 89ng, the server we are logged in to as a LowID, when it coordinates punches; main thread
+ 	struct SServer
+@@ -591,8 +584,8 @@ void CNatTraversal::Impl::HandleEvents(natd::TimePoint now)
+ 		}
+ 		if (e.type == natd::AgentEventType::EndpointChanged) {
+ 			// the paths went with the old endpoint: their streams end as the TCP connections of a
+-			// client whose address changed. The sources are published again with the new endpoint
+-			// (CKnownFile::PublishSrc, GetPunchEndpoint).
++			// client whose address changed. The sources are not published again: nobody punches the
++			// endpoint they carry, a relay brings each peer the other's (89no).
+ 			AddLogLine(false, _T("NAT traversal: public endpoint changed to %s - downloads between LowIDs through UDP hole punching %s"), (LPCTSTR)EndpointStr(pAgent->publicEndpoint())
+ 				, VerdictStr(Verdict()));
+ 			for (std::map<natd::SessionId, SSession>::iterator it = sessions.begin(); it != sessions.end(); ++it)
+@@ -931,9 +924,9 @@ void CNatTraversal::Impl::LogStats(LPCTSTR pszWhen) const
+ 	if (!thePrefs.GetVerbose() || !pAgent->started())
+ 		return;
+ 	const natd::AgentStats &st = pAgent->stats();
+-	AddDebugLogLine(false, _T("NAT traversal: counters (%s): punches started %I64u, queued %I64u, established %I64u, failed %I64u, refused %I64u; streams dead %I64u, ended for an address change %I64u; endpoint checks %I64u, reused %I64u, changes %I64u; sessions now %u; mapping keepalives %u")
++	AddDebugLogLine(false, _T("NAT traversal: counters (%s): punches started %I64u, queued %I64u, established %I64u, failed %I64u, refused %I64u; streams dead %I64u, ended for an address change %I64u; endpoint checks %I64u, reused %I64u, changes %I64u; sessions now %u")
+ 		, pszWhen, st.punchesStarted, st.punchesQueued, st.punchesEstablished, st.punchesFailed, st.punchesRefused
+-		, nPathsDead, nPathsAddressChanged, st.endpointChecks, st.endpointChecksReused, st.endpointChanges, (unsigned)sessions.size(), nKeepalives);
++		, nPathsDead, nPathsAddressChanged, st.endpointChecks, st.endpointChecksReused, st.endpointChanges, (unsigned)sessions.size());
+ }
+ 
+ // The FINs go back to back: nothing runs after to space them (NATD_PATH_FIN_GAP)
+@@ -1015,9 +1008,7 @@ void CNatTraversal::Process()
+ 		if (impl.dwLastStats != 0)
+ 			impl.LogStats(_T("last hour"));
+ 		impl.dwLastStats = ::GetTickCount();
+-		impl.nKeepalives = 0;
+ 	}
+-	impl.Keepalive();
+ 	ServerTimer();
+ 	BuddyTimer();
+ 	bool bConnect = false;
+@@ -1388,41 +1379,14 @@ void CNatTraversal::OnBuddyBack(const SNatCallback &cb, uint64 nNonce)
+ 		pLayer->RaiseEvent(FD_CONNECT, WSAECONNREFUSED);
+ }
+ 
+-// A LowID that published its port as punchable keeps the NAT's mapping of it: when nothing left
+-// the client UDP socket for the mapping lifetime natd gives, less a margin, a Kad ping to a random
+-// contact, as the external port lookup sends (CKademlia::Process). Nothing is sent otherwise.
+-void CNatTraversal::Impl::Keepalive()
+-{
+-	if (!pAgent->directPunchable() || !Kademlia::CKademlia::IsConnected() || !Kademlia::CKademlia::IsFirewalled() || theApp.clientudp == NULL)
+-		return;
+-	const std::optional<natd::Duration> lifetime = natd::mappingLifetime(pAgent->profile());
+-	if (!lifetime || *lifetime <= NATD_KEEPALIVE_MARGIN)
+-		return;
+-	const DWORD dwIdle = (DWORD)(*lifetime - NATD_KEEPALIVE_MARGIN).count();
+-	const DWORD dwNow = ::GetTickCount();
+-	// the ping is queued: until it is on the wire the socket's last send is older than it
+-	if (dwNow - theApp.clientudp->GetLastSent() < dwIdle || (dwLastKeepalive != 0 && dwNow - dwLastKeepalive < dwIdle))
+-		return;
+-	Kademlia::CContact *pContact = Kademlia::CKademlia::GetRoutingZone()->GetRandomContact(3, KADEMLIA_VERSION6_49aBETA);
+-	if (pContact == NULL)
+-		return;
+-	dwLastKeepalive = dwNow;
+-	++nKeepalives;
+-	const Kademlia::CUInt128 uTargetID(pContact->GetClientID());
+-	Kademlia::CKademlia::GetUDPListener()->SendNullPacket(KADEMLIA2_PING, pContact->GetIPAddress(), pContact->GetUDPPort(), pContact->GetUDPKey(), &uTargetID);
+-}
+-
+ bool CNatTraversal::IsPunchable() const
+ {
+ 	return m_pImpl->pAgent->punchable();
+ }
+ 
+-uint64 CNatTraversal::GetPunchEndpoint() const
++bool CNatTraversal::IsDirectPunchable() const
+ {
+-	if (!m_pImpl->pAgent->directPunchable())
+-		return m_pImpl->pAgent->punchable() ? 1 : 0;
+-	const natd::Endpoint ep(m_pImpl->pAgent->publicEndpoint());
+-	return ((uint64)ep.ip << 16) | ep.port;
++	return m_pImpl->pAgent->directPunchable();
+ }
+ 
+ // One check at a time, none within natd's checkReuse (a minute) of the last one, whose result stands.
+@@ -1585,11 +1549,20 @@ bool CNatTraversal::ReadCallback(CSafeMemFile &data, uint32 dwIP, uint16 nPort,
+ // Through the buddies the request back goes before our first punch packet, which the next
+ // Process() sends, as through the server: the endpoint the requester's buddy sees is then our
+ // newest mapping, and the one towards the requester comes right after it (89nj, 89nn). A request
+-// without the requester's buddy (89nc) is punched as before: the requester punches the endpoint
+-// we published, which only an endpoint-independent mapping of ours keeps.
++// without the requester's buddy is not taken (89no): the requester would punch the endpoint we
++// published, which nobody keeps fresh, while the buddies bring each side the other's.
++// The requester's endpoint is the one its buddy saw a UDP datagram come from, which a forged
++// source address can make up, as it can for eMule's own callback: the punch towards it then
++// finds no one punching back, and ends within natd's caps (small datagrams, at most maxPackets
++// in its 20 s, a few punches at once).
+ bool CNatTraversal::StartIncoming(const SNatCallback &cb, uint64 nNonce, uint8 byVia, const uchar *pFileHash)
+ {
+-	const bool bBack = byVia == NATD_VIA_BUDDY && cb.bBuddy && pFileHash != NULL;
++	if (byVia == NATD_VIA_BUDDY && (!cb.bBuddy || pFileHash == NULL)) {
++		if (thePrefs.GetVerbose())
++			AddDebugLogLine(false, _T("NAT traversal: punch request through our buddy from %s:%u not taken: no buddy of the requester to answer through"), (LPCTSTR)ipstr(cb.dwIP), cb.nPort);
++		return false;
++	}
++	const bool bBack = byVia == NATD_VIA_BUDDY;
+ 	if (!OpenSession(cb.dwIP, cb.nPort, natd::tokenFrom(cb.abyHash, 16, nNonce).data(), false, NULL, byVia, 0, bBack))
+ 		return false;
+ 	if (bBack && m_pImpl->BuddyRequest(cb.abyBuddyID, cb.dwBuddyIP, cb.nBuddyPort, pFileHash, NATD_MARKER_BACK, nNonce, _T("back, so that the requester learns our endpoint"))) {
+diff --git a/srchybrid/NatTraversal.h b/srchybrid/NatTraversal.h
+index c0f7c79..3c33796 100644
+--- a/srchybrid/NatTraversal.h
++++ b/srchybrid/NatTraversal.h
+@@ -22,13 +22,13 @@
+ // client UDP port (the one Kad uses), with public STUN servers only - no server of our own:
+ // natd's list, or the user's in stun.dat (config directory).
+ //
+-// The client is "punchable" when its NAT maps that port endpoint-independently (natd
+-// Predictability::Stable): the endpoint a third party sees is then the one every peer sees,
+-// so two punchable LowIDs can reach each other through the endpoints their buddies saw.
+-// Through the server a NAT that maps it to random ports inside a block of ports
+-// (Predictability::Bounded, mobile CGNs, 89nh) or to sequential ports (Predictable, 89nj) can
+-// be punched to as well: nothing tells either side the other's NAT there, so an
+-// endpoint-independent side punches the endpoint the server saw and, should nobody answer
++// Two LowIDs learn each other's public endpoint only through a relay that sees both of them:
++// the eD2K server, or their two Kad buddies (89nn), as the server does. A source with an open
++// UDP port is its own relay (OP_DIRECTCALLBACKREQ), and needs the requester's NAT to map
++// endpoint-independently (natd Predictability::Stable). Through a relay a NAT that maps it to
++// random ports inside a block of ports (Predictability::Bounded, mobile CGNs, 89nh) or to
++// sequential ports (Predictable, 89nj) can be punched to as well: nothing tells either side the
++// other's NAT there, so an endpoint-independent side punches the endpoint the relay saw and, should nobody answer
+ // there, the ports nearest to it, more each round, whatever the size of the block (natd::PeerNat::
+ // Unknown, 89nk); the other side punches the endpoint from the client UDP port.
+ //
+@@ -137,10 +137,8 @@ public:
+ 	// server or the buddies: endpoint-independent, or random in a block of ports, or sequential
+ 	// (89nh, 89nj, 89nn). A source with an open UDP port takes an endpoint-independent one only.
+ 	bool	IsPunchable() const;
+-	// What of the NAT a source record says, as one number: the public endpoint the index node
+-	// sees while endpoint-independent, 1 while punchable otherwise (TAG_NATDCLIENT), 0 when not;
+-	// a change means publishing again.
+-	uint64	GetPunchEndpoint() const;
++	// Endpoint-independent: a source with an open UDP port can be punched to as well.
++	bool	IsDirectPunchable() const;
+ 	// The TCP connection to the buddy broke: a new public address breaks it at once. The
+ 	// endpoint is checked; if it changed, the punched streams end as TCP connections do.
+ 	void	OnBuddyLost();

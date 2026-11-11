@@ -168,6 +168,11 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          request back through it before punching, so both punch endpoints
 #          seen a moment ago; Kad then takes Bounded and Predictable NATs
 #          too, and a timed-out punch is asked for once more as in 89nl.
+#          89no drops what kept the endpoint published in Kad fresh (the
+#          89nf keepalive, the republishing on an endpoint change of 89nd):
+#          only a relay - the server, the two buddies - brings the endpoints
+#          now; a request without the requester's buddy is not taken; a
+#          LowID keeps an open-UDP Kad source only if it can punch to it.
 #   90-94  the code compiles but /Wall flags it; these bring the warning
 #          count back to zero.
 #   95-96  the code compiles and is warning-clean but is not correct on
