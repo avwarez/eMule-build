@@ -153,6 +153,10 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          89nk (natd 0.5.0) assumes no block size nor alignment: from the
 #          second round on, the endpoint-independent side sprays the ports
 #          nearest to the endpoint the server saw, twice as many each round.
+#          89nl (natd 0.6.0): a punch through the server that timed out is
+#          asked for once more while the socket has been connecting for less
+#          than CONNECTION_TIMEOUT (as TCP sends its SYN again); the log
+#          gives the packets and rounds of every punch.
 #   90-94  the code compiles but /Wall flags it; these bring the warning
 #          count back to zero.
 #   95-96  the code compiles and is warning-clean but is not correct on
