@@ -143,6 +143,9 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          from the second round on, the block of ports around it too
 #          (natd::PeerNat::Unknown); the Bounded side punches the endpoint
 #          from the client UDP port. Kad stays endpoint-independent only.
+#          89ni ends the punched streams with their FINs when eMule closes,
+#          as TCP connections get theirs, instead of the peer waiting for
+#          the path to go silent.
 #   90-94  the code compiles but /Wall flags it; these bring the warning
 #          count back to zero.
 #   95-96  the code compiles and is warning-clean but is not correct on

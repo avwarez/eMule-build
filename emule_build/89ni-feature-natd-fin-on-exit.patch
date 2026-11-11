@@ -1,0 +1,57 @@
+diff --git a/srchybrid/EmuleDlg.cpp b/srchybrid/EmuleDlg.cpp
+index ba85fff..262a312 100644
+--- a/srchybrid/EmuleDlg.cpp
++++ b/srchybrid/EmuleDlg.cpp
+@@ -1748,6 +1748,7 @@ void CemuleDlg::OnClose()
+ 	// NOTE: Do not move those dtors into 'CemuleApp::InitInstance' (although they should be there). The
+ 	// dtors are indirectly calling functions which access several windows which would not be available
+ 	// after we have closed the main window -> crash!
++	theApp.nattraversal->Shutdown();	// the punched streams' FINs, while the client UDP socket is there
+ 	delete theApp.listensocket;				theApp.listensocket = NULL;
+ 	delete theApp.clientudp;				theApp.clientudp = NULL;
+ 	delete theApp.nattraversal;			theApp.nattraversal = NULL;	// after every client socket
+diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
+index 7cd9ec9..986eab7 100644
+--- a/srchybrid/NatTraversal.cpp
++++ b/srchybrid/NatTraversal.cpp
+@@ -846,6 +846,25 @@ void CNatTraversal::Impl::LogStats(LPCTSTR pszWhen) const
+ 		, nPathsDead, nPathsAddressChanged, st.endpointChecks, st.endpointChecksReused, st.endpointChanges, (unsigned)sessions.size(), nKeepalives);
+ }
+ 
++// The FINs go back to back: nothing runs after to space them (NATD_PATH_FIN_GAP)
++void CNatTraversal::Shutdown()
++{
++	CSingleLock lock(&m_pImpl->cs, TRUE);
++	Impl &impl = *m_pImpl;
++	for (std::vector<Impl::SFin>::const_iterator it = impl.fins.begin(); it != impl.fins.end(); ++it)
++		for (int i = 0; i < it->nLeft; ++i)
++			impl.SendDatagram(it->socket, it->remote, it->token, NATD_PATH_FIN, NULL, 0);
++	impl.fins.clear();
++	for (std::map<natd::SessionId, SSession>::iterator it = impl.sessions.begin(); it != impl.sessions.end(); ++it) {
++		SSession &s = it->second;
++		if (!s.pKcp || s.bOver)
++			continue;
++		for (int i = 0; i < NATD_PATH_FINS; ++i)
++			impl.SendDatagram(s.path.socket, s.path.remote, s.path.token, NATD_PATH_FIN, NULL, 0);
++		s.bOver = true;
++	}
++}
++
+ CNatTraversal::~CNatTraversal()
+ {
+ 	CSingleLock lock(&m_pImpl->cs, TRUE);
+diff --git a/srchybrid/NatTraversal.h b/srchybrid/NatTraversal.h
+index 4dce8d1..41d5213 100644
+--- a/srchybrid/NatTraversal.h
++++ b/srchybrid/NatTraversal.h
+@@ -101,6 +101,10 @@ public:
+ 	bool	OnDatagram(const BYTE *pData, int nLen, uint32 dwIP, uint16 nPort);
+ 	// every 100 ms, from the upload timer
+ 	void	Process();
++	// eMule closes, before the client UDP socket goes: every punched stream still open ends with
++	// its FINs at once, as a TCP connection gets its FIN, so that the peer does not wait for the
++	// path to go silent (89ni)
++	void	Shutdown();
+ 
+ 	// The discovery found an endpoint-independent mapping of the client UDP port (the Kad
+ 	// channels; the server takes a Bounded one too, 89nh).
