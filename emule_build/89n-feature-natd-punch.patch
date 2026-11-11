@@ -582,10 +582,10 @@ index 15674a1..5b2cc4d 100644
  				if (md4equ(reqfilehash, sender->GetUploadFileID())) {
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
 new file mode 100644
-index 0000000..66c9344
+index 0000000..33979c1
 --- /dev/null
 +++ b/srchybrid/NatTraversal.cpp
-@@ -0,0 +1,1769 @@
+@@ -0,0 +1,1771 @@
 +//this file is part of eMule
 +//Copyright (C)2002-2026 Merkur ( strEmail.Format("%s@%s", "devteam", "emule-project.net") / https://www.emule-project.net )
 +//
@@ -1929,7 +1929,9 @@ index 0000000..66c9344
 +{
 +	if (!m_pImpl->pAgent->punchable() || client.GetRequestFile() == NULL || thePrefs.GetUDPPort() == 0)
 +		return NATD_VIA_NONE;
-+	// a source that published in Kad that it can be punched to: directly, with an open UDP port
++	// One channel a connection attempt, as eMule's callbacks. Kad comes first, the server only when
++	// Kad cannot reach the source (the user's choice: eMule itself asks the server first). A
++	// source that published in Kad that it can be punched to: directly, with an open UDP port
 +	// (we punch the endpoint it published, it the one our request came from, which needs an
 +	// endpoint-independent mapping of ours), or through its buddy and ours, which do what the
 +	// server does. The addresses are checked when they are punched to.
