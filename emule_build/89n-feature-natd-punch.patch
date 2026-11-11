@@ -582,10 +582,10 @@ index 15674a1..5b2cc4d 100644
  				if (md4equ(reqfilehash, sender->GetUploadFileID())) {
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
 new file mode 100644
-index 0000000..33979c1
+index 0000000..d2c5c4c
 --- /dev/null
 +++ b/srchybrid/NatTraversal.cpp
-@@ -0,0 +1,1771 @@
+@@ -0,0 +1,1770 @@
 +//this file is part of eMule
 +//Copyright (C)2002-2026 Merkur ( strEmail.Format("%s@%s", "devteam", "emule-project.net") / https://www.emule-project.net )
 +//
@@ -1929,9 +1929,12 @@ index 0000000..33979c1
 +{
 +	if (!m_pImpl->pAgent->punchable() || client.GetRequestFile() == NULL || thePrefs.GetUDPPort() == 0)
 +		return NATD_VIA_NONE;
-+	// One channel a connection attempt, as eMule's callbacks. Kad comes first, the server only when
-+	// Kad cannot reach the source (the user's choice: eMule itself asks the server first). A
-+	// source that published in Kad that it can be punched to: directly, with an open UDP port
++	// One channel a connection attempt, as eMule's callbacks, and in their order: the server
++	// first, for a LowID logged in to our server, which coordinates the punch (its address comes
++	// with the server's answer); Kad only when the server cannot reach the source.
++	if (client.HasLowID() && ServerCanPunch(client.GetUserIDHybrid(), client.GetServerIP(), client.GetServerPort()))
++		return NATD_VIA_SERVER;
++	// A source that published in Kad that it can be punched to: directly, with an open UDP port
 +	// (we punch the endpoint it published, it the one our request came from, which needs an
 +	// endpoint-independent mapping of ours), or through its buddy and ours, which do what the
 +	// server does. The addresses are checked when they are punched to.
@@ -1945,10 +1948,6 @@ index 0000000..33979c1
 +		} else if (client.HasValidBuddyID() && client.GetBuddyIP() != 0 && client.GetBuddyPort() != 0 && OurBuddy(abyBuddyID, dwBuddyIP, nBuddyPort))
 +			return NATD_VIA_BUDDY;
 +	}
-+	// a LowID logged in to our server, which coordinates the punch. Its address comes
-+	// with the server's answer.
-+	if (client.HasLowID() && ServerCanPunch(client.GetUserIDHybrid(), client.GetServerIP(), client.GetServerPort()))
-+		return NATD_VIA_SERVER;
 +	return NATD_VIA_NONE;
 +}
 +
