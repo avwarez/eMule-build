@@ -39,10 +39,19 @@ index 262a312..b3737fc 100644
  	theApp.serverconnect->Disconnect();
  
 diff --git a/srchybrid/EmuleDlg.h b/srchybrid/EmuleDlg.h
-index eba5ed1..3f69903 100644
+index eba5ed1..ecfeafc 100644
 --- a/srchybrid/EmuleDlg.h
 +++ b/srchybrid/EmuleDlg.h
-@@ -191,6 +191,7 @@ protected:
+@@ -78,6 +78,8 @@ public:
+ 
+ 	CImageList& GetClientIconList()				{ return m_IconList; }
+ 	void ShowConnectionState();
++	// CNatTraversal::DelayConnection's wait is over (89nm)
++	void OnNatDiscoveryOver();
+ 	void ShowNotifier(LPCTSTR pszText, TbnMsg nMsgType, LPCTSTR pszLink = NULL, bool bForceSoundOFF = false);
+ 	void SendNotificationMail(TbnMsg nMsgType, LPCTSTR pszText);
+ 	void ShowUserCount();
+@@ -191,6 +193,7 @@ protected:
  	bool			m_bStartMinimized;
  	bool			m_bMsgBlinkState;
  	bool			m_bConnectRequestDelayedForUPnP;
@@ -50,15 +59,6 @@ index eba5ed1..3f69903 100644
  	bool			m_bKadSuspendDisconnect;
  	bool			m_bEd2kSuspendDisconnect;
  	bool			m_bInitedCOM;
-@@ -223,6 +224,8 @@ protected:
- 	static void CALLBACK UPnPTimeOutTimer(HWND hwnd, UINT uiMsg, UINT_PTR idEvent, DWORD dwTime) noexcept;
- 
- 	void StartConnection();
-+	// CNatTraversal::DelayConnection's wait is over (89nm)
-+	void OnNatDiscoveryOver();
- 	void CloseConnection();
- 	void MinimizeWindow();
- 	void PostStartupMinimized();
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
 index 08a8e85..ed62c40 100644
 --- a/srchybrid/NatTraversal.cpp
