@@ -1,16 +1,52 @@
 diff --git a/srchybrid/EmuleDlg.cpp b/srchybrid/EmuleDlg.cpp
-index 262a312..b3737fc 100644
+index 262a312..959f088 100644
 --- a/srchybrid/EmuleDlg.cpp
 +++ b/srchybrid/EmuleDlg.cpp
-@@ -235,6 +235,7 @@ CemuleDlg::CemuleDlg(CWnd *pParent /*=NULL*/)
+@@ -235,6 +235,8 @@ CemuleDlg::CemuleDlg(CWnd *pParent /*=NULL*/)
  	, m_bStartMinimized()
  	, m_bMsgBlinkState()
  	, m_bConnectRequestDelayedForUPnP()
 +	, m_bConnectRequestDelayedForNatd()
++	, m_bStartupNetCheck()
  	, m_bKadSuspendDisconnect()
  	, m_bEd2kSuspendDisconnect()
  	, m_bInitedCOM()
-@@ -1952,6 +1953,11 @@ void CemuleDlg::StartConnection()
+@@ -729,13 +731,10 @@ void CALLBACK CemuleDlg::StartupTimer(HWND /*hwnd*/, UINT /*uiMsg*/, UINT_PTR /*
+ 					AddLogLine(true, GetResString(IDS_MAIN_READY), (LPCTSTR)theApp.m_strCurVersionLong);
+ 
+ 				theApp.m_app_state = APP_STATE_RUNNING; //initialization completed
+-				theApp.emuledlg->toolbar->EnableButton(TBBTN_CONNECT, TRUE);
+-				theApp.emuledlg->m_SysMenuOptions.EnableMenuItem(MP_CONNECT, MF_ENABLED);
+-				theApp.emuledlg->serverwnd->GetDlgItem(IDC_ED2KCONNECT)->EnableWindow();
++				// the connect buttons and the automatic connection wait for UPnP and the NAT discovery (89nm)
++				theApp.emuledlg->m_bStartupNetCheck = true;
+ 				theApp.emuledlg->kademliawnd->UpdateControlsState(); //application state change is not tracked - force update
+-
+-				if (thePrefs.DoAutoConnect())
+-					theApp.emuledlg->OnBnClickedConnect();
++				theApp.emuledlg->EndStartupNetCheck();
+ 
+ 				theApp.emuledlg->UpdateStatusBarProgress();
+ 			}
+@@ -1042,6 +1041,8 @@ void CemuleDlg::ShowConnectionState()
+ 			theApp.emuledlg->m_SysMenuOptions.ModifyMenu(MP_DISCONNECT, MF_STRING, MP_CONNECT, strPane);
+ 		}
+ 	}
++	if (m_bStartupNetCheck)	// ModifyMenu enabled it (89nm)
++		m_SysMenuOptions.EnableMenuItem(MP_CONNECT, MF_GRAYED);
+ 	ShowUserCount();
+ 	UpdateThumbBarButtons();
+ }
+@@ -1938,6 +1939,8 @@ void CemuleDlg::AddSpeedSelectorMenus(CMenu *addToMenu)
+ 
+ void CemuleDlg::StartConnection()
+ {
++	if (m_bStartupNetCheck)	// from the tray, the command line, the web server: the buttons are disabled (89nm)
++		return;
+ 	if ((!theApp.serverconnect->IsConnecting() && !theApp.serverconnect->IsConnected()) || !Kademlia::CKademlia::IsRunning()) {
+ 		// UPnP is still trying to open the ports. In order to not get a LowID by connecting to the servers / kad before
+ 		// the ports are opened we delay the connection until UPnP gets a result or the timeout is reached
+@@ -1952,6 +1955,11 @@ void CemuleDlg::StartConnection()
  			VERIFY(::KillTimer(NULL, m_hUPnPTimeOutTimer));
  			m_hUPnPTimeOutTimer = 0;
  		}
@@ -22,14 +58,30 @@ index 262a312..b3737fc 100644
  		AddLogLine(true, GetResString(IDS_CONNECTING));
  
  		// ed2k
-@@ -1968,8 +1974,15 @@ void CemuleDlg::StartConnection()
+@@ -1968,8 +1976,31 @@ void CemuleDlg::StartConnection()
  	m_bKadSuspendDisconnect = false;
  }
  
 +void CemuleDlg::OnNatDiscoveryOver()
 +{
-+	if (theApp.IsRunning() && m_bConnectRequestDelayedForNatd)
++	if (m_bStartupNetCheck)
++		EndStartupNetCheck();
++	else if (theApp.IsRunning() && m_bConnectRequestDelayedForNatd)
 +		StartConnection();
++}
++
++void CemuleDlg::EndStartupNetCheck()
++{
++	// UPnP first (OnUPnPResult comes back here), then the NAT discovery (OnNatDiscoveryOver)
++	if (!m_bStartupNetCheck || m_hUPnPTimeOutTimer != 0 || theApp.nattraversal->DelayConnection())
++		return;
++	m_bStartupNetCheck = false;
++	toolbar->EnableButton(TBBTN_CONNECT, TRUE);
++	m_SysMenuOptions.EnableMenuItem(MP_CONNECT, MF_ENABLED);
++	serverwnd->GetDlgItem(IDC_ED2KCONNECT)->EnableWindow();
++	kademliawnd->UpdateControlsState();
++	if (thePrefs.DoAutoConnect())
++		OnBnClickedConnect();
 +}
 +
  void CemuleDlg::CloseConnection()
@@ -38,29 +90,64 @@ index 262a312..b3737fc 100644
  	theApp.serverconnect->StopConnectionTry();
  	theApp.serverconnect->Disconnect();
  
+@@ -3418,6 +3449,8 @@ LRESULT CemuleDlg::OnUPnPResult(WPARAM wParam, LPARAM lParam)
+ 
+ 	if (theApp.IsRunning() && m_bConnectRequestDelayedForUPnP)
+ 		StartConnection();
++	if (m_bStartupNetCheck && m_hUPnPTimeOutTimer == 0)	// not while another UPnP implementation tries (89nm)
++		EndStartupNetCheck();
+ 
+ 	return 0;
+ }
 diff --git a/srchybrid/EmuleDlg.h b/srchybrid/EmuleDlg.h
-index eba5ed1..ecfeafc 100644
+index eba5ed1..f9a6c4a 100644
 --- a/srchybrid/EmuleDlg.h
 +++ b/srchybrid/EmuleDlg.h
-@@ -78,6 +78,8 @@ public:
+@@ -78,6 +78,10 @@ public:
  
  	CImageList& GetClientIconList()				{ return m_IconList; }
  	void ShowConnectionState();
 +	// CNatTraversal::DelayConnection's wait is over (89nm)
 +	void OnNatDiscoveryOver();
++	// At startup, until UPnP and the NAT discovery are over: the connect buttons are disabled (89nm)
++	bool IsStartupNetCheck() const					{ return m_bStartupNetCheck; }
  	void ShowNotifier(LPCTSTR pszText, TbnMsg nMsgType, LPCTSTR pszLink = NULL, bool bForceSoundOFF = false);
  	void SendNotificationMail(TbnMsg nMsgType, LPCTSTR pszText);
  	void ShowUserCount();
-@@ -191,6 +193,7 @@ protected:
+@@ -191,6 +195,8 @@ protected:
  	bool			m_bStartMinimized;
  	bool			m_bMsgBlinkState;
  	bool			m_bConnectRequestDelayedForUPnP;
 +	bool			m_bConnectRequestDelayedForNatd;	// 89nm
++	bool			m_bStartupNetCheck;					// 89nm, IsStartupNetCheck
  	bool			m_bKadSuspendDisconnect;
  	bool			m_bEd2kSuspendDisconnect;
  	bool			m_bInitedCOM;
+@@ -223,6 +229,9 @@ protected:
+ 	static void CALLBACK UPnPTimeOutTimer(HWND hwnd, UINT uiMsg, UINT_PTR idEvent, DWORD dwTime) noexcept;
+ 
+ 	void StartConnection();
++	// 89nm: once UPnP (when enabled) and the NAT discovery are over, the connect buttons are
++	// enabled and the automatic connection starts; called again by both when they end
++	void EndStartupNetCheck();
+ 	void CloseConnection();
+ 	void MinimizeWindow();
+ 	void PostStartupMinimized();
+diff --git a/srchybrid/KademliaWnd.cpp b/srchybrid/KademliaWnd.cpp
+index 24555d4..0ce446c 100644
+--- a/srchybrid/KademliaWnd.cpp
++++ b/srchybrid/KademliaWnd.cpp
+@@ -359,7 +359,7 @@ void CKademliaWnd::UpdateControlsState()
+ 	else
+ 		uid = IDS_MAIN_BTN_CONNECT;
+ 	SetDlgItemText(IDC_KADCONNECT, GetResNoAmp(uid));
+-	GetDlgItem(IDC_KADCONNECT)->EnableWindow(theApp.IsRunning());
++	GetDlgItem(IDC_KADCONNECT)->EnableWindow(theApp.IsRunning() && !theApp.emuledlg->IsStartupNetCheck());	// 89nm
+ 	GetDlgItem(IDC_FIREWALLCHECKBUTTON)->EnableWindow(Kademlia::CKademlia::IsConnected());
+ 
+ 	CString strBootstrapIP;
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
-index 08a8e85..ed62c40 100644
+index 08a8e85..690086a 100644
 --- a/srchybrid/NatTraversal.cpp
 +++ b/srchybrid/NatTraversal.cpp
 @@ -24,6 +24,7 @@
@@ -131,7 +218,7 @@ index 08a8e85..ed62c40 100644
 +		impl.bConnectWaiting = false;
 +		bConnect = true;
 +		if (!impl.pAgent->profileReady())
-+			AddLogLine(false, _T("NAT traversal: no result of the discovery after %u s, connecting without it"), (unsigned)(NATD_CONNECT_WAIT / SEC2MS(1)));
++			AddLogLine(false, _T("NAT traversal: no result of the discovery after %u s, the connection waits no longer"), (unsigned)(NATD_CONNECT_WAIT / SEC2MS(1)));
 +	}
 +	lock.Unlock();
 +	if (bConnect)	// it may log in at once, which asks AnnounceServerPunch()
@@ -151,7 +238,7 @@ index 08a8e85..ed62c40 100644
 +	const DWORD dwNow = ::GetTickCount();
 +	if (impl.dwConnectWait == 0) {
 +		impl.dwConnectWait = dwNow ? dwNow : 1;
-+		AddLogLine(false, _T("NAT traversal: connecting after the NAT discovery, at most %u s"), (unsigned)(NATD_CONNECT_WAIT / SEC2MS(1)));
++		AddLogLine(false, _T("NAT traversal: the connection waits for the NAT discovery, at most %u s"), (unsigned)(NATD_CONNECT_WAIT / SEC2MS(1)));
 +	} else if (dwNow - impl.dwConnectWait >= NATD_CONNECT_WAIT)
 +		return false;	// it had its time, once
 +	impl.bConnectWaiting = true;
@@ -168,7 +255,7 @@ index 08a8e85..ed62c40 100644
  {
  	return !m_pImpl->pAgent->profileReady() || m_pImpl->pAgent->punchable();
 diff --git a/srchybrid/NatTraversal.h b/srchybrid/NatTraversal.h
-index 8527ea5..252ebcd 100644
+index 8527ea5..4af1807 100644
 --- a/srchybrid/NatTraversal.h
 +++ b/srchybrid/NatTraversal.h
 @@ -59,6 +59,10 @@
@@ -186,8 +273,8 @@ index 8527ea5..252ebcd 100644
  	bool	OnDatagram(const BYTE *pData, int nLen, uint32 dwIP, uint16 nPort);
  	// every 100 ms, from the upload timer
  	void	Process();
-+	// The connection to the server and to Kad is about to start: true when it should wait for
-+	// the NAT discovery, which this starts (after UPnP; 89nm). The dialog is then told when the
++	// At startup, and when the connection to the server and to Kad is about to start: true when
++	// it should wait for the NAT discovery, which this starts (after UPnP; 89nm). The dialog is then told when the
 +	// discovery has a result (CemuleDlg::OnNatDiscoveryOver), or when it gave up waiting. Once
 +	// only: after the wait it is false whatever the discovery.
 +	bool	DelayConnection();

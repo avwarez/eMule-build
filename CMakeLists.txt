@@ -160,6 +160,8 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          89nm runs the NAT discovery before the connection to the server
 #          and to Kad, after UPnP and whatever the ID: the login announces
 #          what it found, and its mappings do not mix with the connection's.
+#          At startup the connect buttons stay disabled until UPnP (when
+#          enabled) and the discovery are over.
 #   90-94  the code compiles but /Wall flags it; these bring the warning
 #          count back to zero.
 #   95-96  the code compiles and is warning-clean but is not correct on
