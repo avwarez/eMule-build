@@ -365,7 +365,7 @@ index 6243994..0e7a2b8 100644
  
  	static const UINT	m_nVersionMjr;
 diff --git a/srchybrid/EmuleDlg.cpp b/srchybrid/EmuleDlg.cpp
-index fa40464..e353768 100644
+index fa40464..d8d2ca8 100644
 --- a/srchybrid/EmuleDlg.cpp
 +++ b/srchybrid/EmuleDlg.cpp
 @@ -99,6 +99,7 @@
@@ -376,16 +376,15 @@ index fa40464..e353768 100644
  #include "ImportParts.h"
  #include "ClientCredits.h"
  
-@@ -234,6 +235,8 @@ CemuleDlg::CemuleDlg(CWnd *pParent /*=NULL*/)
+@@ -234,6 +235,7 @@ CemuleDlg::CemuleDlg(CWnd *pParent /*=NULL*/)
  	, m_bStartMinimized()
  	, m_bMsgBlinkState()
  	, m_bConnectRequestDelayedForUPnP()
-+	, m_bConnectRequestDelayedForNatd()
 +	, m_bStartupNetCheck()
  	, m_bKadSuspendDisconnect()
  	, m_bEd2kSuspendDisconnect()
  	, m_bInitedCOM()
-@@ -728,13 +731,10 @@ void CALLBACK CemuleDlg::StartupTimer(HWND /*hwnd*/, UINT /*uiMsg*/, UINT_PTR /*
+@@ -728,13 +730,10 @@ void CALLBACK CemuleDlg::StartupTimer(HWND /*hwnd*/, UINT /*uiMsg*/, UINT_PTR /*
  					AddLogLine(true, GetResString(IDS_MAIN_READY), (LPCTSTR)theApp.m_strCurVersionLong);
  
  				theApp.m_app_state = APP_STATE_RUNNING; //initialization completed
@@ -402,7 +401,7 @@ index fa40464..e353768 100644
  
  				theApp.emuledlg->UpdateStatusBarProgress();
  			}
-@@ -1041,6 +1041,8 @@ void CemuleDlg::ShowConnectionState()
+@@ -1041,6 +1040,8 @@ void CemuleDlg::ShowConnectionState()
  			theApp.emuledlg->m_SysMenuOptions.ModifyMenu(MP_DISCONNECT, MF_STRING, MP_CONNECT, strPane);
  		}
  	}
@@ -411,7 +410,7 @@ index fa40464..e353768 100644
  	ShowUserCount();
  	UpdateThumbBarButtons();
  }
-@@ -1747,8 +1749,10 @@ void CemuleDlg::OnClose()
+@@ -1747,8 +1748,10 @@ void CemuleDlg::OnClose()
  	// NOTE: Do not move those dtors into 'CemuleApp::InitInstance' (although they should be there). The
  	// dtors are indirectly calling functions which access several windows which would not be available
  	// after we have closed the main window -> crash!
@@ -422,7 +421,7 @@ index fa40464..e353768 100644
  	delete theApp.sharedfiles;				theApp.sharedfiles = NULL;
  	delete theApp.serverconnect;			theApp.serverconnect = NULL;
  	delete theApp.serverlist;				theApp.serverlist = NULL;		// CServerList::SaveServermetToFile
-@@ -1935,6 +1939,8 @@ void CemuleDlg::AddSpeedSelectorMenus(CMenu *addToMenu)
+@@ -1935,6 +1938,8 @@ void CemuleDlg::AddSpeedSelectorMenus(CMenu *addToMenu)
  
  void CemuleDlg::StartConnection()
  {
@@ -431,33 +430,14 @@ index fa40464..e353768 100644
  	if ((!theApp.serverconnect->IsConnecting() && !theApp.serverconnect->IsConnected()) || !Kademlia::CKademlia::IsRunning()) {
  		// UPnP is still trying to open the ports. In order to not get a LowID by connecting to the servers / kad before
  		// the ports are opened we delay the connection until UPnP gets a result or the timeout is reached
-@@ -1949,6 +1955,11 @@ void CemuleDlg::StartConnection()
- 			VERIFY(::KillTimer(NULL, m_hUPnPTimeOutTimer));
- 			m_hUPnPTimeOutTimer = 0;
- 		}
-+		// then the NAT discovery, so that the login announces what it found: the
-+		// connection starts only when it is over (OnNatDiscoveryOver)
-+		m_bConnectRequestDelayedForNatd = theApp.nattraversal->DelayConnection();
-+		if (m_bConnectRequestDelayedForNatd)
-+			return;
- 		AddLogLine(true, GetResString(IDS_CONNECTING));
- 
- 		// ed2k
-@@ -1965,8 +1976,31 @@ void CemuleDlg::StartConnection()
+@@ -1965,6 +1970,21 @@ void CemuleDlg::StartConnection()
  	m_bKadSuspendDisconnect = false;
  }
  
-+void CemuleDlg::OnNatDiscoveryOver()
-+{
-+	if (m_bStartupNetCheck)
-+		EndStartupNetCheck();
-+	else if (theApp.IsRunning() && m_bConnectRequestDelayedForNatd)
-+		StartConnection();
-+}
-+
 +void CemuleDlg::EndStartupNetCheck()
 +{
-+	// UPnP first (OnUPnPResult comes back here), then the NAT discovery (OnNatDiscoveryOver)
++	// UPnP first (OnUPnPResult comes back here), then the NAT discovery, so that the login
++	// announces what it found (CNatTraversal::Process comes back here)
 +	if (!m_bStartupNetCheck || m_hUPnPTimeOutTimer != 0 || theApp.nattraversal->DelayConnection())
 +		return;
 +	m_bStartupNetCheck = false;
@@ -471,11 +451,8 @@ index fa40464..e353768 100644
 +
  void CemuleDlg::CloseConnection()
  {
-+	m_bConnectRequestDelayedForNatd = false;	// no connection once the discovery is over
  	theApp.serverconnect->StopConnectionTry();
- 	theApp.serverconnect->Disconnect();
- 
-@@ -3415,6 +3449,8 @@ LRESULT CemuleDlg::OnUPnPResult(WPARAM wParam, LPARAM lParam)
+@@ -3415,6 +3435,8 @@ LRESULT CemuleDlg::OnUPnPResult(WPARAM wParam, LPARAM lParam)
  
  	if (theApp.IsRunning() && m_bConnectRequestDelayedForUPnP)
  		StartConnection();
@@ -485,39 +462,29 @@ index fa40464..e353768 100644
  	return 0;
  }
 diff --git a/srchybrid/EmuleDlg.h b/srchybrid/EmuleDlg.h
-index eba5ed1..5037910 100644
+index eba5ed1..58bc8e2 100644
 --- a/srchybrid/EmuleDlg.h
 +++ b/srchybrid/EmuleDlg.h
-@@ -78,6 +78,10 @@ public:
+@@ -78,6 +78,11 @@ public:
  
  	CImageList& GetClientIconList()				{ return m_IconList; }
  	void ShowConnectionState();
-+	// CNatTraversal::DelayConnection's wait is over
-+	void OnNatDiscoveryOver();
++	// At startup, once UPnP (when enabled) and the NAT discovery are over, the connect buttons
++	// are enabled and the automatic connection starts; called again by both when they end
++	void EndStartupNetCheck();
 +	// At startup, until UPnP and the NAT discovery are over: the connect buttons are disabled
 +	bool IsStartupNetCheck() const					{ return m_bStartupNetCheck; }
  	void ShowNotifier(LPCTSTR pszText, TbnMsg nMsgType, LPCTSTR pszLink = NULL, bool bForceSoundOFF = false);
  	void SendNotificationMail(TbnMsg nMsgType, LPCTSTR pszText);
  	void ShowUserCount();
-@@ -191,6 +195,8 @@ protected:
+@@ -191,6 +196,7 @@ protected:
  	bool			m_bStartMinimized;
  	bool			m_bMsgBlinkState;
  	bool			m_bConnectRequestDelayedForUPnP;
-+	bool			m_bConnectRequestDelayedForNatd;
 +	bool			m_bStartupNetCheck;					// IsStartupNetCheck
  	bool			m_bKadSuspendDisconnect;
  	bool			m_bEd2kSuspendDisconnect;
  	bool			m_bInitedCOM;
-@@ -223,6 +229,9 @@ protected:
- 	static void CALLBACK UPnPTimeOutTimer(HWND hwnd, UINT uiMsg, UINT_PTR idEvent, DWORD dwTime) noexcept;
- 
- 	void StartConnection();
-+	// once UPnP (when enabled) and the NAT discovery are over, the connect buttons are
-+	// enabled and the automatic connection starts; called again by both when they end
-+	void EndStartupNetCheck();
- 	void CloseConnection();
- 	void MinimizeWindow();
- 	void PostStartupMinimized();
 diff --git a/srchybrid/KademliaWnd.cpp b/srchybrid/KademliaWnd.cpp
 index 24555d4..7bf035d 100644
 --- a/srchybrid/KademliaWnd.cpp
@@ -615,10 +582,10 @@ index 15674a1..5b2cc4d 100644
  				if (md4equ(reqfilehash, sender->GetUploadFileID())) {
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
 new file mode 100644
-index 0000000..a4837da
+index 0000000..66c9344
 --- /dev/null
 +++ b/srchybrid/NatTraversal.cpp
-@@ -0,0 +1,1786 @@
+@@ -0,0 +1,1769 @@
 +//this file is part of eMule
 +//Copyright (C)2002-2026 Merkur ( strEmail.Format("%s@%s", "devteam", "emule-project.net") / https://www.emule-project.net )
 +//
@@ -697,7 +664,6 @@ index 0000000..a4837da
 +#define NATD_RELAY_TRIES		3
 +#define NATD_SERVER_PINGS		5		// status requests for the server's UDP key, 20 s apart
 +#define NATD_SERVER_PING_RETRY	((DWORD)SEC2MS(20))
-+#define NATD_SERVER_SEEN		((DWORD)SEC2MS(30))	// a peer the server brought again within this is a copy
 +// The connection waits for the discovery at most this long. natd's discovery ends within
 +// about 40 s even when no STUN server answers: the rest is for resolving their names.
 +#define NATD_CONNECT_WAIT		((DWORD)SEC2MS(60))
@@ -1048,6 +1014,13 @@ index 0000000..a4837da
 +	void StartDiscovery(natd::TimePoint now);
 +	void Poll(natd::TimePoint now);
 +	void HandleEvents(natd::TimePoint now);
++	// the user's log: whether downloads between LowIDs can go through UDP hole punching here
++	void LogVerdict(LPCTSTR pszWhat)
++	{
++		nLoggedVerdict = Verdict();
++		AddLogLine(false, _T("NAT traversal: public endpoint %s%s - downloads between LowIDs through UDP hole punching %s")
++			, pszWhat, (LPCTSTR)EndpointStr(pAgent->publicEndpoint()), VerdictStr(nLoggedVerdict));
++	}
 +	void Punched(natd::SessionId id, SSession &s, const natd::PunchResult &r, natd::TimePoint now, uint32 nPackets, uint16 nRounds);
 +	void Accept(natd::SessionId id, SSession &s);
 +	bool OnPath(const natd::Endpoint &from, const BYTE *pData, size_t nLen, natd::TimePoint now);
@@ -1090,7 +1063,6 @@ index 0000000..a4837da
 +		bool	bGaveUp = false;		// the last status request went unanswered: logged
 +		bool	Ready() const		{ return dwKey != 0; }
 +	} server;
-+	std::map<uint32, DWORD> serverSeen;	// the peers the server brought lately: ID, when
 +	void ServerPing(DWORD dwNow);
 +	// pszWhy: for the log
 +	bool ServerRequest(uint32 nTargetID, LPCTSTR pszWhy);
@@ -1173,11 +1145,8 @@ index 0000000..a4837da
 +	pAgent->poll(now);
 +	HandleEvents(now);
 +	// the first verdict can come from a provisional result of the discovery: the final one may differ
-+	if (pAgent->profileReady() && Verdict() != nLoggedVerdict) {
-+		nLoggedVerdict = Verdict();
-+		AddLogLine(false, _T("NAT traversal: public endpoint %s - downloads between LowIDs through UDP hole punching now %s")
-+			, (LPCTSTR)EndpointStr(pAgent->publicEndpoint()), VerdictStr(nLoggedVerdict));
-+	}
++	if (pAgent->profileReady() && Verdict() != nLoggedVerdict)
++		LogVerdict(_T("now "));
 +}
 +
 +// cs held
@@ -1186,11 +1155,8 @@ index 0000000..a4837da
 +	natd::AgentEvent e;
 +	while (pAgent->nextEvent(e)) {
 +		if (e.type == natd::AgentEventType::ProfileReady) {
-+			// the user's log: whether downloads between LowIDs can go through UDP hole punching here
 +			const natd::NatProfile &profile = pAgent->profile();
-+			AddLogLine(false, _T("NAT traversal: public endpoint %s on UDP port %u - downloads between LowIDs through UDP hole punching %s")
-+				, (LPCTSTR)EndpointStr(profile.publicEndpoint), thePrefs.GetUDPPort(), VerdictStr(Verdict()));
-+			nLoggedVerdict = Verdict();
++			LogVerdict(_T(""));
 +			if (thePrefs.GetVerbose())
 +				AddDebugLogLine(false, _T("NAT traversal: %hs, mapping %hs, filtering %hs"), natd::toString(profile.predictability)
 +					, natd::toString(profile.details.mapping), natd::toString(profile.details.filtering));
@@ -1200,8 +1166,7 @@ index 0000000..a4837da
 +			// the paths went with the old endpoint: their streams end as the TCP connections of a
 +			// client whose address changed. The sources are not published again: nobody punches the
 +			// endpoint they carry, a relay brings each peer the other's.
-+			AddLogLine(false, _T("NAT traversal: public endpoint changed to %s - downloads between LowIDs through UDP hole punching %s"), (LPCTSTR)EndpointStr(pAgent->publicEndpoint())
-+				, VerdictStr(Verdict()));
++			LogVerdict(_T("changed to "));
 +			for (std::map<natd::SessionId, SSession>::iterator it = sessions.begin(); it != sessions.end(); ++it)
 +				if (it->second.pKcp && !it->second.bOver) {
 +					++nPathsAddressChanged;
@@ -1247,8 +1212,6 @@ index 0000000..a4837da
 +				const uint64 nKey = bServer ? pLayer->GetServerPeer() : RandomUInt64();
 +				if (waits.find(WaitKey(byVia, nKey)) == waits.end() && Ask(*pLayer, nKey, _T("ours, once more: the punch timed out"))) {
 +					sessions.erase(it);
-+					if (bServer)
-+						serverSeen.erase(pLayer->GetServerPeer());
 +					pLayer->Retry(nKey, bServer ? NULL : natd::tokenFrom(thePrefs.GetUserHash(), 16, nKey).data());
 +					waits[WaitKey(byVia, nKey)] = SWait{pLayer, dwNow, false};
 +					continue;
@@ -1625,7 +1588,7 @@ index 0000000..a4837da
 +	}
 +	lock.Unlock();
 +	if (bConnect)	// it may log in at once, which asks AnnounceServerPunch()
-+		theApp.emuledlg->OnNatDiscoveryOver();
++		theApp.emuledlg->EndStartupNetCheck();
 +}
 +
 +// As UPnP before it: the login then announces what the discovery found (AnnounceServerPunch),
@@ -1649,7 +1612,7 @@ index 0000000..a4837da
 +}
 +
 +// The server we are logged in to: whether it coordinates punches for us (a LowID there, with
-+// the crypt layer for its obfuscated requests), its UDP key, the peers it brought lately.
++// the crypt layer for its obfuscated requests), and its UDP key.
 +void CNatTraversal::ServerTimer()
 +{
 +	Impl &impl = *m_pImpl;
@@ -1667,7 +1630,6 @@ index 0000000..a4837da
 +				DropWait(key.first, key.second, WSAECONNREFUSED);
 +		}
 +		impl.again.erase(std::remove_if(impl.again.begin(), impl.again.end(), [](const Impl::SAgain &a) { return a.byVia == NATD_VIA_SERVER; }), impl.again.end());
-+		impl.serverSeen.clear();
 +		sv = Impl::SServer();
 +		sv.dwIP = dwIP;
 +		sv.nPort = nPort;
@@ -1686,10 +1648,6 @@ index 0000000..a4837da
 +			AddDebugLogLine(false, _T("NAT traversal: the server %s:%u did not answer %u status requests on UDP port %u: no punches through it until the next login, and its requests to us are dropped")
 +				, (LPCTSTR)ipstr(sv.dwIP), sv.nPort, sv.nPings, (unsigned)(uint16)(sv.nPort + 12));
 +	}
-+	if (!sv.Ready())
-+		return;
-+	for (std::map<uint32, DWORD>::iterator it = impl.serverSeen.begin(); it != impl.serverSeen.end();)
-+		it = (dwNow - it->second >= NATD_SERVER_SEEN) ? impl.serverSeen.erase(it) : std::next(it);
 +}
 +
 +// The obfuscated status request, from the client UDP port: the server answers with the UDP key
@@ -1878,24 +1836,18 @@ index 0000000..a4837da
 +	Impl &impl = *m_pImpl;
 +	const bool bConnect = impl.server.nID < cb.nID;
 +	const DWORD dwNow = ::GetTickCount();
-+	// a copy while the punch it asked for is on; once that punch is over, the peer asks once more
-+	const std::map<uint32, DWORD>::const_iterator itSeen = impl.serverSeen.find(cb.nID);
-+	if (itSeen != impl.serverSeen.end() && dwNow - itSeen->second < NATD_SERVER_SEEN) {
-+		const DWORD dwSeen = itSeen->second;	// the poll may erase it
++	// a copy (each request goes twice) while the punch it asked for is on; once that punch is
++	// over, the peer asks once more
++	{
 +		CSingleLock lock(&impl.cs, TRUE);
 +		impl.Poll(natd::Clock::now());	// a punch whose time is up by now is over
-+		bool bOn = false;
 +		for (const std::pair<const natd::SessionId, SSession> &se : impl.sessions)
-+			bOn |= se.second.nServerPeer == cb.nID && !se.second.bOver;
-+		if (bOn) {
-+			if (thePrefs.GetVerbose())
-+				AddDebugLogLine(false, _T("NAT traversal: punch request from ID %u already taken %u s ago"), cb.nID, (unsigned)((dwNow - dwSeen) / SEC2MS(1)));
-+			return;
-+		}
-+		if (thePrefs.GetVerbose())
-+			AddDebugLogLine(false, _T("NAT traversal: punch request from ID %u once more, the last punch with it is over"), cb.nID);
++			if (se.second.nServerPeer == cb.nID && !se.second.bOver) {
++				if (thePrefs.GetVerbose())
++					AddDebugLogLine(false, _T("NAT traversal: punch request from ID %u already taken"), cb.nID);
++				return;
++			}
 +	}
-+	impl.serverSeen[cb.nID] = dwNow;
 +	// what both sides know: the user hash of the one that starts and both IDs, its own first
 +	const natd::TxId token(bConnect ? natd::tokenFrom(thePrefs.GetUserHash(), 16, ServerNonce(impl.server.nID, cb.nID))
 +		: natd::tokenFrom(cb.abyHash, 16, ServerNonce(cb.nID, impl.server.nID)));
@@ -2056,8 +2008,6 @@ index 0000000..a4837da
 +			delete pLayer;
 +			return false;
 +		}
-+		if (bServer)
-+			m_pImpl->serverSeen.erase(pLayer->m_nServerPeer);
 +		DropWait(byVia, nKey, WSAECONNREFUSED);	// one request at a time to a target: an older one gives way
 +		pLayer->m_nWait = nKey;
 +		pLayer->m_dwAsked = ::GetTickCount();
@@ -2407,7 +2357,7 @@ index 0000000..a4837da
 +}
 diff --git a/srchybrid/NatTraversal.h b/srchybrid/NatTraversal.h
 new file mode 100644
-index 0000000..495b610
+index 0000000..5f0b3cc
 --- /dev/null
 +++ b/srchybrid/NatTraversal.h
 @@ -0,0 +1,267 @@
@@ -2529,10 +2479,10 @@ index 0000000..495b610
 +	bool	OnDatagram(const BYTE *pData, int nLen, uint32 dwIP, uint16 nPort);
 +	// every 100 ms, from the upload timer
 +	void	Process();
-+	// At startup, and when the connection to the server and to Kad is about to start: true when
-+	// it should wait for the NAT discovery, which this starts (after UPnP). The dialog is then
-+	// told when the discovery has a result (CemuleDlg::OnNatDiscoveryOver), or when it gave up waiting. Once
-+	// only: after the wait it is false whatever the discovery.
++	// At startup, before the connection to the server and to Kad: true while it should wait for
++	// the NAT discovery, which this starts (after UPnP). The dialog is told when the discovery
++	// has a result, or when the wait (at most NATD_CONNECT_WAIT) is over
++	// (CemuleDlg::EndStartupNetCheck); after it, false whatever the discovery.
 +	bool	DelayConnection();
 +	// eMule closes, before the client UDP socket goes: every punched stream still open ends with
 +	// its FINs at once, as a TCP connection gets its FIN, so that the peer does not wait for the
