@@ -150,6 +150,9 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          Predictable) through the server too: the endpoint-independent
 #          side also sprays the ports just past the endpoint the server saw,
 #          and the request back goes before our first punch packet.
+#          89nk (natd 0.5.0) assumes no block size nor alignment: from the
+#          second round on, the endpoint-independent side sprays the ports
+#          nearest to the endpoint the server saw, twice as many each round.
 #   90-94  the code compiles but /Wall flags it; these bring the warning
 #          count back to zero.
 #   95-96  the code compiles and is warning-clean but is not correct on
