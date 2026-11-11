@@ -1,5 +1,5 @@
 diff --git a/srchybrid/EmuleDlg.cpp b/srchybrid/EmuleDlg.cpp
-index 262a312..0ab68fd 100644
+index 262a312..b3737fc 100644
 --- a/srchybrid/EmuleDlg.cpp
 +++ b/srchybrid/EmuleDlg.cpp
 @@ -235,6 +235,7 @@ CemuleDlg::CemuleDlg(CWnd *pParent /*=NULL*/)
@@ -14,9 +14,9 @@ index 262a312..0ab68fd 100644
  			VERIFY(::KillTimer(NULL, m_hUPnPTimeOutTimer));
  			m_hUPnPTimeOutTimer = 0;
  		}
-+		// then the NAT discovery, so that the login announces what it found (89nm); a second
-+		// click connects at once here too
-+		m_bConnectRequestDelayedForNatd = !m_bConnectRequestDelayedForNatd && theApp.nattraversal->DelayConnection();
++		// then the NAT discovery, so that the login announces what it found (89nm): the
++		// connection starts only when it is over (OnNatDiscoveryOver)
++		m_bConnectRequestDelayedForNatd = theApp.nattraversal->DelayConnection();
 +		if (m_bConnectRequestDelayedForNatd)
 +			return;
  		AddLogLine(true, GetResString(IDS_CONNECTING));
@@ -60,7 +60,7 @@ index eba5ed1..3f69903 100644
  	void MinimizeWindow();
  	void PostStartupMinimized();
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
-index 08a8e85..d99a106 100644
+index 08a8e85..ed62c40 100644
 --- a/srchybrid/NatTraversal.cpp
 +++ b/srchybrid/NatTraversal.cpp
 @@ -24,6 +24,7 @@
@@ -112,8 +112,8 @@ index 08a8e85..d99a106 100644
 -			|| (Kademlia::CKademlia::IsConnected() && Kademlia::CKademlia::IsFirewalled() && !Kademlia::CKademlia::GetPrefs()->GetRecheckIP())))
 +	// before the connection, which waits for it (DelayConnection, 89nm); else as soon as we are a
 +	// LowID: on the server, or in Kad once its firewall check is over (Kad says firewalled while
-+	// it checks) - a connection made without the wait (the user clicked twice, a server picked
-+	// in the list, Kad started from its window)
++	// it checks) - a connection made without the wait (a server picked in the list, Kad started
++	// from its window)
 +	if (!impl.pAgent->started() && theApp.clientudp != NULL && theApp.clientudp->m_hSocket != INVALID_SOCKET
 +		&& (impl.dwConnectWait != 0
 +			|| (theApp.IsFirewalled()
@@ -151,7 +151,7 @@ index 08a8e85..d99a106 100644
 +	const DWORD dwNow = ::GetTickCount();
 +	if (impl.dwConnectWait == 0) {
 +		impl.dwConnectWait = dwNow ? dwNow : 1;
-+		AddLogLine(false, _T("NAT traversal: connecting after the NAT discovery, at most %u s (click Connect again to connect at once)"), (unsigned)(NATD_CONNECT_WAIT / SEC2MS(1)));
++		AddLogLine(false, _T("NAT traversal: connecting after the NAT discovery, at most %u s"), (unsigned)(NATD_CONNECT_WAIT / SEC2MS(1)));
 +	} else if (dwNow - impl.dwConnectWait >= NATD_CONNECT_WAIT)
 +		return false;	// it had its time, once
 +	impl.bConnectWaiting = true;
@@ -168,7 +168,7 @@ index 08a8e85..d99a106 100644
  {
  	return !m_pImpl->pAgent->profileReady() || m_pImpl->pAgent->punchable();
 diff --git a/srchybrid/NatTraversal.h b/srchybrid/NatTraversal.h
-index 8527ea5..c99227c 100644
+index 8527ea5..252ebcd 100644
 --- a/srchybrid/NatTraversal.h
 +++ b/srchybrid/NatTraversal.h
 @@ -59,6 +59,10 @@
@@ -187,9 +187,9 @@ index 8527ea5..c99227c 100644
  	// every 100 ms, from the upload timer
  	void	Process();
 +	// The connection to the server and to Kad is about to start: true when it should wait for
-+	// the NAT discovery, which this starts (as for UPnP, which comes first; 89nm). The dialog is
-+	// then told when the discovery has a result (CemuleDlg::OnNatDiscoveryOver), or when it gave
-+	// up waiting. Once only: after the wait it is false whatever the discovery.
++	// the NAT discovery, which this starts (after UPnP; 89nm). The dialog is then told when the
++	// discovery has a result (CemuleDlg::OnNatDiscoveryOver), or when it gave up waiting. Once
++	// only: after the wait it is false whatever the discovery.
 +	bool	DelayConnection();
  	// eMule closes, before the client UDP socket goes: every punched stream still open ends with
  	// its FINs at once, as a TCP connection gets its FIN, so that the peer does not wait for the
