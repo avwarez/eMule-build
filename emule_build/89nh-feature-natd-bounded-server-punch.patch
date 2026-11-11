@@ -1,0 +1,160 @@
+diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
+index 78756e7..7cd9ec9 100644
+--- a/srchybrid/NatTraversal.cpp
++++ b/srchybrid/NatTraversal.cpp
+@@ -373,7 +373,17 @@ struct CNatTraversal::Impl
+ 	CNatdIo io;
+ 	std::unique_ptr<natd::StunResolver> pStun;	// the STUN servers, their names resolved off the main thread; made when first needed
+ 	std::unique_ptr<natd::Agent> pAgent;
+-	bool bLoggedPunchable = false;	// the verdict the user's log gave last
++	int nLoggedVerdict = -1;	// the verdict the user's log gave last (Verdict)
++	// 2: punchable through every channel (endpoint-independent mapping); 1: through the server
++	// only, whose punch also reaches a NAT with port blocks (Bounded, 89nh); 0: not at all
++	int Verdict() const
++	{
++		return pAgent->directPunchable() ? 2 : pAgent->punchable() ? 1 : 0;
++	}
++	static LPCTSTR VerdictStr(int nVerdict)
++	{
++		return nVerdict == 2 ? _T("possible") : nVerdict == 1 ? _T("possible through the server only") : _T("not possible");
++	}
+ 
+ 	CCriticalSection cs;	// pAgent and the sessions; Write() comes from the upload throttler thread too
+ 	std::map<natd::SessionId, SSession> sessions;
+@@ -384,6 +394,8 @@ struct CNatTraversal::Impl
+ 	{
+ 		natd::AgentConfig cfg;
+ 		cfg.discovery.primarySocket = kPrimarySocket;	// the caps and waits of the punches: natd's
++		// a Bounded side punches from the client UDP port alone: eMule has no other (89nh)
++		cfg.limits.maxSockets = 1;
+ 		pAgent = std::make_unique<natd::Agent>(cfg, io);
+ 	}
+ 	void StartDiscovery(natd::TimePoint now);
+@@ -495,10 +507,10 @@ void CNatTraversal::Impl::Poll(natd::TimePoint now)
+ 	pAgent->poll(now);
+ 	HandleEvents(now);
+ 	// the first verdict can come from a provisional result of the discovery: the final one may differ
+-	if (pAgent->profileReady() && pAgent->directPunchable() != bLoggedPunchable) {
+-		bLoggedPunchable = !bLoggedPunchable;
++	if (pAgent->profileReady() && Verdict() != nLoggedVerdict) {
++		nLoggedVerdict = Verdict();
+ 		AddLogLine(false, _T("NAT traversal: public endpoint %s - downloads between LowIDs through UDP hole punching now %s")
+-			, (LPCTSTR)EndpointStr(pAgent->publicEndpoint()), bLoggedPunchable ? _T("possible") : _T("not possible"));
++			, (LPCTSTR)EndpointStr(pAgent->publicEndpoint()), VerdictStr(nLoggedVerdict));
+ 	}
+ }
+ 
+@@ -511,8 +523,8 @@ void CNatTraversal::Impl::HandleEvents(natd::TimePoint now)
+ 			// the user's log: whether downloads between LowIDs can go through UDP hole punching here
+ 			const natd::NatProfile &profile = pAgent->profile();
+ 			AddLogLine(false, _T("NAT traversal: public endpoint %s on UDP port %u - downloads between LowIDs through UDP hole punching %s")
+-				, (LPCTSTR)EndpointStr(profile.publicEndpoint), thePrefs.GetUDPPort(), pAgent->directPunchable() ? _T("possible") : _T("not possible"));
+-			bLoggedPunchable = pAgent->directPunchable();
++				, (LPCTSTR)EndpointStr(profile.publicEndpoint), thePrefs.GetUDPPort(), VerdictStr(Verdict()));
++			nLoggedVerdict = Verdict();
+ 			if (thePrefs.GetVerbose())
+ 				AddDebugLogLine(false, _T("NAT traversal: %hs, mapping %hs, filtering %hs"), natd::toString(profile.predictability)
+ 					, natd::toString(profile.details.mapping), natd::toString(profile.details.filtering));
+@@ -523,7 +535,7 @@ void CNatTraversal::Impl::HandleEvents(natd::TimePoint now)
+ 			// client whose address changed. The sources are published again with the new endpoint
+ 			// (CKnownFile::PublishSrc, GetPunchEndpoint).
+ 			AddLogLine(false, _T("NAT traversal: public endpoint changed to %s - downloads between LowIDs through UDP hole punching %s"), (LPCTSTR)EndpointStr(pAgent->publicEndpoint())
+-				, pAgent->directPunchable() ? _T("still possible") : _T("not possible"));
++				, VerdictStr(Verdict()));
+ 			for (std::map<natd::SessionId, SSession>::iterator it = sessions.begin(); it != sessions.end(); ++it)
+ 				if (it->second.pKcp && !it->second.bOver) {
+ 					++nPathsAddressChanged;
+@@ -574,8 +586,8 @@ void CNatTraversal::Impl::Punched(natd::SessionId id, SSession &s, const natd::P
+ 	s.tHeard = now;
+ 	s.tKeepalive = now + r.keepalive;
+ 	if (thePrefs.GetVerbose())
+-		AddDebugLogLine(false, _T("NAT traversal: punched to %s, stream open, keepalive every %u s"), (LPCTSTR)EndpointStr(r.remote)
+-			, (unsigned)(std::chrono::duration_cast<std::chrono::seconds>(r.keepalive).count()));
++		AddDebugLogLine(false, _T("NAT traversal: punched to %s (%hs), stream open, keepalive every %u s"), (LPCTSTR)EndpointStr(r.remote)
++			, natd::toString(r.strategy), (unsigned)(std::chrono::duration_cast<std::chrono::seconds>(r.keepalive).count()));
+ 	if (s.pLayer != NULL)
+ 		s.lPendingEvents |= FD_CONNECT;
+ 	else
+@@ -1181,12 +1193,13 @@ void CNatTraversal::OnBuddyLost()
+ // for a file we download from the source: the only case where a punch is tried.
+ uint8 CNatTraversal::PunchVia(const CUpDownClient &client) const
+ {
+-	if (!m_pImpl->pAgent->directPunchable() || client.GetRequestFile() == NULL || thePrefs.GetUDPPort() == 0)
++	if (!m_pImpl->pAgent->punchable() || client.GetRequestFile() == NULL || thePrefs.GetUDPPort() == 0)
+ 		return NATD_VIA_NONE;
+ 	// a source that published its punchable endpoint in Kad: through its buddy, or directly.
+ 	// The address the punch goes to is checked, whatever TryToConnect checked (it looks at
+-	// GetIP() first).
+-	if (client.IsNatdSource() && Kademlia::CKademlia::IsConnected() && Kademlia::CKademlia::IsFirewalled()
++	// GetIP() first). Only with an endpoint-independent mapping: the source punches the
++	// endpoint the request came from.
++	if (m_pImpl->pAgent->directPunchable() && client.IsNatdSource() && Kademlia::CKademlia::IsConnected() && Kademlia::CKademlia::IsFirewalled()
+ 		&& client.GetConnectIP() != 0 && client.GetKadPort() != 0
+ 		&& !theApp.ipfilter->IsFiltered(client.GetConnectIP()) && !theApp.clientlist->IsBannedClient(client.GetConnectIP()))
+ 	{
+@@ -1204,13 +1217,13 @@ uint8 CNatTraversal::PunchVia(const CUpDownClient &client) const
+ 
+ bool CNatTraversal::AnnounceServerPunch() const
+ {
+-	return !m_pImpl->pAgent->profileReady() || m_pImpl->pAgent->directPunchable();
++	return !m_pImpl->pAgent->profileReady() || m_pImpl->pAgent->punchable();
+ }
+ 
+ bool CNatTraversal::ServerCanPunch(uint32 nID, uint32 dwServerIP, uint16 nServerPort) const
+ {
+ 	const Impl::SServer &sv = m_pImpl->server;
+-	return sv.Ready() && m_pImpl->pAgent->directPunchable() && ::IsLowID(nID) && (nID & 1) != 0 && nID != sv.nID
++	return sv.Ready() && m_pImpl->pAgent->punchable() && ::IsLowID(nID) && (nID & 1) != 0 && nID != sv.nID
+ 		&& theApp.serverconnect->IsLocalServer(dwServerIP, nServerPort);
+ }
+ 
+@@ -1318,8 +1331,12 @@ bool CNatTraversal::OpenSession(uint32 dwIP, uint16 nPort, const BYTE *pToken12,
+ 	// through a relay carries the endpoint the relay saw, which no filter has checked yet
+ 	if (IsFilteredOrBanned(dwIP))
+ 		return false;
++	// Through the server nothing says whether the peer's mapping is endpoint-independent or
++	// random in a block of ports (a mobile CGN): natd punches the endpoint the server saw and,
++	// should nobody answer there, the block around it too (PeerNat::Unknown, 89nh).
++	const bool bServer = byVia == NATD_VIA_SERVER;
+ 	LPCTSTR pszNot = NULL;
+-	if (!m_pImpl->pAgent->directPunchable())
++	if (bServer ? !m_pImpl->pAgent->punchable() : !m_pImpl->pAgent->directPunchable())
+ 		pszNot = _T("we cannot be punched to");
+ 	else if (dwIP == 0 || nPort == 0)
+ 		pszNot = _T("no endpoint to punch to");
+@@ -1333,7 +1350,8 @@ bool CNatTraversal::OpenSession(uint32 dwIP, uint16 nPort, const BYTE *pToken12,
+ 	memcpy(token.data(), pToken12, token.size());
+ 	const natd::TimePoint now = natd::Clock::now();
+ 	// 0 also for a request repeated while the punch it asked for is still on
+-	const natd::SessionId id = bConnect ? m_pImpl->pAgent->connect(remote, token, now) : m_pImpl->pAgent->accept(remote, token, now);
++	const natd::PeerNat nat = bServer ? natd::PeerNat::Unknown : natd::PeerNat::Stable;
++	const natd::SessionId id = bConnect ? m_pImpl->pAgent->connect(remote, nat, token, now) : m_pImpl->pAgent->accept(remote, nat, token, now);
+ 	if (id == 0) {
+ 		if (thePrefs.GetVerbose())
+ 			AddDebugLogLine(false, _T("NAT traversal: punch %s with %s not started: a punch with it is on already, or the session limit is reached"), ViaStr(byVia), (LPCTSTR)EndpointStr(remote));
+diff --git a/srchybrid/NatTraversal.h b/srchybrid/NatTraversal.h
+index 17c23c9..4dce8d1 100644
+--- a/srchybrid/NatTraversal.h
++++ b/srchybrid/NatTraversal.h
+@@ -25,6 +25,11 @@
+ // The client is "punchable" when its NAT maps that port endpoint-independently (natd
+ // Predictability::Stable): the endpoint a third party sees is then the one every peer sees,
+ // so two punchable LowIDs can reach each other through the endpoints their buddies saw.
++// Through the server (89nh) a NAT that maps it to random ports inside a block of ports
++// (Predictability::Bounded, mobile CGNs) can be punched to as well: nothing tells either side
++// the other's NAT there, so an endpoint-independent side punches the endpoint the server saw
++// and, should nobody answer there, the block of ports around it (natd::PeerNat::Unknown); a
++// Bounded side punches the endpoint from the client UDP port.
+ //
+ // A punch is used only where TCP cannot work: a LowID downloader and a LowID source that
+ // carries TAG_NATDCLIENT. The downloader asks the source through the source's buddy
+@@ -97,7 +102,8 @@ public:
+ 	// every 100 ms, from the upload timer
+ 	void	Process();
+ 
+-	// The discovery found an endpoint-independent mapping of the client UDP port.
++	// The discovery found an endpoint-independent mapping of the client UDP port (the Kad
++	// channels; the server takes a Bounded one too, 89nh).
+ 	bool	IsPunchable() const;
+ 	// The public endpoint as one number while punchable, 0 otherwise: a source record carries
+ 	// it (the IP and UDP port the index node sees), so a change means publishing again.

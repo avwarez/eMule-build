@@ -136,7 +136,13 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          the punch and the token comes from its user hash and both IDs, so
 #          two LowIDs asking each other at once still meet. A peer the server
 #          brings more than once counts once; such a LowID source (odd ID) is
-#          kept, not dropped.
+#          kept, not dropped. 89nh lets the server's punch reach a NAT that
+#          maps the client UDP port to random ports inside a block (natd
+#          Bounded, mobile CGNs), which the server cannot tell: the
+#          endpoint-independent side punches the endpoint the server saw and,
+#          from the second round on, the block of ports around it too
+#          (natd::PeerNat::Unknown); the Bounded side punches the endpoint
+#          from the client UDP port. Kad stays endpoint-independent only.
 #   90-94  the code compiles but /Wall flags it; these bring the warning
 #          count back to zero.
 #   95-96  the code compiles and is warning-clean but is not correct on
