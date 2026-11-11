@@ -1,0 +1,78 @@
+diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
+index 986eab7..c157be4 100644
+--- a/srchybrid/NatTraversal.cpp
++++ b/srchybrid/NatTraversal.cpp
+@@ -375,7 +375,8 @@ struct CNatTraversal::Impl
+ 	std::unique_ptr<natd::Agent> pAgent;
+ 	int nLoggedVerdict = -1;	// the verdict the user's log gave last (Verdict)
+ 	// 2: punchable through every channel (endpoint-independent mapping); 1: through the server
+-	// only, whose punch also reaches a NAT with port blocks (Bounded, 89nh); 0: not at all
++	// only, whose punch also reaches a NAT with port blocks or sequential ports (Bounded, 89nh;
++	// Predictable, 89nj); 0: not at all
+ 	int Verdict() const
+ 	{
+ 		return pAgent->directPunchable() ? 2 : pAgent->punchable() ? 1 : 0;
+@@ -394,8 +395,6 @@ struct CNatTraversal::Impl
+ 	{
+ 		natd::AgentConfig cfg;
+ 		cfg.discovery.primarySocket = kPrimarySocket;	// the caps and waits of the punches: natd's
+-		// a Bounded side punches from the client UDP port alone: eMule has no other (89nh)
+-		cfg.limits.maxSockets = 1;
+ 		pAgent = std::make_unique<natd::Agent>(cfg, io);
+ 	}
+ 	void StartDiscovery(natd::TimePoint now);
+@@ -1148,6 +1147,9 @@ void CNatTraversal::OnServerPeer(const SNatCallback &cb)
+ 			pLayer->RaiseEvent(FD_CONNECT, WSAECONNREFUSED);
+ 		return;
+ 	}
++	// The request back goes before our first punch packet, which the next Process() sends: the
++	// endpoint the server sees is then our newest mapping, and the one towards the peer comes
++	// right after it, as a NAT with sequential ports gives them (89nj)
+ 	if (OpenSession(cb.dwIP, cb.nPort, token.data(), bConnect, NULL, NATD_VIA_SERVER) && impl.ServerRequest(cb.nID, _T("back, so that it learns our endpoint")))
+ 		impl.serverAgain.emplace_back(cb.nID, dwNow);
+ }
+@@ -1350,9 +1352,10 @@ bool CNatTraversal::OpenSession(uint32 dwIP, uint16 nPort, const BYTE *pToken12,
+ 	// through a relay carries the endpoint the relay saw, which no filter has checked yet
+ 	if (IsFilteredOrBanned(dwIP))
+ 		return false;
+-	// Through the server nothing says whether the peer's mapping is endpoint-independent or
+-	// random in a block of ports (a mobile CGN): natd punches the endpoint the server saw and,
+-	// should nobody answer there, the block around it too (PeerNat::Unknown, 89nh).
++	// Through the server nothing says whether the peer's mapping is endpoint-independent,
++	// random in a block of ports (a mobile CGN) or sequential: natd punches the endpoint the
++	// server saw and, should nobody answer there, the block around it and the ports just past it
++	// too (PeerNat::Unknown, 89nh, 89nj).
+ 	const bool bServer = byVia == NATD_VIA_SERVER;
+ 	LPCTSTR pszNot = NULL;
+ 	if (bServer ? !m_pImpl->pAgent->punchable() : !m_pImpl->pAgent->directPunchable())
+diff --git a/srchybrid/NatTraversal.h b/srchybrid/NatTraversal.h
+index 41d5213..7f3890a 100644
+--- a/srchybrid/NatTraversal.h
++++ b/srchybrid/NatTraversal.h
+@@ -25,11 +25,12 @@
+ // The client is "punchable" when its NAT maps that port endpoint-independently (natd
+ // Predictability::Stable): the endpoint a third party sees is then the one every peer sees,
+ // so two punchable LowIDs can reach each other through the endpoints their buddies saw.
+-// Through the server (89nh) a NAT that maps it to random ports inside a block of ports
+-// (Predictability::Bounded, mobile CGNs) can be punched to as well: nothing tells either side
+-// the other's NAT there, so an endpoint-independent side punches the endpoint the server saw
+-// and, should nobody answer there, the block of ports around it (natd::PeerNat::Unknown); a
+-// Bounded side punches the endpoint from the client UDP port.
++// Through the server a NAT that maps it to random ports inside a block of ports
++// (Predictability::Bounded, mobile CGNs, 89nh) or to sequential ports (Predictable, 89nj) can
++// be punched to as well: nothing tells either side the other's NAT there, so an
++// endpoint-independent side punches the endpoint the server saw and, should nobody answer
++// there, the block of ports around it and the ports just past it (natd::PeerNat::Unknown); the
++// other side punches the endpoint from the client UDP port.
+ //
+ // A punch is used only where TCP cannot work: a LowID downloader and a LowID source that
+ // carries TAG_NATDCLIENT. The downloader asks the source through the source's buddy
+@@ -107,7 +108,7 @@ public:
+ 	void	Shutdown();
+ 
+ 	// The discovery found an endpoint-independent mapping of the client UDP port (the Kad
+-	// channels; the server takes a Bounded one too, 89nh).
++	// channels; the server takes a Bounded or Predictable one too, 89nh, 89nj).
+ 	bool	IsPunchable() const;
+ 	// The public endpoint as one number while punchable, 0 otherwise: a source record carries
+ 	// it (the IP and UDP port the index node sees), so a change means publishing again.

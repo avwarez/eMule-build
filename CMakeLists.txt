@@ -146,6 +146,10 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          89ni ends the punched streams with their FINs when eMule closes,
 #          as TCP connections get theirs, instead of the peer waiting for
 #          the path to go silent.
+#          89nj (natd 0.4.0) takes a NAT with sequential ports (natd
+#          Predictable) through the server too: the endpoint-independent
+#          side also sprays the ports just past the endpoint the server saw,
+#          and the request back goes before our first punch packet.
 #   90-94  the code compiles but /Wall flags it; these bring the warning
 #          count back to zero.
 #   95-96  the code compiles and is warning-clean but is not correct on

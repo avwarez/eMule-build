@@ -38,9 +38,9 @@ This build is eMule 0.72a with the changes below, compiled for x64, Win32 and AR
 - **NAT discovery:** a LowID client checks its NAT on the client UDP port with public STUN servers, using the natd library. The log says what kind of NAT it found and whether other clients can punch through to it. A HighID does not run the check.
 - **STUN servers:** the servers are read from `config/stun.dat`, one `host:port` per line. If the file is missing or lists fewer than 3 servers, a built-in list is used.
 - **How the request travels:** the request to punch goes through the eD2K server, by the NAT callback of Lugdunum servers, or through the Kad buddy. Kad sources of a client that can be punched carry its NAT details.
-- **Mobile networks:** through the eD2K server, a client behind a NAT that picks a new port for each destination inside a block of ports, as the CGNAT of many mobile networks does, can now be punched to by a client whose NAT keeps the same public port. The second client tries the port the server saw first, then every port of the block around it.
+- **Mobile networks:** through the eD2K server, a client behind a NAT that picks a new port for each destination, either inside a block of ports (as the CGNAT of many mobile networks does) or in sequence, can now be punched to by a client whose NAT keeps the same public port. The second client tries the port the server saw first, then every port of the block around it and the ports just past it.
 - **Closing eMule:** the transfers that go through a punched UDP path now end at once on the other side, as TCP connections do, instead of after about 45 seconds of silence.
-- **Limits:** two clients behind such mobile NATs cannot reach each other, and neither can a client behind a NAT that picks ports from its whole range. Through Kad only NATs that keep the same public port can be punched. A client that cannot be punched stays a plain LowID.
+- **Limits:** two clients behind such NATs cannot reach each other, and neither can a client behind a NAT that picks ports at random from its whole range. Through Kad only NATs that keep the same public port can be punched. A client that cannot be punched stays a plain LowID.
 
 ### Web interface
 
