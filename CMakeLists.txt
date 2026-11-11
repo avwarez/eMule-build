@@ -157,6 +157,9 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          asked for once more while the socket has been connecting for less
 #          than CONNECTION_TIMEOUT (as TCP sends its SYN again); the log
 #          gives the packets and rounds of every punch.
+#          89nm runs the NAT discovery before the connection to the server
+#          and to Kad, after UPnP and whatever the ID: the login announces
+#          what it found, and its mappings do not mix with the connection's.
 #   90-94  the code compiles but /Wall flags it; these bring the warning
 #          count back to zero.
 #   95-96  the code compiles and is warning-clean but is not correct on
