@@ -142,7 +142,8 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          endpoint-independent side punches the endpoint the server saw and,
 #          from the second round on, the block of ports around it too
 #          (natd::PeerNat::Unknown); the Bounded side punches the endpoint
-#          from the client UDP port. Kad stays endpoint-independent only.
+#          from the client UDP port. Kad stays endpoint-independent only
+#          (until 89nn).
 #          89ni ends the punched streams with their FINs when eMule closes,
 #          as TCP connections get theirs, instead of the peer waiting for
 #          the path to go silent.
@@ -162,6 +163,11 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          what it found, and its mappings do not mix with the connection's.
 #          At startup the connect buttons stay disabled until UPnP (when
 #          enabled) and the discovery are over.
+#          89nn makes the two Kad buddies do what the server does: the
+#          request carries the requester's buddy, the source sends its
+#          request back through it before punching, so both punch endpoints
+#          seen a moment ago; Kad then takes Bounded and Predictable NATs
+#          too, and a timed-out punch is asked for once more as in 89nl.
 #   90-94  the code compiles but /Wall flags it; these bring the warning
 #          count back to zero.
 #   95-96  the code compiles and is warning-clean but is not correct on
