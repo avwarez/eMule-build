@@ -26,7 +26,7 @@ This build is eMule 0.72a with the changes below, compiled for x64, Win32 and AR
 ### Network
 
 - **Port mapping:** port mapping (UPnP IGD, NAT-PMP, PCP) is done with libplum, which is now the default method. The old Windows UPnP service method has been removed, along with its two Tweaks options.
-- **Windows Firewall check:** at startup eMule checks whether Windows Firewall lets other clients reach its TCP and UDP ports, and the log says which rule or network profile allows or blocks each port. If inbound connections are blocked, a bar at the top of the window offers «Allow», which adds the needed rules with administrator rights, or «Ignore».
+- **Windows Firewall check:** at startup eMule checks whether Windows Firewall lets other clients reach its TCP and UDP ports, and the log says which rule or network profile allows or blocks each port. If inbound connections are blocked, a bar at the top of the window offers «Allow», which adds the needed rules with administrator rights, or «Ignore». The bar and its menu are translated like the rest of eMule.
 - **Send after close:** a network send that completes after its connection has already closed no longer writes into freed memory. This was a cause of random crashes.
 - **Short UDP packets:** a UDP packet from a server too short to hold an opcode is no longer read past its end.
 - **Banned clients:** a banned client that keeps sending data no longer keeps the interface busy.
