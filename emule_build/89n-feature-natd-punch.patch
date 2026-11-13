@@ -2811,10 +2811,10 @@ index fae426c..8f52cf1 100644
  	static bool		IsStoringSearchesEnabled()			{ return m_bStoreSearches; }
  	static bool		GetPreventStandby()					{ return m_bPreventStandby; }
 diff --git a/srchybrid/Resource.h b/srchybrid/Resource.h
-index aa656c4..711f92e 100644
+index 8b5197e..edb298c 100644
 --- a/srchybrid/Resource.h
 +++ b/srchybrid/Resource.h
-@@ -1556,6 +1556,7 @@
+@@ -1559,6 +1559,7 @@
  #define IDS_IMPORTPARTS_IMPORTSTART     1607
  #define IDS_IMPORTPARTS                 1608
  #define IDS_IMPORTPARTS_STOP            1609
@@ -2822,7 +2822,7 @@ index aa656c4..711f92e 100644
  #define IDC_ANIMATE1                    2000
  #define IDC_STATUS                      2001
  #define IDC_FILESTATUS                  2002
-@@ -2377,6 +2378,7 @@
+@@ -2380,6 +2381,7 @@
  #define IDC_CONNECTEDTXT                3045
  #define IDC_COMPLTXT                    3046
  #define IDC_SPACETXT                    3047
@@ -2830,14 +2830,14 @@ index aa656c4..711f92e 100644
  #define IDA_ENTER                       32771
  
  // Next default values for new objects
-@@ -2385,7 +2387,7 @@
+@@ -2388,7 +2390,7 @@
  #ifndef APSTUDIO_READONLY_SYMBOLS
  #define _APS_NEXT_RESOURCE_VALUE        1568
  #define _APS_NEXT_COMMAND_VALUE         32773
 -#define _APS_NEXT_CONTROL_VALUE         3048
 -#define _APS_NEXT_SYMED_VALUE           1610
 +#define _APS_NEXT_CONTROL_VALUE         3049
-+#define _APS_NEXT_SYMED_VALUE           1611
++#define _APS_NEXT_SYMED_VALUE           1614
  #endif
  #endif
 diff --git a/srchybrid/ServerConnect.cpp b/srchybrid/ServerConnect.cpp
@@ -2935,7 +2935,7 @@ index 8a9c94b..9a11609 100644
  			theStats.CompUpDatarateOverhead();
  			theStats.CompDownDatarateOverhead();
 diff --git a/srchybrid/emule.rc b/srchybrid/emule.rc
-index 2d128cc..330a6d9 100644
+index ff63988..27f37d4 100644
 --- a/srchybrid/emule.rc
 +++ b/srchybrid/emule.rc
 @@ -336,7 +336,7 @@ BEGIN
@@ -2956,7 +2956,7 @@ index 2d128cc..330a6d9 100644
      CONTROL         "Kad",IDC_NETWORK_KADEMLIA,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,160,184,57,10
      CONTROL         "eD2K",IDC_NETWORK_ED2K,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,160,194,58,10
      GROUPBOX        "Client Port:",IDC_CLIENTPORT_FRM,4,74,223,57
-@@ -3652,6 +3654,7 @@ END
+@@ -3655,6 +3657,7 @@ END
  STRINGTABLE
  BEGIN
      IDS_UPNPSTART           "Use UPnP to set up ports"
@@ -3031,11 +3031,179 @@ index 2a22b0e..f8ba80c 100644
  		break;
  	}
  }
+diff --git a/srchybrid/lang/ar_AE.rc b/srchybrid/lang/ar_AE.rc
+index a832f79..edf9e3b 100644
+--- a/srchybrid/lang/ar_AE.rc
++++ b/srchybrid/lang/ar_AE.rc
+@@ -1887,6 +1887,7 @@ END
+ STRINGTABLE
+ BEGIN
+     IDS_UPNPSTART           "استعمل UPnP لتنصيب البروتات"
++    IDS_NATTRAVERSAL        "استعمل NAT traversal بين الهويات المنخفضة (بعد إعادة التشغيل)"
+     IDS_UPNPSETUP           "تنصيب البورتات مع UPnP..."
+     IDS_UPNPFAILED          "UPnP فضل في تنصيب البورتات, الرجاء تفعيل هذه البروتات يدويا اذا لزم!"
+     IDS_UPNPSUCCESS         "UPnP نجح في تنصيب البروتات %u (TCP) و %u (UDP)"
+diff --git a/srchybrid/lang/bg_BG.rc b/srchybrid/lang/bg_BG.rc
+index 4d27b4c..ade01da 100644
+--- a/srchybrid/lang/bg_BG.rc
++++ b/srchybrid/lang/bg_BG.rc
+@@ -1874,6 +1874,7 @@ END
+ STRINGTABLE
+ BEGIN
+     IDS_UPNPSTART           "UPnP настройка на портовете"
++    IDS_NATTRAVERSAL        "Използвай NAT traversal между LowID (след рестарт)"
+     IDS_UPNPSETUP           "Опит за UPnP пренасочване на портовете..."
+     IDS_UPNPFAILED          "Неуспешно UPnP пренасочване на портовете. Моля, направете това ръчно!"
+     IDS_UPNPSUCCESS         "Успешно UPnP пренасочване за портове %u (TCP) и %u (UDP)"
+diff --git a/srchybrid/lang/ca_ES.rc b/srchybrid/lang/ca_ES.rc
+index f7294ab..b8d6a36 100644
+--- a/srchybrid/lang/ca_ES.rc
++++ b/srchybrid/lang/ca_ES.rc
+@@ -1899,6 +1899,7 @@ END
+ STRINGTABLE
+ BEGIN
+     IDS_UPNPSTART           "Emprar UPnP per a configurar els ports"
++    IDS_NATTRAVERSAL        "Emprar el NAT traversal entre ID Baixes (en reiniciar)"
+     IDS_UPNPSETUP           "Intentant configurar redireccions de ports amb UPnP..."
+     IDS_UPNPFAILED          "UPnP no ha pogut configurar les redireccions de ports, si us plau redirigiu aquests ports manualment si cal!"
+     IDS_UPNPSUCCESS         "UPnP ha configurat amb èxit les redireccions pels ports %u (TCP) i %u (UDP)"
+diff --git a/srchybrid/lang/cz_CZ.rc b/srchybrid/lang/cz_CZ.rc
+index 95acb0c..63095cc 100644
+--- a/srchybrid/lang/cz_CZ.rc
++++ b/srchybrid/lang/cz_CZ.rc
+@@ -1895,6 +1895,7 @@ END
+ STRINGTABLE
+ BEGIN
+     IDS_UPNPSTART           "Použít UPnP pro nastavení portů"
++    IDS_NATTRAVERSAL        "Použít NAT traversal mezi LowID (po restartu)"
+     IDS_UPNPSETUP           "Nastavuje se přesměrování portů pomocí UPnP..."
+     IDS_UPNPFAILED          "UPnP nastavení se nezdařilo. Pokud je to třeba, nastavte prosím přesměrování manuálně!"
+     IDS_UPNPSUCCESS         "Pomocí UPnP bylo úspěšně nastaveno přesměrování portů %u (TCP) a %u (UDP)."
+diff --git a/srchybrid/lang/da_DK.rc b/srchybrid/lang/da_DK.rc
+index 2d40898..01ae48f 100644
+--- a/srchybrid/lang/da_DK.rc
++++ b/srchybrid/lang/da_DK.rc
+@@ -1903,6 +1903,7 @@ END
+ STRINGTABLE
+ BEGIN
+     IDS_UPNPSTART           "Brug UPnP til at sætte porte op"
++    IDS_NATTRAVERSAL        "Brug NAT traversal mellem lave ID'er (ved genstart)"
+     IDS_UPNPSETUP           "Forsøger at sætte port forwarding op med UPnP..."
+     IDS_UPNPFAILED          "UPnP mislykkedes at lave port forwarding. Forward venligst disse porte manuelt, hvis det er nødvendigt!"
+     IDS_UPNPSUCCESS         "UPnP har med succes forwarded porte %u (TCP) og %u (UDP)"
+diff --git a/srchybrid/lang/de_DE.rc b/srchybrid/lang/de_DE.rc
+index 62c55d0..3f87606 100644
+--- a/srchybrid/lang/de_DE.rc
++++ b/srchybrid/lang/de_DE.rc
+@@ -1871,6 +1871,7 @@ END
+ STRINGTABLE
+ BEGIN
+     IDS_UPNPSTART           "Benutze UPnP zur Porteinstellung"
++    IDS_NATTRAVERSAL        "NAT-Traversal zwischen LowIDs verwenden (nach Neustart)"
+     IDS_UPNPSETUP           "Versuche Port-Weiterleitungen via UPnP einzustellen..."
+     IDS_UPNPFAILED          "UPnP konnte die Portweiterleitung nicht konfigurieren. Bitte führe die Portweiterleitung manuell durch!"
+     IDS_UPNPSUCCESS         "UPnP hat erfolgreich Portweiterleitungen für die Ports %u (TCP) und %u (UDP) durchgeführt."
+diff --git a/srchybrid/lang/el_GR.rc b/srchybrid/lang/el_GR.rc
+index c2ce45c..4123f20 100644
+--- a/srchybrid/lang/el_GR.rc
++++ b/srchybrid/lang/el_GR.rc
+@@ -1840,6 +1840,7 @@ END
+ STRINGTABLE
+ BEGIN
+     IDS_UPNPSTART           "Ρύθμιση των ports με το UPnP"
++    IDS_NATTRAVERSAL        "Χρήση NAT traversal μεταξύ LowID (μετά από επανεκκίνηση)"
+     IDS_UPNPSETUP           "Προσπάθεια ρύθμισης της προώθησης των ports με UPnP..."
+     IDS_UPNPFAILED          "Το UPnP απέτυχε να ρυθμίσει την προώθηση των ports, παρακαλώ προωθήστε αυτά τα ports χειροκίνητα αν είναι απαραίτητο!"
+     IDS_UPNPSUCCESS         "Το UPnP ρύθμισε την προώθηση επιτυχώς, των ports %u (TCP) και %u (UDP)"
+diff --git a/srchybrid/lang/es_ES_T.rc b/srchybrid/lang/es_ES_T.rc
+index 4df0fb0..9238d17 100644
+--- a/srchybrid/lang/es_ES_T.rc
++++ b/srchybrid/lang/es_ES_T.rc
+@@ -1898,6 +1898,7 @@ END
+ STRINGTABLE
+ BEGIN
+     IDS_UPNPSTART           "Utilizar UPnP para redirigir puertos"
++    IDS_NATTRAVERSAL        "Utilizar el NAT traversal entre IDs Bajas (al reiniciar)"
+     IDS_UPNPSETUP           "Intentando redirigir los puertos mediante UPnP"
+     IDS_UPNPFAILED          "No se han podido redirigir los puertos mediante UPnP, por favor, ¡abre estos puertos manualmente si es necesario!"
+     IDS_UPNPSUCCESS         "Se han redirigido correctamente los puertos %u (TCP) y %u (UDP) mediante UPnP"
+diff --git a/srchybrid/lang/fa_IR.rc b/srchybrid/lang/fa_IR.rc
+index 555c25c..5b9c89e 100644
+--- a/srchybrid/lang/fa_IR.rc
++++ b/srchybrid/lang/fa_IR.rc
+@@ -1861,6 +1861,7 @@ END
+ STRINGTABLE
+ BEGIN
+     IDS_UPNPSTART           "استفاده کن UPnP براي ايجاد پورت از عمليات خودکار"
++    IDS_NATTRAVERSAL        "استفاده از NAT traversal بین کاربران درجه پایین (پس از راه‌اندازی دوباره)"
+     IDS_UPNPSETUP           "استفاده کني UPnP براي ايجاد پورت فرستنده سعي کن از عمليات خودکار"
+     IDS_UPNPFAILED          "اگر لازم بود لطفا خودتان بصورت دستي تنظيمات پورتها را انچام دهيد UPnP شکست در ايجاد پورت فرستنده توسط "
+     IDS_UPNPSUCCESS         "UPnP با موفقيت توانست اين پورت ها را ايجاد کند %u (TCP) و %u (UDP)"
+diff --git a/srchybrid/lang/fi_FI.rc b/srchybrid/lang/fi_FI.rc
+index 3a137e8..835911a 100644
+--- a/srchybrid/lang/fi_FI.rc
++++ b/srchybrid/lang/fi_FI.rc
+@@ -1862,6 +1862,7 @@ END
+ STRINGTABLE
+ BEGIN
+     IDS_UPNPSTART           "Aseta portit uPnP:n avulla"
++    IDS_NATTRAVERSAL        "Käytä NAT traversalia matalien tunnisteiden välillä (uudelleenkäynnistyksen jälkeen)"
+     IDS_UPNPSETUP           "Yritetään asettaa portit käyttäen uPnP:tä..."
+     IDS_UPNPFAILED          "En pystynyt asettamaan portteja uPnP:n avulla, ole hyvä ja salli porttien liikenne manuaalisesti jos tarpeen!"
+     IDS_UPNPSUCCESS         "UPnP on avannut portit %u (TCP) ja %u (UDP) onnistuneesti"
+diff --git a/srchybrid/lang/fr_FR.rc b/srchybrid/lang/fr_FR.rc
+index d01a6f9..384f152 100644
+--- a/srchybrid/lang/fr_FR.rc
++++ b/srchybrid/lang/fr_FR.rc
+@@ -1894,6 +1894,7 @@ END
+ STRINGTABLE
+ BEGIN
+     IDS_UPNPSTART           "Configurer les ports grâce à l'UPnP"
++    IDS_NATTRAVERSAL        "Utiliser la traversée NAT entre LowID (au redémarrage)"
+     IDS_UPNPSETUP           "Tentative de mappage des ports avec l'UPnP..."
+     IDS_UPNPFAILED          "Echec du mappage des ports avec l'UPnP, veuillez paramétrer le mappage manuellement !"
+     IDS_UPNPSUCCESS         "L'UPnP a effectué avec succès le mappage des ports %u (TCP) et %u (UDP)"
+diff --git a/srchybrid/lang/gl_ES.rc b/srchybrid/lang/gl_ES.rc
+index 62341e8..9d8a530 100644
+--- a/srchybrid/lang/gl_ES.rc
++++ b/srchybrid/lang/gl_ES.rc
+@@ -1902,6 +1902,7 @@ END
+ STRINGTABLE
+ BEGIN
+     IDS_UPNPSTART           "Utilizar UPnP para redirixir portos"
++    IDS_NATTRAVERSAL        "Utilizar o NAT traversal entre LowID (ao reiniciar)"
+     IDS_UPNPSETUP           "Intentando redirixir os portos mediante UPnP..."
+     IDS_UPNPFAILED          "Non se puideron redirixir os portos mediante UPnP, por favor, abre estes portos manualmente se é necesario!"
+     IDS_UPNPSUCCESS         "Redirixíronse correctamente os portos %u (TCP) e %u (UDP) mediante UPnP"
+diff --git a/srchybrid/lang/he_IL.rc b/srchybrid/lang/he_IL.rc
+index 276f7fc..117b740 100644
+--- a/srchybrid/lang/he_IL.rc
++++ b/srchybrid/lang/he_IL.rc
+@@ -1885,6 +1885,7 @@ END
+ STRINGTABLE
+ BEGIN
+     IDS_UPNPSTART           "השתמש ב-UPnP להגדרת פורטים"
++    IDS_NATTRAVERSAL        "השתמש ב-NAT traversal בין מזהים נמוכים (לאחר הפעלה מחדש)"
+     IDS_UPNPSETUP           "מנסה לפתוח פורטים באמצעות UPnP..."
+     IDS_UPNPFAILED          "UPnP נכשל בפתיחת פורטים, אנא פתח את הפורטים ידנית אם צריך!"
+     IDS_UPNPSUCCESS         "UPnP פתח בהצלחה את הפורטים %u (TCP) ו-%u (UDP)"
+diff --git a/srchybrid/lang/hu_HU.rc b/srchybrid/lang/hu_HU.rc
+index cea8362..7598887 100644
+--- a/srchybrid/lang/hu_HU.rc
++++ b/srchybrid/lang/hu_HU.rc
+@@ -1899,6 +1899,7 @@ END
+ STRINGTABLE
+ BEGIN
+     IDS_UPNPSTART           "Use UPnP to setup ports"
++    IDS_NATTRAVERSAL        "NAT traversal használata alacsony azonosítók között (újraindítás után)"
+     IDS_UPNPSETUP           "Trying to setup port forwardings with UPnP..."
+     IDS_UPNPFAILED          "UPnP failed to setup port forwardings, please forward those ports manually if necessary!"
+     IDS_UPNPSUCCESS         "UPnP successfully set up forwardings for ports %u (TCP) and %u (UDP)"
 diff --git a/srchybrid/lang/it_IT.rc b/srchybrid/lang/it_IT.rc
-index 79bfec4..cc12d4a 100644
+index 9ed8430..831fae4 100644
 --- a/srchybrid/lang/it_IT.rc
 +++ b/srchybrid/lang/it_IT.rc
-@@ -1884,6 +1884,7 @@ END
+@@ -1887,6 +1887,7 @@ END
  STRINGTABLE
  BEGIN
      IDS_UPNPSTART           "Usa l'UPnP per configurare il router"
@@ -3043,3 +3211,195 @@ index 79bfec4..cc12d4a 100644
      IDS_UPNPSETUP           "Sto provando a configurare automaticamente il router con l'UPnP..."
      IDS_UPNPFAILED          "L'UPnP non è riuscito a configurare automaticamente il router per eMule, provare a configurarlo manualmente se necessario!"
      IDS_UPNPSUCCESS         "L'UPnP ha configurato il router con le porte %u (TCP) e %u (UDP)"
+diff --git a/srchybrid/lang/jp_JP.rc b/srchybrid/lang/jp_JP.rc
+index 49bbbf2..409ff6a 100644
+--- a/srchybrid/lang/jp_JP.rc
++++ b/srchybrid/lang/jp_JP.rc
+@@ -1899,6 +1899,7 @@ END
+ STRINGTABLE
+ BEGIN
+     IDS_UPNPSTART           "UPnPを使用してポート設定を行う"
++    IDS_NATTRAVERSAL        "LowID間でNATトラバーサルを使用する (再起動後)"
+     IDS_UPNPSETUP           "UPnPを使用してポート設定を行っています..."
+     IDS_UPNPFAILED          "UPnPを利用したポート設定に失敗しました。必要ならこれらのポートを手動で設定してください!"
+     IDS_UPNPSUCCESS         "UPnPはポート %u (TCP) と %u (UDP) の設定に成功しました"
+diff --git a/srchybrid/lang/ko_KR.rc b/srchybrid/lang/ko_KR.rc
+index cc96524..5c7f2c3 100644
+--- a/srchybrid/lang/ko_KR.rc
++++ b/srchybrid/lang/ko_KR.rc
+@@ -1859,6 +1859,7 @@ END
+ STRINGTABLE
+ BEGIN
+     IDS_UPNPSTART           "포트를 설정하기 위해 UPnP 사용"
++    IDS_NATTRAVERSAL        "로우 ID 간 NAT 통과 사용 (재시작 후)"
+     IDS_UPNPSETUP           "UPnP를 사용하여 포트 전송 설정 시도 중..."
+     IDS_UPNPFAILED          "UPnP 포트 전송 설정 실패. 필요하다면 수동으로 이 포트들을 전송하십시오!"
+     IDS_UPNPSUCCESS         "UPnP가 성공적으로 %u (TCP) 및 %u (UDP) 포트의 전송 설정을 완료했습니다."
+diff --git a/srchybrid/lang/nb_NO.rc b/srchybrid/lang/nb_NO.rc
+index 48d5b95..6ca9892 100644
+--- a/srchybrid/lang/nb_NO.rc
++++ b/srchybrid/lang/nb_NO.rc
+@@ -1896,6 +1896,7 @@ END
+ STRINGTABLE
+ BEGIN
+     IDS_UPNPSTART           "Bruk UPnP til å sette opp porter"
++    IDS_NATTRAVERSAL        "Bruk NAT traversal mellom lave ID-er (ved omstart)"
+     IDS_UPNPSETUP           "Prøver å sette opp videresending av port med UPnP..."
+     IDS_UPNPFAILED          "UPnP klarte ikke å sette opp videresending av port, vennligst videresend disse portene manuelt hvis nødvendig!"
+     IDS_UPNPSUCCESS         "UPnP klarte å sette opp videresending for portene %u (TCP) og %u (UDP)"
+diff --git a/srchybrid/lang/nl_NL.rc b/srchybrid/lang/nl_NL.rc
+index d45d823..d266ef6 100644
+--- a/srchybrid/lang/nl_NL.rc
++++ b/srchybrid/lang/nl_NL.rc
+@@ -1892,6 +1892,7 @@ END
+ STRINGTABLE
+ BEGIN
+     IDS_UPNPSTART           "UPnP gebruiken om poorten in te stellen"
++    IDS_NATTRAVERSAL        "NAT-traversal tussen lage ID's gebruiken (na herstart)"
+     IDS_UPNPSETUP           "Probeert om poortdoorverwijzingen met UPnP in te stellen..."
+     IDS_UPNPFAILED          "UPnP heeft gefaald met het instellen van poortdoorverwijzingen, verwijs deze poorten a.u.b. zelf door als dit nodig is!"
+     IDS_UPNPSUCCESS         "UPnP heeft de doorverwijzingen voor de poorten %u (TCP) en %u (UDP) succesvol ingesteld"
+diff --git a/srchybrid/lang/nn_NO.rc b/srchybrid/lang/nn_NO.rc
+index c649563..10da5d8 100644
+--- a/srchybrid/lang/nn_NO.rc
++++ b/srchybrid/lang/nn_NO.rc
+@@ -1849,6 +1849,7 @@ END
+ STRINGTABLE
+ BEGIN
+     IDS_UPNPSTART           "Nytte UPnP til å sette opp portar"
++    IDS_NATTRAVERSAL        "Nytte NAT traversal mellom låge ID-ar (ved omstart)"
+     IDS_UPNPSETUP           "Freistar å sette opp portar med UPnP..."
+     IDS_UPNPFAILED          "UPnP feila i å sette opp portane; set opp portane manuelt dersom naudsynt!"
+     IDS_UPNPSUCCESS         "UPnP greidde å sette opp portane %u (TCP) og %u (UDP)"
+diff --git a/srchybrid/lang/pl_PL.rc b/srchybrid/lang/pl_PL.rc
+index 9b51054..2aea591 100644
+--- a/srchybrid/lang/pl_PL.rc
++++ b/srchybrid/lang/pl_PL.rc
+@@ -1866,6 +1866,7 @@ END
+ STRINGTABLE
+ BEGIN
+     IDS_UPNPSTART           "Użyj UPnP do konfiguracji portów"
++    IDS_NATTRAVERSAL        "Używaj NAT traversal między niskimi ID (po restarcie)"
+     IDS_UPNPSETUP           "Próbuj przekierowywać porty za pomocą UPnP..."
+     IDS_UPNPFAILED          "Błąd UPnP przy przekierowywaniu portów, wymagane jest ich ręczne przekierowanie!"
+     IDS_UPNPSUCCESS         "UPnP szczęśliwie przekierowało porty %u (TCP) i %u (UDP)"
+diff --git a/srchybrid/lang/pt_BR.rc b/srchybrid/lang/pt_BR.rc
+index ac60790..40c51b3 100644
+--- a/srchybrid/lang/pt_BR.rc
++++ b/srchybrid/lang/pt_BR.rc
+@@ -1873,6 +1873,7 @@ END
+ STRINGTABLE
+ BEGIN
+     IDS_UPNPSTART           "Configurar Portas usando UPnP"
++    IDS_NATTRAVERSAL        "Usar NAT traversal entre IDs Baixas (ao reiniciar)"
+     IDS_UPNPSETUP           "Tentando configurar o redirecionamento de portas por UPnP..."
+     IDS_UPNPFAILED          "UPnP falhou ao configurar o redirecionamento de portas, por favor redirecione estas portas manualmente se necessário!"
+     IDS_UPNPSUCCESS         "UPnP configurou com sucesso o redirecionamento para as portas %u (TCP) e %u (UDP)"
+diff --git a/srchybrid/lang/pt_PT.rc b/srchybrid/lang/pt_PT.rc
+index e60ea53..3e67509 100644
+--- a/srchybrid/lang/pt_PT.rc
++++ b/srchybrid/lang/pt_PT.rc
+@@ -1903,6 +1903,7 @@ END
+ STRINGTABLE
+ BEGIN
+     IDS_UPNPSTART           "Usar UPnP para configurar as portas"
++    IDS_NATTRAVERSAL        "Usar NAT traversal entre LowIDs (ao reiniciar)"
+     IDS_UPNPSETUP           "A tentar configurar o redireccionamento das portas por UPnP..."
+     IDS_UPNPFAILED          "Não foi possível configurar o redireccionamento das portas por UPnP, se necessário por favor redireccione estas portas manualmente!"
+     IDS_UPNPSUCCESS         "As portas %u (TCP) e %u (UDP) foram correctamente redireccionadas por UPnP"
+diff --git a/srchybrid/lang/ro_RO.rc b/srchybrid/lang/ro_RO.rc
+index 09d9085..d1eda44 100644
+--- a/srchybrid/lang/ro_RO.rc
++++ b/srchybrid/lang/ro_RO.rc
+@@ -1898,6 +1898,7 @@ END
+ STRINGTABLE
+ BEGIN
+     IDS_UPNPSTART           "Setare porturi folosind UPnP"
++    IDS_NATTRAVERSAL        "Folosire NAT traversal între ID-uri mici (la repornire)"
+     IDS_UPNPSETUP           "Încerc să setez porturile (forwarding) folosind UPnP..."
+     IDS_UPNPFAILED          "UPnP a eşuat la setarea porturilor (forwarding), efectuaţi manual această operaţiune, la nevoie!"
+     IDS_UPNPSUCCESS         "UPnP a efectuat cu succes forwarding la porturile %u (TCP) şi %u (UDP)"
+diff --git a/srchybrid/lang/ru_RU.rc b/srchybrid/lang/ru_RU.rc
+index ccacf06..97285aa 100644
+--- a/srchybrid/lang/ru_RU.rc
++++ b/srchybrid/lang/ru_RU.rc
+@@ -1887,6 +1887,7 @@ END
+ STRINGTABLE
+ BEGIN
+     IDS_UPNPSTART           "UPnP настройка портов"
++    IDS_NATTRAVERSAL        "Использовать NAT traversal между LowID (после перезапуска)"
+     IDS_UPNPSETUP           "Попытка UPnP настроить перенаправление портов..."
+     IDS_UPNPFAILED          "UPnP не удалось перенаправление. Пожалуйста, перенаправьте порты вручную!"
+     IDS_UPNPSUCCESS         "UPnP успешно настроил перенаправление портов %u (TCP) и %u (UDP)"
+diff --git a/srchybrid/lang/sv_SE.rc b/srchybrid/lang/sv_SE.rc
+index 7320d74..82a906a 100644
+--- a/srchybrid/lang/sv_SE.rc
++++ b/srchybrid/lang/sv_SE.rc
+@@ -1896,6 +1896,7 @@ END
+ STRINGTABLE
+ BEGIN
+     IDS_UPNPSTART           "Använd UPnP för att ställa in portar"
++    IDS_NATTRAVERSAL        "Använd NAT traversal mellan Låg-ID (vid omstart)"
+     IDS_UPNPSETUP           "Försöker att ställa in portar med hjälp av UPNP..."
+     IDS_UPNPFAILED          "UPnP misslyckades att ställa in port-vidarebefordring, du måste vidarebefordra dessa portar manuellt!"
+     IDS_UPNPSUCCESS         "UPnP lyckades med att vidarebefodra portarna %u (TCP) och %u (UDP)"
+diff --git a/srchybrid/lang/tr_TR.rc b/srchybrid/lang/tr_TR.rc
+index 10befa8..8e23605 100644
+--- a/srchybrid/lang/tr_TR.rc
++++ b/srchybrid/lang/tr_TR.rc
+@@ -1895,6 +1895,7 @@ END
+ STRINGTABLE
+ BEGIN
+     IDS_UPNPSTART           "Bağlantı noktalarını ayarlamak için UPnP kullan"
++    IDS_NATTRAVERSAL        "DüşükID'ler arasında NAT geçişini kullan (yeniden başlatınca)"
+     IDS_UPNPSETUP           "UPnP ile bağlantı noktası yönlendirme ayarlamaları deneniyor..."
+     IDS_UPNPFAILED          "Bağlantı noktası yönlendirme ayarlaması için UPnP başarısız oldu, eğer gerekliyse lütfen bağlantı noktalarını elle yönlendirin!"
+     IDS_UPNPSUCCESS         "UPnP, %u (TCP) ve %u (UDP) nolu bağlantı noktaları için yönlendirmeyi başarılı olarak ayarladı"
+diff --git a/srchybrid/lang/ua_UA.rc b/srchybrid/lang/ua_UA.rc
+index d73386b..44ad02c 100644
+--- a/srchybrid/lang/ua_UA.rc
++++ b/srchybrid/lang/ua_UA.rc
+@@ -1889,6 +1889,7 @@ END
+ STRINGTABLE
+ BEGIN
+     IDS_UPNPSTART           "Use UPnP to setup ports"
++    IDS_NATTRAVERSAL        "Використовувати NAT traversal між LowID (після перезапуску)"
+     IDS_UPNPSETUP           "Trying to setup port forwardings with UPnP..."
+     IDS_UPNPFAILED          "UPnP failed to setup port forwardings, please forward those ports manually if necessary!"
+     IDS_UPNPSUCCESS         "UPnP successfully set up forwardings for ports %u (TCP) and %u (UDP)"
+diff --git a/srchybrid/lang/vi_VN.rc b/srchybrid/lang/vi_VN.rc
+index 9da15c9..14690b9 100644
+--- a/srchybrid/lang/vi_VN.rc
++++ b/srchybrid/lang/vi_VN.rc
+@@ -1890,6 +1890,7 @@ END
+ STRINGTABLE
+ BEGIN
+     IDS_UPNPSTART           "Sử dụng UPnP để thiết lập cổng"
++    IDS_NATTRAVERSAL        "Sử dụng NAT traversal giữa các LowID (khi khởi động lại)"
+     IDS_UPNPSETUP           "Cố gắng thiết lập cổng chuyển tiếp với UPnP..."
+     IDS_UPNPFAILED          "UPnP không thể thiết lập cổng chuyển tiếp, vui lòng tự chuyển tiếp các cổng này nếu cần!"
+     IDS_UPNPSUCCESS         "UPnP đã thiết lập cổng chuyển tiếp thành công cho các cổng %u (TCP) và %u (UDP)"
+diff --git a/srchybrid/lang/zh_CN.rc b/srchybrid/lang/zh_CN.rc
+index 4000a1c..bb7da84 100644
+--- a/srchybrid/lang/zh_CN.rc
++++ b/srchybrid/lang/zh_CN.rc
+@@ -1870,6 +1870,7 @@ END
+ STRINGTABLE
+ BEGIN
+     IDS_UPNPSTART           "使用UPnP来设置端口"  //"Use UPnP to setup ports"
++    IDS_NATTRAVERSAL        "在 LowID 之间使用 NAT 穿透 (重启后生效)"
+     IDS_UPNPSETUP           "正在尝试通过UPnP建立端口映射..."  //"Trying to setup port forwardings with UPnP..."
+     IDS_UPNPFAILED          "UPnP端口映射设置,如果需要的话请自行设置这些端口映射!"  //"UPnP failed to setup port forwardings, please forward those ports manually if necessary!"
+     IDS_UPNPSUCCESS         "UPnP成功建立了端口%u(TCP) 和 %u(UDP)的端口映射"  //"UPnP successfully set up forwardings for ports %u (TCP) and %u (UDP)"
+diff --git a/srchybrid/lang/zh_TW.rc b/srchybrid/lang/zh_TW.rc
+index 0ce67c8..a6c0ecb 100644
+--- a/srchybrid/lang/zh_TW.rc
++++ b/srchybrid/lang/zh_TW.rc
+@@ -1870,6 +1870,7 @@ END
+ STRINGTABLE
+ BEGIN
+     IDS_UPNPSTART           "使用 UPnP 來設定連接埠"
++    IDS_NATTRAVERSAL        "在 低-ID 之間使用 NAT 穿透 (重新啟動後生效)"
+     IDS_UPNPSETUP           "嘗試以 UPnP 設定連接埠轉向..."
+     IDS_UPNPFAILED          "UPnP 連接埠轉向設定失敗, 假如需要請手動轉向那些連接埠!"
+     IDS_UPNPSUCCESS         "UPnP 設定連接埠 %u (TCP) 及 %u (UDP) 轉向成功"
