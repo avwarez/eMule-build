@@ -325,17 +325,17 @@ index bb97efe..996ec86 100644
  	UINT	m_uTimeOut;
  	uint8	byConnected;
 diff --git a/srchybrid/Emule.cpp b/srchybrid/Emule.cpp
-index 01c8035..2c5c1a5 100644
+index 01c8035..6942293 100644
 --- a/srchybrid/Emule.cpp
 +++ b/srchybrid/Emule.cpp
-@@ -65,6 +65,7 @@
- #include "FirewallCheck.h"
- #include "UploadDiskIOThread.h"
- #include "PartFileWriteThread.h"
+@@ -51,6 +51,7 @@
+ #include "ServerConnect.h"
+ #include "ListenSocket.h"
+ #include "ClientCredits.h"
 +#include "NatTraversal.h"
- 
- #ifdef _DEBUG
- #define new DEBUG_NEW
+ #include "KnownFileList.h"
+ #include "Server.h"
+ #include "ED2KLink.h"
 @@ -525,6 +526,7 @@ BOOL CemuleApp::InitInstance()
  	sharedfiles = new CSharedFileList(serverconnect);
  	listensocket = new CListenSocket();
@@ -345,37 +345,37 @@ index 01c8035..2c5c1a5 100644
  	downloadqueue = new CDownloadQueue();	// bugfix - do this before creating the upload queue
  	uploadqueue = new CUploadQueue();
 diff --git a/srchybrid/Emule.h b/srchybrid/Emule.h
-index 6243994..0e7a2b8 100644
+index 6243994..75ddf15 100644
 --- a/srchybrid/Emule.h
 +++ b/srchybrid/Emule.h
-@@ -50,6 +50,7 @@ class CUPnPImplWrapper;
- class CFirewallCheck;
- class CUploadDiskIOThread;
- class CPartFileWriteThread;
+@@ -40,6 +40,7 @@ class CServerConnect;
+ class CServerList;
+ class CSharedFileList;
+ class CClientCreditsList;
 +class CNatTraversal;
- 
- struct SLogItem;
- 
-@@ -94,6 +95,7 @@ public:
- 	CFirewallCheck		*m_pFirewallCheck;
- 	CUploadDiskIOThread	*m_pUploadDiskIOThread;
- 	CPartFileWriteThread *m_pPartFileWriteThread;
+ class CFriendList;
+ class CClientUDPSocket;
+ class CIPFilter;
+@@ -87,6 +88,7 @@ public:
+ 	CClientCreditsList	*clientcredits;
+ 	CFriendList			*friendlist;
+ 	CClientUDPSocket	*clientudp;
 +	CNatTraversal		*nattraversal;
- 
- 
- 	static const UINT	m_nVersionMjr;
+ 	CIPFilter			*ipfilter;
+ 	CWebServer			*webserver;
+ 	CScheduler			*scheduler;
 diff --git a/srchybrid/EmuleDlg.cpp b/srchybrid/EmuleDlg.cpp
-index fa40464..d8d2ca8 100644
+index fa40464..48c6b12 100644
 --- a/srchybrid/EmuleDlg.cpp
 +++ b/srchybrid/EmuleDlg.cpp
-@@ -99,6 +99,7 @@
- #include "ExitBox.h"
- #include "UploadDiskIOThread.h"
- #include "PartFileWriteThread.h"
+@@ -90,6 +90,7 @@
+ #include "MiniMule.h"
+ #include "UserMsgs.h"
+ #include "TextToSpeech.h"
 +#include "NatTraversal.h"
- #include "ImportParts.h"
- #include "ClientCredits.h"
- 
+ #include "Collection.h"
+ #include "CollectionViewDialog.h"
+ #include "UPnPImpl.h"
 @@ -234,6 +235,7 @@ CemuleDlg::CemuleDlg(CWnd *pParent /*=NULL*/)
  	, m_bStartMinimized()
  	, m_bMsgBlinkState()
@@ -384,33 +384,31 @@ index fa40464..d8d2ca8 100644
  	, m_bKadSuspendDisconnect()
  	, m_bEd2kSuspendDisconnect()
  	, m_bInitedCOM()
-@@ -728,13 +730,10 @@ void CALLBACK CemuleDlg::StartupTimer(HWND /*hwnd*/, UINT /*uiMsg*/, UINT_PTR /*
+@@ -728,9 +730,11 @@ void CALLBACK CemuleDlg::StartupTimer(HWND /*hwnd*/, UINT /*uiMsg*/, UINT_PTR /*
  					AddLogLine(true, GetResString(IDS_MAIN_READY), (LPCTSTR)theApp.m_strCurVersionLong);
  
  				theApp.m_app_state = APP_STATE_RUNNING; //initialization completed
 -				theApp.emuledlg->toolbar->EnableButton(TBBTN_CONNECT, TRUE);
 -				theApp.emuledlg->m_SysMenuOptions.EnableMenuItem(MP_CONNECT, MF_ENABLED);
 -				theApp.emuledlg->serverwnd->GetDlgItem(IDC_ED2KCONNECT)->EnableWindow();
-+				// the connect buttons and the automatic connection wait for UPnP and the NAT discovery
++				// the connect buttons and the automatic connection wait for UPnP and the NAT discovery:
++				// over at once, the connection below goes; else it does nothing (StartConnection), and
++				// EndStartupNetCheck connects when they end
 +				theApp.emuledlg->m_bStartupNetCheck = true;
++				theApp.emuledlg->EndStartupNetCheck(false);
  				theApp.emuledlg->kademliawnd->UpdateControlsState(); //application state change is not tracked - force update
--
--				if (thePrefs.DoAutoConnect())
--					theApp.emuledlg->OnBnClickedConnect();
-+				theApp.emuledlg->EndStartupNetCheck();
  
- 				theApp.emuledlg->UpdateStatusBarProgress();
- 			}
-@@ -1041,6 +1040,8 @@ void CemuleDlg::ShowConnectionState()
+ 				if (thePrefs.DoAutoConnect())
+@@ -1039,6 +1043,8 @@ void CemuleDlg::ShowConnectionState()
+ 			toolbar->SetButtonInfo(TBBTN_CONNECT, &tbbi);
+ 			strPane.Remove(_T('&'));
  			theApp.emuledlg->m_SysMenuOptions.ModifyMenu(MP_DISCONNECT, MF_STRING, MP_CONNECT, strPane);
++			if (m_bStartupNetCheck)	// ModifyMenu enabled it
++				m_SysMenuOptions.EnableMenuItem(MP_CONNECT, MF_GRAYED);
  		}
  	}
-+	if (m_bStartupNetCheck)	// ModifyMenu enabled it
-+		m_SysMenuOptions.EnableMenuItem(MP_CONNECT, MF_GRAYED);
  	ShowUserCount();
- 	UpdateThumbBarButtons();
- }
-@@ -1747,8 +1748,10 @@ void CemuleDlg::OnClose()
+@@ -1747,8 +1753,10 @@ void CemuleDlg::OnClose()
  	// NOTE: Do not move those dtors into 'CemuleApp::InitInstance' (although they should be there). The
  	// dtors are indirectly calling functions which access several windows which would not be available
  	// after we have closed the main window -> crash!
@@ -421,7 +419,7 @@ index fa40464..d8d2ca8 100644
  	delete theApp.sharedfiles;				theApp.sharedfiles = NULL;
  	delete theApp.serverconnect;			theApp.serverconnect = NULL;
  	delete theApp.serverlist;				theApp.serverlist = NULL;		// CServerList::SaveServermetToFile
-@@ -1935,6 +1938,8 @@ void CemuleDlg::AddSpeedSelectorMenus(CMenu *addToMenu)
+@@ -1935,6 +1943,8 @@ void CemuleDlg::AddSpeedSelectorMenus(CMenu *addToMenu)
  
  void CemuleDlg::StartConnection()
  {
@@ -430,11 +428,11 @@ index fa40464..d8d2ca8 100644
  	if ((!theApp.serverconnect->IsConnecting() && !theApp.serverconnect->IsConnected()) || !Kademlia::CKademlia::IsRunning()) {
  		// UPnP is still trying to open the ports. In order to not get a LowID by connecting to the servers / kad before
  		// the ports are opened we delay the connection until UPnP gets a result or the timeout is reached
-@@ -1965,6 +1970,21 @@ void CemuleDlg::StartConnection()
+@@ -1965,6 +1975,21 @@ void CemuleDlg::StartConnection()
  	m_bKadSuspendDisconnect = false;
  }
  
-+void CemuleDlg::EndStartupNetCheck()
++void CemuleDlg::EndStartupNetCheck(bool bAutoConnect)
 +{
 +	// UPnP first (OnUPnPResult comes back here), then the NAT discovery, so that the login
 +	// announces what it found (CNatTraversal::Process comes back here)
@@ -445,14 +443,14 @@ index fa40464..d8d2ca8 100644
 +	m_SysMenuOptions.EnableMenuItem(MP_CONNECT, MF_ENABLED);
 +	serverwnd->GetDlgItem(IDC_ED2KCONNECT)->EnableWindow();
 +	kademliawnd->UpdateControlsState();
-+	if (thePrefs.DoAutoConnect())
++	if (bAutoConnect && thePrefs.DoAutoConnect())
 +		OnBnClickedConnect();
 +}
 +
  void CemuleDlg::CloseConnection()
  {
  	theApp.serverconnect->StopConnectionTry();
-@@ -3415,6 +3435,8 @@ LRESULT CemuleDlg::OnUPnPResult(WPARAM wParam, LPARAM lParam)
+@@ -3415,6 +3440,8 @@ LRESULT CemuleDlg::OnUPnPResult(WPARAM wParam, LPARAM lParam)
  
  	if (theApp.IsRunning() && m_bConnectRequestDelayedForUPnP)
  		StartConnection();
@@ -462,7 +460,7 @@ index fa40464..d8d2ca8 100644
  	return 0;
  }
 diff --git a/srchybrid/EmuleDlg.h b/srchybrid/EmuleDlg.h
-index eba5ed1..58bc8e2 100644
+index eba5ed1..e5f3f06 100644
 --- a/srchybrid/EmuleDlg.h
 +++ b/srchybrid/EmuleDlg.h
 @@ -78,6 +78,11 @@ public:
@@ -471,7 +469,7 @@ index eba5ed1..58bc8e2 100644
  	void ShowConnectionState();
 +	// At startup, once UPnP (when enabled) and the NAT discovery are over, the connect buttons
 +	// are enabled and the automatic connection starts; called again by both when they end
-+	void EndStartupNetCheck();
++	void EndStartupNetCheck(bool bAutoConnect = true);
 +	// At startup, until UPnP and the NAT discovery are over: the connect buttons are disabled
 +	bool IsStartupNetCheck() const					{ return m_bStartupNetCheck; }
  	void ShowNotifier(LPCTSTR pszText, TbnMsg nMsgType, LPCTSTR pszLink = NULL, bool bForceSoundOFF = false);
@@ -2687,25 +2685,25 @@ index 139f6b3..b13c0b5 100644
  // values for CT_SERVER_UDPSEARCH_FLAGS
  #define SRVCAP_UDP_NEWTAGS_LARGEFILES	0x01
 diff --git a/srchybrid/PPgConnection.cpp b/srchybrid/PPgConnection.cpp
-index 24a3f66..7626f71 100644
+index 24a3f66..f096d47 100644
 --- a/srchybrid/PPgConnection.cpp
 +++ b/srchybrid/PPgConnection.cpp
-@@ -62,6 +62,7 @@ BEGIN_MESSAGE_MAP(CPPgConnection, CPropertyPage)
+@@ -59,6 +59,7 @@ BEGIN_MESSAGE_MAP(CPPgConnection, CPropertyPage)
+ 	ON_BN_CLICKED(IDC_WIZARD, OnBnClickedWizard)
+ 	ON_BN_CLICKED(IDC_NETWORK_ED2K, OnSettingsChange)
+ 	ON_BN_CLICKED(IDC_SHOWOVERHEAD, OnSettingsChange)
++	ON_BN_CLICKED(IDC_PREF_NATTRAVERSAL, OnSettingsChange)
  	ON_BN_CLICKED(IDC_ULIMIT_LBL, OnLimiterChange)
  	ON_BN_CLICKED(IDC_DLIMIT_LBL, OnLimiterChange)
  	ON_WM_HSCROLL()
-+	ON_BN_CLICKED(IDC_PREF_NATTRAVERSAL, OnSettingsChange)
- 	ON_BN_CLICKED(IDC_NETWORK_KADEMLIA, OnSettingsChange)
- 	ON_WM_HELPINFO()
- 	ON_BN_CLICKED(IDC_PREF_UPNPONSTART, OnSettingsChange)
-@@ -195,6 +196,7 @@ void CPPgConnection::LoadSettings()
- 		CheckDlgButton(IDC_NETWORK_ED2K, static_cast<UINT>(thePrefs.networked2k));
- 
- 		CheckDlgButton(IDC_PREF_UPNPONSTART, static_cast<UINT>(thePrefs.IsUPnPEnabled()));
+@@ -190,6 +191,7 @@ void CPPgConnection::LoadSettings()
+ 		CheckDlgButton(IDC_RECONN, static_cast<UINT>(thePrefs.reconnect));
+ 		CheckDlgButton(IDC_SHOWOVERHEAD, static_cast<UINT>(thePrefs.m_bshowoverhead));
+ 		CheckDlgButton(IDC_AUTOCONNECT, static_cast<UINT>(thePrefs.autoconnect));
 +		CheckDlgButton(IDC_PREF_NATTRAVERSAL, static_cast<UINT>(thePrefs.IsNatTraversalEnabled()));
- 
- 		//ShowLimitValues(); - will be called in OnLimiterChange()
- 		OnLimiterChange();
+ 		CheckDlgButton(IDC_NETWORK_KADEMLIA, static_cast<UINT>(thePrefs.GetNetworkKademlia()));
+ 		GetDlgItem(IDC_NETWORK_KADEMLIA)->EnableWindow(thePrefs.GetUDPPort() > 0);
+ 		CheckDlgButton(IDC_NETWORK_ED2K, static_cast<UINT>(thePrefs.networked2k));
 @@ -324,6 +326,9 @@ BOOL CPPgConnection::OnApply()
  			theApp.emuledlg->preferenceswnd->m_wndWebServer.SetUPnPState();
  	}
@@ -2716,14 +2714,14 @@ index 24a3f66..7626f71 100644
  	theApp.scheduler->SaveOriginals();
  
  	SetModified(FALSE);
-@@ -364,6 +369,7 @@ void CPPgConnection::Localize()
- 		SetDlgItemText(IDC_UDPDISABLE, GetResString(IDS_UDPDISABLED));
- 		SetDlgItemText(IDC_STARTTEST, GetResString(IDS_STARTTEST));
- 		SetDlgItemText(IDC_PREF_UPNPONSTART, GetResString(IDS_UPNPSTART));
+@@ -359,6 +364,7 @@ void CPPgConnection::Localize()
+ 		SetDlgItemText(IDC_MAXSRC_FRM, GetResString(IDS_PW_MAXSOURCES));
+ 		SetDlgItemText(IDC_AUTOCONNECT, GetResString(IDS_PW_AUTOCON));
+ 		SetDlgItemText(IDC_RECONN, GetResString(IDS_PW_RECON));
 +		SetDlgItemText(IDC_PREF_NATTRAVERSAL, GetResString(IDS_NATTRAVERSAL));
- 		ShowLimitValues();
- 	}
- }
+ 		SetDlgItemText(IDC_MAXSRCHARD_LBL, GetResString(IDS_HARDLIMIT));
+ 		SetDlgItemText(IDC_WIZARD, GetResString(IDS_WIZARD) + _T("..."));
+ 		SetDlgItemText(IDC_UDPDISABLE, GetResString(IDS_UDPDISABLED));
 diff --git a/srchybrid/PartFile.cpp b/srchybrid/PartFile.cpp
 index 0053cff..1a165a2 100644
 --- a/srchybrid/PartFile.cpp
@@ -2757,17 +2755,17 @@ index 0053cff..1a165a2 100644
  			++(*pdebug_lowiddropped);
  		return false;
 diff --git a/srchybrid/Preferences.cpp b/srchybrid/Preferences.cpp
-index a66e9c6..51cfb3e 100644
+index a66e9c6..bdf01f3 100644
 --- a/srchybrid/Preferences.cpp
 +++ b/srchybrid/Preferences.cpp
-@@ -462,6 +462,7 @@ uint32	CPreferences::m_dwKadUDPKey;
- uint8	CPreferences::m_byCryptTCPPaddingLength;
- 
- bool	CPreferences::m_bEnableUPnP;
-+bool	CPreferences::m_bNatTraversal;
- bool	CPreferences::m_bCloseUPnPOnExit;
+@@ -466,6 +466,7 @@ bool	CPreferences::m_bCloseUPnPOnExit;
  int		CPreferences::m_nLastWorkingImpl;
  
+ bool	CPreferences::m_bEnableSearchResultFilter;
++bool	CPreferences::m_bNatTraversal;
+ 
+ BOOL	CPreferences::m_bIsRunningAeroGlass;
+ bool	CPreferences::m_bPreventStandby;
 @@ -1812,6 +1813,11 @@ void CPreferences::SavePreferences()
  	ini.WriteBool(_T("CloseUPnPOnExit"), m_bCloseUPnPOnExit);
  	ini.WriteInt(_T("LastWorkingImplementation"), m_nLastWorkingImpl);
@@ -2780,41 +2778,38 @@ index a66e9c6..51cfb3e 100644
  	ini.Store();
  }
  
-@@ -2380,6 +2386,11 @@ void CPreferences::LoadPreferences()
- 	m_bCloseUPnPOnExit = ini.GetBool(_T("CloseUPnPOnExit"), true);
- 	m_nLastWorkingImpl = ini.GetInt(_T("LastWorkingImplementation"), 1 /*UPNP_IMPL_LIBPLUM*/);
+@@ -2373,6 +2379,11 @@ void CPreferences::LoadPreferences()
+ 	m_sWebHttpsCertificate = ini.GetString(_T("HTTPSCertificate"), _T(""));
+ 	m_sWebHttpsKey = ini.GetString(_T("HTTPSKey"), _T(""));
  
 +	///////////////////////////////////////////////////////////////////////////
 +	// Section: "NatTraversal"
 +	//
 +	m_bNatTraversal = ini.GetBool(_T("Enabled"), true, _T("NatTraversal"));
 +
- 	LoadCats();
- 	SetLanguage();
- }
+ 	///////////////////////////////////////////////////////////////////////////
+ 	// Section: "UPnP"
+ 	//
 diff --git a/srchybrid/Preferences.h b/srchybrid/Preferences.h
-index fae426c..a94bd70 100644
+index fae426c..8f52cf1 100644
 --- a/srchybrid/Preferences.h
 +++ b/srchybrid/Preferences.h
-@@ -632,6 +632,9 @@ public:
- 	static bool		m_bCloseUPnPOnExit;
- 	static int		m_nLastWorkingImpl;
+@@ -634,6 +634,7 @@ public:
  
-+	// NAT traversal between LowIDs (CNatTraversal reads it once, at startup)
-+	static bool		m_bNatTraversal;
-+
  	// Spam
  	static bool		m_bEnableSearchResultFilter;
++	static bool		m_bNatTraversal;		// NAT traversal between LowIDs (CNatTraversal reads it at startup)
  
-@@ -1385,6 +1388,8 @@ public:
- 	static int		GetLastWorkingUPnPImpl()			{ return m_nLastWorkingImpl; }
- 	static void		SetLastWorkingUPnPImpl(int val)		{ m_nLastWorkingImpl = val; }
+ 	static BOOL		m_bIsRunningAeroGlass;
+ 	static bool		m_bPreventStandby;
+@@ -1387,6 +1388,7 @@ public:
  
-+	static bool		IsNatTraversalEnabled()				{ return m_bNatTraversal; }
-+
  	// Spam filter
  	static bool		IsSearchSpamFilterEnabled()			{ return m_bEnableSearchResultFilter; }
++	static bool		IsNatTraversalEnabled()				{ return m_bNatTraversal; }
  
+ 	static bool		IsStoringSearchesEnabled()			{ return m_bStoreSearches; }
+ 	static bool		GetPreventStandby()					{ return m_bPreventStandby; }
 diff --git a/srchybrid/Resource.h b/srchybrid/Resource.h
 index aa656c4..711f92e 100644
 --- a/srchybrid/Resource.h
@@ -2940,7 +2935,7 @@ index 8a9c94b..9a11609 100644
  			theStats.CompUpDatarateOverhead();
  			theStats.CompDownDatarateOverhead();
 diff --git a/srchybrid/emule.rc b/srchybrid/emule.rc
-index 2d128cc..0b9ce2d 100644
+index 2d128cc..330a6d9 100644
 --- a/srchybrid/emule.rc
 +++ b/srchybrid/emule.rc
 @@ -336,7 +336,7 @@ BEGIN
@@ -2948,58 +2943,19 @@ index 2d128cc..0b9ce2d 100644
  END
  
 -IDD_PPG_CONNECTION DIALOGEX 0, 0, 231, 228
-+IDD_PPG_CONNECTION DIALOGEX 0, 0, 231, 238
++IDD_PPG_CONNECTION DIALOGEX 0, 0, 231, 241
  STYLE DS_SHELLFONT | WS_CHILD | WS_DISABLED | WS_CAPTION
  CAPTION "Connection"
  FONT 8, "MS Shell Dlg", 0, 0, 0x0
-@@ -351,17 +351,17 @@ BEGIN
-     EDITTEXT        IDC_UDPPORT,29,100,38,12,ES_AUTOHSCROLL | ES_NUMBER
-     CONTROL         "disable",IDC_UDPDISABLE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,71,102,51,9
-     PUSHBUTTON      "Test Ports",IDC_STARTTEST,149,99,71,14
--    EDITTEXT        IDC_MAXSOURCEPERFILE,11,153,38,12,ES_AUTOHSCROLL | ES_NUMBER
--    EDITTEXT        IDC_MAXCON,117,153,38,12,ES_AUTOHSCROLL | ES_NUMBER
--    CONTROL         "Autoconnect on startup",IDC_AUTOCONNECT,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,4,178,138,10
--    CONTROL         "Reconnect on loss",IDC_RECONN,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,4,188,140,10
--    CONTROL         "Show overhead bandwidth",IDC_SHOWOVERHEAD,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,4,198,139,10
--    PUSHBUTTON      "Wizard...",IDC_WIZARD,4,211,50,14
--    CONTROL         "Kad",IDC_NETWORK_KADEMLIA,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,160,184,57,10
--    CONTROL         "eD2K",IDC_NETWORK_ED2K,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,160,194,58,10
--    GROUPBOX        "Client Port:",IDC_CLIENTPORT_FRM,4,74,223,57
--    GROUPBOX        "Max. Sources/File",IDC_MAXSRC_FRM,4,132,100,40
--    GROUPBOX        "Max. connections:",IDC_MAXCONN_FRM,110,132,117,40
-+    EDITTEXT        IDC_MAXSOURCEPERFILE,11,163,38,12,ES_AUTOHSCROLL | ES_NUMBER
-+    EDITTEXT        IDC_MAXCON,117,163,38,12,ES_AUTOHSCROLL | ES_NUMBER
-+    CONTROL         "Autoconnect on startup",IDC_AUTOCONNECT,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,4,188,138,10
-+    CONTROL         "Reconnect on loss",IDC_RECONN,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,4,198,140,10
-+    CONTROL         "Show overhead bandwidth",IDC_SHOWOVERHEAD,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,4,208,139,10
-+    PUSHBUTTON      "Wizard...",IDC_WIZARD,4,221,50,14
-+    CONTROL         "Kad",IDC_NETWORK_KADEMLIA,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,160,194,57,10
-+    CONTROL         "eD2K",IDC_NETWORK_ED2K,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,160,204,58,10
-+    GROUPBOX        "Client Port:",IDC_CLIENTPORT_FRM,4,74,223,67
-+    GROUPBOX        "Max. Sources/File",IDC_MAXSRC_FRM,4,142,100,40
-+    GROUPBOX        "Max. connections:",IDC_MAXCONN_FRM,110,142,117,40
-     GROUPBOX        "Capacities:",IDC_CAPACITIES_FRM,4,2,67,70
-     CONTROL         "Download",IDC_DCAP_LBL,"Static",SS_LEFTNOWORDWRAP | WS_GROUP,11,13,58,8
-     LTEXT           "KB/s",IDC_KBS2,45,25,22,8
-@@ -370,13 +370,15 @@ BEGIN
-     GROUPBOX        "Limits:",IDC_LIMITS_FRM,77,2,149,70
-     RTEXT           "KB/s",IDC_KBS1,176,13,44,8
-     RTEXT           "KB/s",IDC_KBS4,176,43,44,8
--    LTEXT           "Hard limit",IDC_MAXSRCHARD_LBL,11,143,82,8
-+    LTEXT           "Hard limit",IDC_MAXSRCHARD_LBL,11,153,82,8
-     LTEXT           "UDP",IDC_UDPPORTLABEL,11,103,16,8
--    LTEXT           "Static",IDC_MAXCONLABEL,117,143,86,8
-+    LTEXT           "Static",IDC_MAXCONLABEL,117,153,86,8
-     LTEXT           "TCP",IDC_STATIC,11,86,17,8
--    GROUPBOX        "Network",IDC_CONNECTION_NETWORK,153,174,74,34
-+    GROUPBOX        "Network",IDC_CONNECTION_NETWORK,153,184,74,34
-     CONTROL         "Use UPnP to set up Port Forwarding",IDC_PREF_UPNPONSTART,
-                     "Button",BS_AUTOCHECKBOX | WS_TABSTOP,11,116,208,10
+@@ -357,6 +357,8 @@ BEGIN
+     CONTROL         "Reconnect on loss",IDC_RECONN,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,4,188,140,10
+     CONTROL         "Show overhead bandwidth",IDC_SHOWOVERHEAD,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,4,198,139,10
+     PUSHBUTTON      "Wizard...",IDC_WIZARD,4,211,50,14
 +    CONTROL         "Use NAT traversal between LowIDs (on restart)",IDC_PREF_NATTRAVERSAL,
-+                    "Button",BS_AUTOCHECKBOX | WS_TABSTOP,11,127,208,10
- END
- 
- IDD_WIZARD DIALOGEX 0, 0, 257, 223
++                    "Button",BS_AUTOCHECKBOX | WS_TABSTOP,4,228,220,10
+     CONTROL         "Kad",IDC_NETWORK_KADEMLIA,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,160,184,57,10
+     CONTROL         "eD2K",IDC_NETWORK_ED2K,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,160,194,58,10
+     GROUPBOX        "Client Port:",IDC_CLIENTPORT_FRM,4,74,223,57
 @@ -3652,6 +3654,7 @@ END
  STRINGTABLE
  BEGIN
