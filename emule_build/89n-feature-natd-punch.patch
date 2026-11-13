@@ -582,10 +582,10 @@ index 15674a1..5b2cc4d 100644
  				if (md4equ(reqfilehash, sender->GetUploadFileID())) {
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
 new file mode 100644
-index 0000000..d2c5c4c
+index 0000000..884b4ec
 --- /dev/null
 +++ b/srchybrid/NatTraversal.cpp
-@@ -0,0 +1,1770 @@
+@@ -0,0 +1,1783 @@
 +//this file is part of eMule
 +//Copyright (C)2002-2026 Merkur ( strEmail.Format("%s@%s", "devteam", "emule-project.net") / https://www.emule-project.net )
 +//
@@ -1483,7 +1483,10 @@ index 0000000..d2c5c4c
 +
 +CNatTraversal::CNatTraversal()
 +	: m_pImpl(std::make_unique<Impl>())
++	, m_bEnabled(thePrefs.IsNatTraversalEnabled())
 +{
++	if (!m_bEnabled)
++		theApp.QueueLogLine(false, _T("NAT traversal: off in the preferences, no NAT discovery and no punch"));	// before the window
 +}
 +
 +// The natd counters, for an investigation: once an hour.
@@ -1531,6 +1534,8 @@ index 0000000..d2c5c4c
 +// all the rest of the client UDP traffic (Kad, eD2K) goes on at once, without the lock
 +bool CNatTraversal::OnDatagram(const BYTE *pData, int nLen, uint32 dwIP, uint16 nPort)
 +{
++	if (!m_bEnabled)
++		return false;
 +	const bool bNatd = nLen > 0 && (natd::proto::isNatdPacket(pData, (size_t)nLen) || natd::stun::isStunPacket(pData, (size_t)nLen));
 +	if (!bNatd && (nLen <= 0 || pData[0] != OP_UDPRESERVEDPROT1))
 +		return false;
@@ -1551,6 +1556,8 @@ index 0000000..d2c5c4c
 +
 +void CNatTraversal::Process()
 +{
++	if (!m_bEnabled)
++		return;
 +	Impl &impl = *m_pImpl;
 +	const natd::TimePoint now = natd::Clock::now();
 +	CSingleLock lock(&impl.cs, TRUE);
@@ -1597,6 +1604,8 @@ index 0000000..d2c5c4c
 +// same block.
 +bool CNatTraversal::DelayConnection()
 +{
++	if (!m_bEnabled)
++		return false;
 +	Impl &impl = *m_pImpl;
 +	CSingleLock lock(&impl.cs, TRUE);
 +	if (impl.pAgent->profileReady() || theApp.clientudp == NULL || theApp.clientudp->m_hSocket == INVALID_SOCKET)
@@ -1765,6 +1774,8 @@ index 0000000..d2c5c4c
 +// Lugdunum's NAT callback: <IP 4><UDP port 2> as the server saw them, then the request
 +void CNatTraversal::OnServerCallback(const BYTE *pData, uint32 nSize, bool bUdp)
 +{
++	if (!m_bEnabled)
++		return;
 +	LPCTSTR pszHow = bUdp ? _T("UDP") : _T("TCP");
 +	if (nSize < 6) {
 +		if (thePrefs.GetVerbose())
@@ -1954,7 +1965,7 @@ index 0000000..d2c5c4c
 +// the login normally comes after the discovery (DelayConnection)
 +bool CNatTraversal::AnnounceServerPunch() const
 +{
-+	return !m_pImpl->pAgent->profileReady() || m_pImpl->pAgent->punchable();
++	return m_bEnabled && (!m_pImpl->pAgent->profileReady() || m_pImpl->pAgent->punchable());
 +}
 +
 +bool CNatTraversal::ServerCanPunch(uint32 nID, uint32 dwServerIP, uint16 nServerPort) const
@@ -2070,6 +2081,8 @@ index 0000000..d2c5c4c
 +// in its 20 s, a few punches at once).
 +bool CNatTraversal::StartIncoming(const SNatCallback &cb, uint64 nNonce, uint8 byVia, const uchar *pFileHash)
 +{
++	if (!m_bEnabled)
++		return false;
 +	if (byVia == NATD_VIA_BUDDY && (!cb.bBuddy || pFileHash == NULL)) {
 +		if (thePrefs.GetVerbose())
 +			AddDebugLogLine(false, _T("NAT traversal: punch request through our buddy from %s:%u not taken: no buddy of the requester to answer through"), (LPCTSTR)ipstr(cb.dwIP), cb.nPort);
@@ -2358,10 +2371,10 @@ index 0000000..d2c5c4c
 +}
 diff --git a/srchybrid/NatTraversal.h b/srchybrid/NatTraversal.h
 new file mode 100644
-index 0000000..5f0b3cc
+index 0000000..a814717
 --- /dev/null
 +++ b/srchybrid/NatTraversal.h
-@@ -0,0 +1,267 @@
+@@ -0,0 +1,271 @@
 +//this file is part of eMule
 +//Copyright (C)2002-2026 Merkur ( strEmail.Format("%s@%s", "devteam", "emule-project.net") / https://www.emule-project.net )
 +//
@@ -2473,6 +2486,9 @@ index 0000000..5f0b3cc
 +	CNatTraversal(const CNatTraversal&) = delete;
 +	CNatTraversal& operator=(const CNatTraversal&) = delete;
 +
++	// The preference, as it was at startup: off, there is no discovery and no punch, nothing
++	// is announced or published, and eMule is the plain eMule (a user with forwarded ports).
++	bool	IsEnabled() const	{ return m_bEnabled; }
 +	// A datagram received on the client UDP socket, before the IP filter and before eMule
 +	// decrypts or parses it: true when it was NAT traversal's (and is then done with). natd
 +	// takes its own only from the endpoints it addressed, the STUN servers among them, which
@@ -2560,6 +2576,7 @@ index 0000000..5f0b3cc
 +
 +	struct Impl;
 +	std::unique_ptr<Impl> m_pImpl;
++	const bool m_bEnabled;
 +};
 +
 +// Under a CClientReqSocket whose eD2K stream goes over a punched UDP path. The socket handle
@@ -2669,6 +2686,44 @@ index 139f6b3..b13c0b5 100644
  
  // values for CT_SERVER_UDPSEARCH_FLAGS
  #define SRVCAP_UDP_NEWTAGS_LARGEFILES	0x01
+diff --git a/srchybrid/PPgConnection.cpp b/srchybrid/PPgConnection.cpp
+index 24a3f66..7626f71 100644
+--- a/srchybrid/PPgConnection.cpp
++++ b/srchybrid/PPgConnection.cpp
+@@ -62,6 +62,7 @@ BEGIN_MESSAGE_MAP(CPPgConnection, CPropertyPage)
+ 	ON_BN_CLICKED(IDC_ULIMIT_LBL, OnLimiterChange)
+ 	ON_BN_CLICKED(IDC_DLIMIT_LBL, OnLimiterChange)
+ 	ON_WM_HSCROLL()
++	ON_BN_CLICKED(IDC_PREF_NATTRAVERSAL, OnSettingsChange)
+ 	ON_BN_CLICKED(IDC_NETWORK_KADEMLIA, OnSettingsChange)
+ 	ON_WM_HELPINFO()
+ 	ON_BN_CLICKED(IDC_PREF_UPNPONSTART, OnSettingsChange)
+@@ -195,6 +196,7 @@ void CPPgConnection::LoadSettings()
+ 		CheckDlgButton(IDC_NETWORK_ED2K, static_cast<UINT>(thePrefs.networked2k));
+ 
+ 		CheckDlgButton(IDC_PREF_UPNPONSTART, static_cast<UINT>(thePrefs.IsUPnPEnabled()));
++		CheckDlgButton(IDC_PREF_NATTRAVERSAL, static_cast<UINT>(thePrefs.IsNatTraversalEnabled()));
+ 
+ 		//ShowLimitValues(); - will be called in OnLimiterChange()
+ 		OnLimiterChange();
+@@ -324,6 +326,9 @@ BOOL CPPgConnection::OnApply()
+ 			theApp.emuledlg->preferenceswnd->m_wndWebServer.SetUPnPState();
+ 	}
+ 
++	// read at startup only (CNatTraversal): the login announces it, before any check could change
++	thePrefs.m_bNatTraversal = IsDlgButtonChecked(IDC_PREF_NATTRAVERSAL) != 0;
++
+ 	theApp.scheduler->SaveOriginals();
+ 
+ 	SetModified(FALSE);
+@@ -364,6 +369,7 @@ void CPPgConnection::Localize()
+ 		SetDlgItemText(IDC_UDPDISABLE, GetResString(IDS_UDPDISABLED));
+ 		SetDlgItemText(IDC_STARTTEST, GetResString(IDS_STARTTEST));
+ 		SetDlgItemText(IDC_PREF_UPNPONSTART, GetResString(IDS_UPNPSTART));
++		SetDlgItemText(IDC_PREF_NATTRAVERSAL, GetResString(IDS_NATTRAVERSAL));
+ 		ShowLimitValues();
+ 	}
+ }
 diff --git a/srchybrid/PartFile.cpp b/srchybrid/PartFile.cpp
 index 0053cff..1a165a2 100644
 --- a/srchybrid/PartFile.cpp
@@ -2701,6 +2756,95 @@ index 0053cff..1a165a2 100644
  		if (pdebug_lowiddropped)
  			++(*pdebug_lowiddropped);
  		return false;
+diff --git a/srchybrid/Preferences.cpp b/srchybrid/Preferences.cpp
+index a66e9c6..51cfb3e 100644
+--- a/srchybrid/Preferences.cpp
++++ b/srchybrid/Preferences.cpp
+@@ -462,6 +462,7 @@ uint32	CPreferences::m_dwKadUDPKey;
+ uint8	CPreferences::m_byCryptTCPPaddingLength;
+ 
+ bool	CPreferences::m_bEnableUPnP;
++bool	CPreferences::m_bNatTraversal;
+ bool	CPreferences::m_bCloseUPnPOnExit;
+ int		CPreferences::m_nLastWorkingImpl;
+ 
+@@ -1812,6 +1813,11 @@ void CPreferences::SavePreferences()
+ 	ini.WriteBool(_T("CloseUPnPOnExit"), m_bCloseUPnPOnExit);
+ 	ini.WriteInt(_T("LastWorkingImplementation"), m_nLastWorkingImpl);
+ 
++	///////////////////////////////////////////////////////////////////////////
++	// Section: "NatTraversal"
++	//
++	ini.WriteBool(_T("Enabled"), m_bNatTraversal, _T("NatTraversal"));
++
+ 	ini.Store();
+ }
+ 
+@@ -2380,6 +2386,11 @@ void CPreferences::LoadPreferences()
+ 	m_bCloseUPnPOnExit = ini.GetBool(_T("CloseUPnPOnExit"), true);
+ 	m_nLastWorkingImpl = ini.GetInt(_T("LastWorkingImplementation"), 1 /*UPNP_IMPL_LIBPLUM*/);
+ 
++	///////////////////////////////////////////////////////////////////////////
++	// Section: "NatTraversal"
++	//
++	m_bNatTraversal = ini.GetBool(_T("Enabled"), true, _T("NatTraversal"));
++
+ 	LoadCats();
+ 	SetLanguage();
+ }
+diff --git a/srchybrid/Preferences.h b/srchybrid/Preferences.h
+index fae426c..a94bd70 100644
+--- a/srchybrid/Preferences.h
++++ b/srchybrid/Preferences.h
+@@ -632,6 +632,9 @@ public:
+ 	static bool		m_bCloseUPnPOnExit;
+ 	static int		m_nLastWorkingImpl;
+ 
++	// NAT traversal between LowIDs (CNatTraversal reads it once, at startup)
++	static bool		m_bNatTraversal;
++
+ 	// Spam
+ 	static bool		m_bEnableSearchResultFilter;
+ 
+@@ -1385,6 +1388,8 @@ public:
+ 	static int		GetLastWorkingUPnPImpl()			{ return m_nLastWorkingImpl; }
+ 	static void		SetLastWorkingUPnPImpl(int val)		{ m_nLastWorkingImpl = val; }
+ 
++	static bool		IsNatTraversalEnabled()				{ return m_bNatTraversal; }
++
+ 	// Spam filter
+ 	static bool		IsSearchSpamFilterEnabled()			{ return m_bEnableSearchResultFilter; }
+ 
+diff --git a/srchybrid/Resource.h b/srchybrid/Resource.h
+index aa656c4..711f92e 100644
+--- a/srchybrid/Resource.h
++++ b/srchybrid/Resource.h
+@@ -1556,6 +1556,7 @@
+ #define IDS_IMPORTPARTS_IMPORTSTART     1607
+ #define IDS_IMPORTPARTS                 1608
+ #define IDS_IMPORTPARTS_STOP            1609
++#define IDS_NATTRAVERSAL                1610
+ #define IDC_ANIMATE1                    2000
+ #define IDC_STATUS                      2001
+ #define IDC_FILESTATUS                  2002
+@@ -2377,6 +2378,7 @@
+ #define IDC_CONNECTEDTXT                3045
+ #define IDC_COMPLTXT                    3046
+ #define IDC_SPACETXT                    3047
++#define IDC_PREF_NATTRAVERSAL           3048
+ #define IDA_ENTER                       32771
+ 
+ // Next default values for new objects
+@@ -2385,7 +2387,7 @@
+ #ifndef APSTUDIO_READONLY_SYMBOLS
+ #define _APS_NEXT_RESOURCE_VALUE        1568
+ #define _APS_NEXT_COMMAND_VALUE         32773
+-#define _APS_NEXT_CONTROL_VALUE         3048
+-#define _APS_NEXT_SYMED_VALUE           1610
++#define _APS_NEXT_CONTROL_VALUE         3049
++#define _APS_NEXT_SYMED_VALUE           1611
+ #endif
+ #endif
 diff --git a/srchybrid/ServerConnect.cpp b/srchybrid/ServerConnect.cpp
 index 46e7096..a74610b 100644
 --- a/srchybrid/ServerConnect.cpp
@@ -2795,6 +2939,75 @@ index 8a9c94b..9a11609 100644
  		if (thePrefs.ShowOverhead()) {
  			theStats.CompUpDatarateOverhead();
  			theStats.CompDownDatarateOverhead();
+diff --git a/srchybrid/emule.rc b/srchybrid/emule.rc
+index 2d128cc..0b9ce2d 100644
+--- a/srchybrid/emule.rc
++++ b/srchybrid/emule.rc
+@@ -336,7 +336,7 @@ BEGIN
+     PUSHBUTTON      "Add UNC path...",IDC_UNCADD,10,218,88,14,BS_CENTER
+ END
+ 
+-IDD_PPG_CONNECTION DIALOGEX 0, 0, 231, 228
++IDD_PPG_CONNECTION DIALOGEX 0, 0, 231, 238
+ STYLE DS_SHELLFONT | WS_CHILD | WS_DISABLED | WS_CAPTION
+ CAPTION "Connection"
+ FONT 8, "MS Shell Dlg", 0, 0, 0x0
+@@ -351,17 +351,17 @@ BEGIN
+     EDITTEXT        IDC_UDPPORT,29,100,38,12,ES_AUTOHSCROLL | ES_NUMBER
+     CONTROL         "disable",IDC_UDPDISABLE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,71,102,51,9
+     PUSHBUTTON      "Test Ports",IDC_STARTTEST,149,99,71,14
+-    EDITTEXT        IDC_MAXSOURCEPERFILE,11,153,38,12,ES_AUTOHSCROLL | ES_NUMBER
+-    EDITTEXT        IDC_MAXCON,117,153,38,12,ES_AUTOHSCROLL | ES_NUMBER
+-    CONTROL         "Autoconnect on startup",IDC_AUTOCONNECT,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,4,178,138,10
+-    CONTROL         "Reconnect on loss",IDC_RECONN,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,4,188,140,10
+-    CONTROL         "Show overhead bandwidth",IDC_SHOWOVERHEAD,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,4,198,139,10
+-    PUSHBUTTON      "Wizard...",IDC_WIZARD,4,211,50,14
+-    CONTROL         "Kad",IDC_NETWORK_KADEMLIA,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,160,184,57,10
+-    CONTROL         "eD2K",IDC_NETWORK_ED2K,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,160,194,58,10
+-    GROUPBOX        "Client Port:",IDC_CLIENTPORT_FRM,4,74,223,57
+-    GROUPBOX        "Max. Sources/File",IDC_MAXSRC_FRM,4,132,100,40
+-    GROUPBOX        "Max. connections:",IDC_MAXCONN_FRM,110,132,117,40
++    EDITTEXT        IDC_MAXSOURCEPERFILE,11,163,38,12,ES_AUTOHSCROLL | ES_NUMBER
++    EDITTEXT        IDC_MAXCON,117,163,38,12,ES_AUTOHSCROLL | ES_NUMBER
++    CONTROL         "Autoconnect on startup",IDC_AUTOCONNECT,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,4,188,138,10
++    CONTROL         "Reconnect on loss",IDC_RECONN,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,4,198,140,10
++    CONTROL         "Show overhead bandwidth",IDC_SHOWOVERHEAD,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,4,208,139,10
++    PUSHBUTTON      "Wizard...",IDC_WIZARD,4,221,50,14
++    CONTROL         "Kad",IDC_NETWORK_KADEMLIA,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,160,194,57,10
++    CONTROL         "eD2K",IDC_NETWORK_ED2K,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,160,204,58,10
++    GROUPBOX        "Client Port:",IDC_CLIENTPORT_FRM,4,74,223,67
++    GROUPBOX        "Max. Sources/File",IDC_MAXSRC_FRM,4,142,100,40
++    GROUPBOX        "Max. connections:",IDC_MAXCONN_FRM,110,142,117,40
+     GROUPBOX        "Capacities:",IDC_CAPACITIES_FRM,4,2,67,70
+     CONTROL         "Download",IDC_DCAP_LBL,"Static",SS_LEFTNOWORDWRAP | WS_GROUP,11,13,58,8
+     LTEXT           "KB/s",IDC_KBS2,45,25,22,8
+@@ -370,13 +370,15 @@ BEGIN
+     GROUPBOX        "Limits:",IDC_LIMITS_FRM,77,2,149,70
+     RTEXT           "KB/s",IDC_KBS1,176,13,44,8
+     RTEXT           "KB/s",IDC_KBS4,176,43,44,8
+-    LTEXT           "Hard limit",IDC_MAXSRCHARD_LBL,11,143,82,8
++    LTEXT           "Hard limit",IDC_MAXSRCHARD_LBL,11,153,82,8
+     LTEXT           "UDP",IDC_UDPPORTLABEL,11,103,16,8
+-    LTEXT           "Static",IDC_MAXCONLABEL,117,143,86,8
++    LTEXT           "Static",IDC_MAXCONLABEL,117,153,86,8
+     LTEXT           "TCP",IDC_STATIC,11,86,17,8
+-    GROUPBOX        "Network",IDC_CONNECTION_NETWORK,153,174,74,34
++    GROUPBOX        "Network",IDC_CONNECTION_NETWORK,153,184,74,34
+     CONTROL         "Use UPnP to set up Port Forwarding",IDC_PREF_UPNPONSTART,
+                     "Button",BS_AUTOCHECKBOX | WS_TABSTOP,11,116,208,10
++    CONTROL         "Use NAT traversal between LowIDs (on restart)",IDC_PREF_NATTRAVERSAL,
++                    "Button",BS_AUTOCHECKBOX | WS_TABSTOP,11,127,208,10
+ END
+ 
+ IDD_WIZARD DIALOGEX 0, 0, 257, 223
+@@ -3652,6 +3654,7 @@ END
+ STRINGTABLE
+ BEGIN
+     IDS_UPNPSTART           "Use UPnP to set up ports"
++    IDS_NATTRAVERSAL        "Use NAT traversal between LowIDs (on restart)"
+     IDS_UPNPSETUP           "Trying to set up port forwarding with UPnP..."
+     IDS_UPNPFAILED          "UPnP failed to set up port forwarding, please forward those ports manually if necessary!"
+     IDS_UPNPSUCCESS         "UPnP successfully set up forwarding for ports %u (TCP) and %u (UDP)"
 diff --git a/srchybrid/emule.vcxproj b/srchybrid/emule.vcxproj
 index d0c45db..62bc136 100644
 --- a/srchybrid/emule.vcxproj
@@ -2862,3 +3075,15 @@ index 2a22b0e..f8ba80c 100644
  		break;
  	}
  }
+diff --git a/srchybrid/lang/it_IT.rc b/srchybrid/lang/it_IT.rc
+index 79bfec4..cc12d4a 100644
+--- a/srchybrid/lang/it_IT.rc
++++ b/srchybrid/lang/it_IT.rc
+@@ -1884,6 +1884,7 @@ END
+ STRINGTABLE
+ BEGIN
+     IDS_UPNPSTART           "Usa l'UPnP per configurare il router"
++    IDS_NATTRAVERSAL        "Usa il NAT traversal tra LowID (al riavvio)"
+     IDS_UPNPSETUP           "Sto provando a configurare automaticamente il router con l'UPnP..."
+     IDS_UPNPFAILED          "L'UPnP non è riuscito a configurare automaticamente il router per eMule, provare a configurarlo manualmente se necessario!"
+     IDS_UPNPSUCCESS         "L'UPnP ha configurato il router con le porte %u (TCP) e %u (UDP)"
