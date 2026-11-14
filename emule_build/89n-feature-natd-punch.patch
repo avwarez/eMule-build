@@ -620,10 +620,10 @@ index 15674a1..0c0ec72 100644
  				if (md4equ(reqfilehash, sender->GetUploadFileID())) {
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
 new file mode 100644
-index 0000000..6299649
+index 0000000..d59f0e2
 --- /dev/null
 +++ b/srchybrid/NatTraversal.cpp
-@@ -0,0 +1,1756 @@
+@@ -0,0 +1,1792 @@
 +//this file is part of eMule
 +//Copyright (C)2002-2026 Merkur ( strEmail.Format("%s@%s", "devteam", "emule-project.net") / https://www.emule-project.net )
 +//
@@ -1047,6 +1047,10 @@ index 0000000..6299649
 +	bool OnPath(const natd::Endpoint &from, const BYTE *pData, size_t nLen, natd::TimePoint now);
 +	void PollPaths(natd::TimePoint now);
 +	void SendPath(SSession &s, uint8 byFlags, const uint8_t *pSegment, size_t nLen);
++	// what SendPath sent that the statistics count as overhead, until the main thread hands it
++	// to them (Process): the upload throttler's thread sends on the paths too (Write)
++	uint32 nSentOverhead = 0;
++	uint32 nSentDatagrams = 0;
 +	void SendDatagram(natd::SocketId socket, const natd::Endpoint &remote, const natd::TxId &token, uint8 byFlags, const uint8_t *pSegment, size_t nLen);
 +	void Fin(const SSession &s);
 +	// the FINs still to go of the streams already over
@@ -1096,9 +1100,12 @@ index 0000000..6299649
 +	struct SWait
 +	{
 +		CNatdSocketLayer *pLayer;
-+		DWORD	dwSent;
++		DWORD	dwSent;		// or when it began to wait for the server's UDP key
++		bool	bSent;
 +	};
 +	std::map<uint32, SWait> waits;
++	// our request through the server, and once more later; the wait for the answer starts now
++	void SendWait(uint32 nID, SWait &w, LPCTSTR pszWhy);
 +	struct SAgain
 +	{
 +		DWORD	dwSent;
@@ -1390,6 +1397,11 @@ index 0000000..6299649
 +	for (std::map<natd::SessionId, SSession>::iterator it = sessions.begin(); it != sessions.end();) {
 +		const natd::SessionId id = it->first;
 +		SSession &s = (it++)->second;
++		// over, and no socket left to tell (a stream eMule closed, which an address change ended)
++		if (s.bOver && s.pLayer == NULL) {
++			Erase(id);
++			continue;
++		}
 +		if (!s.pKcp || s.bOver)
 +			continue;
 +		s.pKcp->poll(now);
@@ -1424,7 +1436,8 @@ index 0000000..6299649
 +	if (nLen > NATD_PATH_SEGMENT)
 +		return;
 +	SendDatagram(s.path.socket, s.path.remote, s.path.token, byFlags, pSegment, nLen);
-+	theStats.AddUpDataOverheadOther(NATD_PATH_HEADER + (nLen > 0 ? KcpOverhead(pSegment, nLen, s.snSentNext, &s.snSentNext) : 0));
++	nSentOverhead += NATD_PATH_HEADER + (nLen > 0 ? KcpOverhead(pSegment, nLen, s.snSentNext, &s.snSentNext) : 0);
++	++nSentDatagrams;
 +	const natd::Duration keepalive(s.path.keepalive);
 +	s.tKeepalive = natd::Clock::now() + keepalive - natd::Duration(GetRandomUInt16() % (keepalive.count() / 10 + 1));
 +}
@@ -1612,6 +1625,11 @@ index 0000000..6299649
 +	});
 +	impl.Poll(now);
 +	impl.PollPaths(now);
++	// the bytes at once, then a datagram at a time, as each one would have been counted
++	for (; impl.nSentDatagrams > 0; --impl.nSentDatagrams) {
++		theStats.AddUpDataOverheadOther(impl.nSentOverhead);
++		impl.nSentOverhead = 0;
++	}
 +	if (impl.pAgent->started() && ::GetTickCount() - impl.dwLastStats >= (DWORD)HR2MS(1)) {
 +		if (impl.dwLastStats != 0)
 +			impl.LogStats(_T("last hour"));
@@ -1681,6 +1699,8 @@ index 0000000..6299649
 +		impl.ServerPing(dwNow);
 +	else if (sv.dwKey == 0 && !sv.bGaveUp && dwNow - sv.dwPinged >= NATD_SERVER_PING_RETRY) {
 +		sv.bGaveUp = true;
++		while (!impl.waits.empty())	// requests that waited for the key
++			DropWait(impl.waits.begin()->first, WSAECONNREFUSED);
 +		if (thePrefs.GetVerbose())
 +			AddDebugLogLine(false, _T("NAT traversal: the server %s:%u did not answer %u status requests on UDP port %u: no punches through it until the next login, and its requests to us are dropped")
 +				, (LPCTSTR)ipstr(sv.dwIP), sv.nPort, sv.nPings, (unsigned)(uint16)(sv.nPort + 12));
@@ -1766,21 +1786,33 @@ index 0000000..6299649
 +	return true;
 +}
 +
-+// one request at a time to a target: an older one gives way
++void CNatTraversal::Impl::SendWait(uint32 nID, SWait &w, LPCTSTR pszWhy)
++{
++	ServerRequest(nID, pszWhy);
++	w.dwSent = ::GetTickCount();
++	w.bSent = true;
++	again.push_back(SAgain{w.dwSent, NATD_VIA_SERVER, [this, nID]() {
++		if (waits.find(nID) != waits.end())
++			ServerRequest(nID, _T("ours, again: no answer yet"));
++	}});
++}
++
++// One request at a time to a target: an older one gives way. Just after the login the server's
++// UDP key can still be on its way (ServerTimer): the request waits for it, at most
++// NATD_RELAY_WAIT, and goes when it comes (OnServerDatagram).
 +bool CNatTraversal::AskServer(CNatdSocketLayer *pLayer, LPCTSTR pszWhy)
 +{
 +	Impl &impl = *m_pImpl;
 +	const uint32 nID = pLayer->GetServerPeer();
-+	if (!impl.ServerRequest(nID, pszWhy))
++	if (impl.server.dwIP == 0 || impl.server.bGaveUp)
 +		return false;
 +	DropWait(nID, WSAECONNREFUSED);
-+	const DWORD dwNow = ::GetTickCount();
-+	impl.waits[nID] = Impl::SWait{pLayer, dwNow};
++	Impl::SWait &w = impl.waits[nID] = Impl::SWait{pLayer, ::GetTickCount(), false};
 +	pLayer->m_bWaiting = true;
-+	impl.again.push_back(Impl::SAgain{dwNow, NATD_VIA_SERVER, [&impl, nID]() {
-+		if (impl.waits.find(nID) != impl.waits.end())
-+			impl.ServerRequest(nID, _T("ours, again: no answer yet"));
-+	}});
++	if (impl.server.Ready())
++		impl.SendWait(nID, w, pszWhy);
++	else if (thePrefs.GetVerbose())
++		AddDebugLogLine(false, _T("NAT traversal: request to ID %u waits for the server's UDP key (%s)"), nID, pszWhy);
 +	return true;
 +}
 +
@@ -1814,6 +1846,9 @@ index 0000000..6299649
 +			if (thePrefs.GetVerbose())
 +				AddDebugLogLine(false, _T("NAT traversal: punches can be asked through the server %s:%u (UDP port %u)%s"), (LPCTSTR)ipstr(sv.dwIP), sv.nPort, sv.nObfuscationPort
 +					, theApp.ipfilter->IsFiltered(sv.dwIP) ? _T(" - the server is in the IP filter, its answers let through") : _T(""));
++			for (std::pair<const uint32, Impl::SWait> &w : m_pImpl->waits)
++				if (!w.second.bSent)
++					m_pImpl->SendWait(w.first, w.second, _T("ours, which waited for the server's UDP key"));
 +		} else if (thePrefs.GetVerbose())
 +			AddDebugLogLine(false, _T("NAT traversal: status answer of the server dropped: %s"), sv.dwKey != 0 ? _T("we have its UDP key already")
 +				: nPacket < 2 + 40 ? _T("too short") : _T("not the challenge of our last request"));
@@ -1942,7 +1977,8 @@ index 0000000..6299649
 +			expired.push_back(w.first);
 +	for (uint32 nID : expired) {
 +		if (thePrefs.GetVerbose())
-+			AddDebugLogLine(false, _T("NAT traversal: no answer through the server to our punch request"));
++			AddDebugLogLine(false, impl.waits.at(nID).bSent ? _T("NAT traversal: no answer through the server to our punch request")
++				: _T("NAT traversal: our punch request not sent: no UDP key of the server in time"));
 +		DropWait(nID, WSAETIMEDOUT);
 +	}
 +	while (!impl.again.empty() && dwNow - impl.again.front().dwSent >= NATD_RELAY_RESEND) {
@@ -2006,7 +2042,7 @@ index 0000000..6299649
 +bool CNatTraversal::ServerCanPunch(uint32 nID, uint32 dwServerIP, uint16 nServerPort) const
 +{
 +	const Impl::SServer &sv = m_pImpl->server;
-+	return sv.Ready() && m_pImpl->pAgent->punchable() && ::IsLowID(nID) && (nID & 1) != 0 && nID != sv.nID
++	return sv.dwIP != 0 && !sv.bGaveUp && m_pImpl->pAgent->punchable() && ::IsLowID(nID) && (nID & 1) != 0 && nID != sv.nID
 +		&& theApp.serverconnect->IsLocalServer(dwServerIP, nServerPort);
 +}
 +
@@ -2382,10 +2418,10 @@ index 0000000..6299649
 +}
 diff --git a/srchybrid/NatTraversal.h b/srchybrid/NatTraversal.h
 new file mode 100644
-index 0000000..e8f6201
+index 0000000..d030930
 --- /dev/null
 +++ b/srchybrid/NatTraversal.h
-@@ -0,0 +1,257 @@
+@@ -0,0 +1,259 @@
 +//this file is part of eMule
 +//Copyright (C)2002-2026 Merkur ( strEmail.Format("%s@%s", "devteam", "emule-project.net") / https://www.emule-project.net )
 +//
@@ -2535,6 +2571,7 @@ index 0000000..e8f6201
 +
 +	// The server. A LowID on our server can be punched to through it: the server
 +	// coordinates punches for us, and the ID is odd (the client announced the NAT callback).
++	// Also before the server's UDP key comes, just after the login: a request waits for it.
 +	bool	ServerCanPunch(uint32 nID, uint32 dwServerIP, uint16 nServerPort) const;
 +	// Whether the login announces the NAT callback (SRVCAP_NATTRAVERSAL): not once the discovery
 +	// found that we cannot be punched to, so that no LowID asks us through the server in vain.
@@ -2562,7 +2599,8 @@ index 0000000..e8f6201
 +	void	ServerTimer();
 +	void	OnServerPeer(const SNatCallback &cb);
 +	// Our requests through the server wait for the peer's request back, by the target's ID there:
-+	// a request that goes (and once more, later) and waits; the timer sends the queued requests
++	// a request that goes (and once more, later; or first waits for the server's UDP key) and
++	// waits; the timer sends the queued requests
 +	// once more and times the waits out; a wait is over (nError 0: no event); the peer's request
 +	// back arrived (pToken12 NULL: the socket's), false when nothing waited for it.
 +	bool	AskServer(CNatdSocketLayer *pLayer, LPCTSTR pszWhy);
@@ -2934,7 +2972,7 @@ index 8a9c94b..9a11609 100644
  			theStats.CompUpDatarateOverhead();
  			theStats.CompDownDatarateOverhead();
 diff --git a/srchybrid/emule.rc b/srchybrid/emule.rc
-index ff63988..27f37d4 100644
+index ff63988..c9368b4 100644
 --- a/srchybrid/emule.rc
 +++ b/srchybrid/emule.rc
 @@ -336,7 +336,7 @@ BEGIN
@@ -2951,7 +2989,7 @@ index ff63988..27f37d4 100644
      CONTROL         "Show overhead bandwidth",IDC_SHOWOVERHEAD,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,4,198,139,10
      PUSHBUTTON      "Wizard...",IDC_WIZARD,4,211,50,14
 +    CONTROL         "Use NAT traversal between LowIDs (on restart)",IDC_PREF_NATTRAVERSAL,
-+                    "Button",BS_AUTOCHECKBOX | WS_TABSTOP,4,228,220,10
++                    "Button",BS_AUTOCHECKBOX | WS_TABSTOP,4,228,223,10
      CONTROL         "Kad",IDC_NETWORK_KADEMLIA,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,160,184,57,10
      CONTROL         "eD2K",IDC_NETWORK_ED2K,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,160,194,58,10
      GROUPBOX        "Client Port:",IDC_CLIENTPORT_FRM,4,74,223,57
@@ -3127,26 +3165,26 @@ index 4df0fb0..9238d17 100644
      IDS_UPNPFAILED          "No se han podido redirigir los puertos mediante UPnP, por favor, ¡abre estos puertos manualmente si es necesario!"
      IDS_UPNPSUCCESS         "Se han redirigido correctamente los puertos %u (TCP) y %u (UDP) mediante UPnP"
 diff --git a/srchybrid/lang/fa_IR.rc b/srchybrid/lang/fa_IR.rc
-index 555c25c..5b9c89e 100644
+index 555c25c..e6c223e 100644
 --- a/srchybrid/lang/fa_IR.rc
 +++ b/srchybrid/lang/fa_IR.rc
 @@ -1861,6 +1861,7 @@ END
  STRINGTABLE
  BEGIN
      IDS_UPNPSTART           "استفاده کن UPnP براي ايجاد پورت از عمليات خودکار"
-+    IDS_NATTRAVERSAL        "استفاده از NAT traversal بین کاربران درجه پایین (پس از راه‌اندازی دوباره)"
++    IDS_NATTRAVERSAL        "NAT traversal بین کاربران درجه پایین (پس از راه‌اندازی دوباره)"
      IDS_UPNPSETUP           "استفاده کني UPnP براي ايجاد پورت فرستنده سعي کن از عمليات خودکار"
      IDS_UPNPFAILED          "اگر لازم بود لطفا خودتان بصورت دستي تنظيمات پورتها را انچام دهيد UPnP شکست در ايجاد پورت فرستنده توسط "
      IDS_UPNPSUCCESS         "UPnP با موفقيت توانست اين پورت ها را ايجاد کند %u (TCP) و %u (UDP)"
 diff --git a/srchybrid/lang/fi_FI.rc b/srchybrid/lang/fi_FI.rc
-index 3a137e8..835911a 100644
+index 3a137e8..70e2f7c 100644
 --- a/srchybrid/lang/fi_FI.rc
 +++ b/srchybrid/lang/fi_FI.rc
 @@ -1862,6 +1862,7 @@ END
  STRINGTABLE
  BEGIN
      IDS_UPNPSTART           "Aseta portit uPnP:n avulla"
-+    IDS_NATTRAVERSAL        "Käytä NAT traversalia matalien tunnisteiden välillä (uudelleenkäynnistyksen jälkeen)"
++    IDS_NATTRAVERSAL        "NAT traversal matalien tunnisteiden välillä (käynnistettäessä)"
      IDS_UPNPSETUP           "Yritetään asettaa portit käyttäen uPnP:tä..."
      IDS_UPNPFAILED          "En pystynyt asettamaan portteja uPnP:n avulla, ole hyvä ja salli porttien liikenne manuaalisesti jos tarpeen!"
      IDS_UPNPSUCCESS         "UPnP on avannut portit %u (TCP) ja %u (UDP) onnistuneesti"
@@ -3187,14 +3225,14 @@ index 276f7fc..117b740 100644
      IDS_UPNPFAILED          "UPnP נכשל בפתיחת פורטים, אנא פתח את הפורטים ידנית אם צריך!"
      IDS_UPNPSUCCESS         "UPnP פתח בהצלחה את הפורטים %u (TCP) ו-%u (UDP)"
 diff --git a/srchybrid/lang/hu_HU.rc b/srchybrid/lang/hu_HU.rc
-index cea8362..7598887 100644
+index cea8362..8a56447 100644
 --- a/srchybrid/lang/hu_HU.rc
 +++ b/srchybrid/lang/hu_HU.rc
 @@ -1899,6 +1899,7 @@ END
  STRINGTABLE
  BEGIN
      IDS_UPNPSTART           "Use UPnP to setup ports"
-+    IDS_NATTRAVERSAL        "NAT traversal használata alacsony azonosítók között (újraindítás után)"
++    IDS_NATTRAVERSAL        "NAT traversal alacsony azonosítók között (újraindítás után)"
      IDS_UPNPSETUP           "Trying to setup port forwardings with UPnP..."
      IDS_UPNPFAILED          "UPnP failed to setup port forwardings, please forward those ports manually if necessary!"
      IDS_UPNPSUCCESS         "UPnP successfully set up forwardings for ports %u (TCP) and %u (UDP)"
@@ -3319,14 +3357,14 @@ index 09d9085..d1eda44 100644
      IDS_UPNPFAILED          "UPnP a eşuat la setarea porturilor (forwarding), efectuaţi manual această operaţiune, la nevoie!"
      IDS_UPNPSUCCESS         "UPnP a efectuat cu succes forwarding la porturile %u (TCP) şi %u (UDP)"
 diff --git a/srchybrid/lang/ru_RU.rc b/srchybrid/lang/ru_RU.rc
-index ccacf06..97285aa 100644
+index ccacf06..fa8dafe 100644
 --- a/srchybrid/lang/ru_RU.rc
 +++ b/srchybrid/lang/ru_RU.rc
 @@ -1887,6 +1887,7 @@ END
  STRINGTABLE
  BEGIN
      IDS_UPNPSTART           "UPnP настройка портов"
-+    IDS_NATTRAVERSAL        "Использовать NAT traversal между LowID (после перезапуска)"
++    IDS_NATTRAVERSAL        "Использовать NAT traversal между LowID (при перезапуске)"
      IDS_UPNPSETUP           "Попытка UPnP настроить перенаправление портов..."
      IDS_UPNPFAILED          "UPnP не удалось перенаправление. Пожалуйста, перенаправьте порты вручную!"
      IDS_UPNPSUCCESS         "UPnP успешно настроил перенаправление портов %u (TCP) и %u (UDP)"
@@ -3355,14 +3393,14 @@ index 10befa8..8e23605 100644
      IDS_UPNPFAILED          "Bağlantı noktası yönlendirme ayarlaması için UPnP başarısız oldu, eğer gerekliyse lütfen bağlantı noktalarını elle yönlendirin!"
      IDS_UPNPSUCCESS         "UPnP, %u (TCP) ve %u (UDP) nolu bağlantı noktaları için yönlendirmeyi başarılı olarak ayarladı"
 diff --git a/srchybrid/lang/ua_UA.rc b/srchybrid/lang/ua_UA.rc
-index d73386b..44ad02c 100644
+index d73386b..6a592e0 100644
 --- a/srchybrid/lang/ua_UA.rc
 +++ b/srchybrid/lang/ua_UA.rc
 @@ -1889,6 +1889,7 @@ END
  STRINGTABLE
  BEGIN
      IDS_UPNPSTART           "Use UPnP to setup ports"
-+    IDS_NATTRAVERSAL        "Використовувати NAT traversal між LowID (після перезапуску)"
++    IDS_NATTRAVERSAL        "Використовувати NAT traversal між LowID (при перезапуску)"
      IDS_UPNPSETUP           "Trying to setup port forwardings with UPnP..."
      IDS_UPNPFAILED          "UPnP failed to setup port forwardings, please forward those ports manually if necessary!"
      IDS_UPNPSUCCESS         "UPnP successfully set up forwardings for ports %u (TCP) and %u (UDP)"
