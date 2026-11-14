@@ -614,10 +614,10 @@ index 15674a1..0c0ec72 100644
  				if (md4equ(reqfilehash, sender->GetUploadFileID())) {
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
 new file mode 100644
-index 0000000..c0f82ef
+index 0000000..6299649
 --- /dev/null
 +++ b/srchybrid/NatTraversal.cpp
-@@ -0,0 +1,1743 @@
+@@ -0,0 +1,1756 @@
 +//this file is part of eMule
 +//Copyright (C)2002-2026 Merkur ( strEmail.Format("%s@%s", "devteam", "emule-project.net") / https://www.emule-project.net )
 +//
@@ -1061,6 +1061,8 @@ index 0000000..c0f82ef
 +	void LogStats(LPCTSTR pszWhen) const;
 +	// the connection to the server and to Kad waits for the discovery, as for UPnP. When
 +	// the wait began (0: not asked), and whether the dialog still waits to be told it is over
++	// the public endpoint our Kad source records were last published from, as natd found it
++	natd::Endpoint publishedEndpoint;
 +	DWORD dwConnectWait = 0;
 +	bool bConnectWaiting = false;
 +
@@ -1168,6 +1170,7 @@ index 0000000..c0f82ef
 +	while (pAgent->nextEvent(e)) {
 +		if (e.type == natd::AgentEventType::ProfileReady) {
 +			const natd::NatProfile &profile = pAgent->profile();
++			publishedEndpoint = pAgent->publicEndpoint();
 +			LogVerdict(_T(""));
 +			if (thePrefs.GetVerbose())
 +				AddDebugLogLine(false, _T("NAT traversal: %hs, mapping %hs, filtering %hs"), natd::toString(profile.predictability)
@@ -1176,11 +1179,21 @@ index 0000000..c0f82ef
 +		}
 +		if (e.type == natd::AgentEventType::EndpointChanged) {
 +			// the paths went with the old endpoint: their streams end as the TCP connections of a
-+			// client whose address changed. A LowID publishes its sources again: a punch through
-+			// its buddy goes towards the endpoint the index nodes saw them come from.
++			// client whose address changed. A LowID that can be punched to publishes its sources
++			// again: a punch through its buddy goes towards the endpoint the index nodes saw them
++			// come from. Only when that changed: the IP (natd drops packets from any other), or
++			// the port of a mapping that is the same for every destination (any other one gives
++			// each destination its own port, so the index nodes saw other ports anyway).
 +			LogVerdict(_T("changed to "));
-+			if (theApp.IsFirewalled() && theApp.sharedfiles != NULL)
++			const natd::Endpoint ep(pAgent->publicEndpoint());
++			const bool bRepublish = theApp.IsFirewalled() && pAgent->punchable() && theApp.sharedfiles != NULL
++				&& (ep.ip != publishedEndpoint.ip || (ep.port != publishedEndpoint.port && pAgent->profile().details.mapping == natd::MappingBehavior::EndpointIndependent));
++			if (bRepublish) {
 +				theApp.sharedfiles->ClearKadSourcePublishInfo();
++				publishedEndpoint = ep;
++			}
++			if (thePrefs.GetVerbose())
++				AddDebugLogLine(false, _T("NAT traversal: Kad sources %s"), bRepublish ? _T("published again") : _T("not published again: their records stand"));
 +			for (std::map<natd::SessionId, SSession>::iterator it = sessions.begin(); it != sessions.end(); ++it)
 +				if (it->second.pKcp && !it->second.bOver) {
 +					++nPathsAddressChanged;
