@@ -398,7 +398,7 @@ index 6243994..75ddf15 100644
  	CWebServer			*webserver;
  	CScheduler			*scheduler;
 diff --git a/srchybrid/EmuleDlg.cpp b/srchybrid/EmuleDlg.cpp
-index fa40464..c2c0e2c 100644
+index fa40464..63659d0 100644
 --- a/srchybrid/EmuleDlg.cpp
 +++ b/srchybrid/EmuleDlg.cpp
 @@ -90,6 +90,7 @@
@@ -417,20 +417,26 @@ index fa40464..c2c0e2c 100644
  	, m_bKadSuspendDisconnect()
  	, m_bEd2kSuspendDisconnect()
  	, m_bInitedCOM()
-@@ -728,9 +730,9 @@ void CALLBACK CemuleDlg::StartupTimer(HWND /*hwnd*/, UINT /*uiMsg*/, UINT_PTR /*
+@@ -728,9 +730,15 @@ void CALLBACK CemuleDlg::StartupTimer(HWND /*hwnd*/, UINT /*uiMsg*/, UINT_PTR /*
  					AddLogLine(true, GetResString(IDS_MAIN_READY), (LPCTSTR)theApp.m_strCurVersionLong);
  
  				theApp.m_app_state = APP_STATE_RUNNING; //initialization completed
 -				theApp.emuledlg->toolbar->EnableButton(TBBTN_CONNECT, TRUE);
 -				theApp.emuledlg->m_SysMenuOptions.EnableMenuItem(MP_CONNECT, MF_ENABLED);
 -				theApp.emuledlg->serverwnd->GetDlgItem(IDC_ED2KCONNECT)->EnableWindow();
-+				// the connection waits for UPnP and the NAT discovery (EndStartupNetCheck)
-+				theApp.emuledlg->m_bStartupNetCheck = true;
-+				theApp.emuledlg->EndStartupNetCheck(false);
++				if (theApp.nattraversal->IsEnabled()) {
++					// the connection waits for UPnP and the NAT discovery (EndStartupNetCheck)
++					theApp.emuledlg->m_bStartupNetCheck = true;
++					theApp.emuledlg->EndStartupNetCheck(false);
++				} else {	// as eMule does: a connection asked for during UPnP waits for it
++					theApp.emuledlg->toolbar->EnableButton(TBBTN_CONNECT, TRUE);
++					theApp.emuledlg->m_SysMenuOptions.EnableMenuItem(MP_CONNECT, MF_ENABLED);
++					theApp.emuledlg->serverwnd->GetDlgItem(IDC_ED2KCONNECT)->EnableWindow();
++				}
  				theApp.emuledlg->kademliawnd->UpdateControlsState(); //application state change is not tracked - force update
  
  				if (thePrefs.DoAutoConnect())
-@@ -1039,6 +1041,8 @@ void CemuleDlg::ShowConnectionState()
+@@ -1039,6 +1047,8 @@ void CemuleDlg::ShowConnectionState()
  			toolbar->SetButtonInfo(TBBTN_CONNECT, &tbbi);
  			strPane.Remove(_T('&'));
  			theApp.emuledlg->m_SysMenuOptions.ModifyMenu(MP_DISCONNECT, MF_STRING, MP_CONNECT, strPane);
@@ -439,7 +445,7 @@ index fa40464..c2c0e2c 100644
  		}
  	}
  	ShowUserCount();
-@@ -1747,8 +1751,10 @@ void CemuleDlg::OnClose()
+@@ -1747,8 +1757,10 @@ void CemuleDlg::OnClose()
  	// NOTE: Do not move those dtors into 'CemuleApp::InitInstance' (although they should be there). The
  	// dtors are indirectly calling functions which access several windows which would not be available
  	// after we have closed the main window -> crash!
@@ -450,7 +456,7 @@ index fa40464..c2c0e2c 100644
  	delete theApp.sharedfiles;				theApp.sharedfiles = NULL;
  	delete theApp.serverconnect;			theApp.serverconnect = NULL;
  	delete theApp.serverlist;				theApp.serverlist = NULL;		// CServerList::SaveServermetToFile
-@@ -1935,6 +1941,8 @@ void CemuleDlg::AddSpeedSelectorMenus(CMenu *addToMenu)
+@@ -1935,6 +1947,8 @@ void CemuleDlg::AddSpeedSelectorMenus(CMenu *addToMenu)
  
  void CemuleDlg::StartConnection()
  {
@@ -459,7 +465,7 @@ index fa40464..c2c0e2c 100644
  	if ((!theApp.serverconnect->IsConnecting() && !theApp.serverconnect->IsConnected()) || !Kademlia::CKademlia::IsRunning()) {
  		// UPnP is still trying to open the ports. In order to not get a LowID by connecting to the servers / kad before
  		// the ports are opened we delay the connection until UPnP gets a result or the timeout is reached
-@@ -1965,6 +1973,21 @@ void CemuleDlg::StartConnection()
+@@ -1965,6 +1979,21 @@ void CemuleDlg::StartConnection()
  	m_bKadSuspendDisconnect = false;
  }
  
@@ -481,7 +487,7 @@ index fa40464..c2c0e2c 100644
  void CemuleDlg::CloseConnection()
  {
  	theApp.serverconnect->StopConnectionTry();
-@@ -3415,6 +3438,8 @@ LRESULT CemuleDlg::OnUPnPResult(WPARAM wParam, LPARAM lParam)
+@@ -3415,6 +3444,8 @@ LRESULT CemuleDlg::OnUPnPResult(WPARAM wParam, LPARAM lParam)
  
  	if (theApp.IsRunning() && m_bConnectRequestDelayedForUPnP)
  		StartConnection();
