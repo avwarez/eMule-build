@@ -213,6 +213,8 @@ target_link_libraries(emule PRIVATE
     id3lib
     zlibstatic
     LibPlum::LibPlumStatic
+    natd
+    kcp
     resizablelib
 )
 

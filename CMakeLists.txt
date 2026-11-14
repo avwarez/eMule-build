@@ -6,7 +6,7 @@ project(eMule VERSION 0.72 LANGUAGES CXX RC)
 # srchybrid/emule.vcxproj (MSVC + static MFC/ATL). It is Windows-only.
 #
 # All third-party dependencies (mbedtls, cryptopp, id3lib, zlib, libplum,
-# resizablelib) are vendored as vanilla git submodules - see each
+# natd, resizablelib) are vendored as vanilla git submodules - see each
 # add_subdirectory() below and the corresponding *_build/CMakeLists.txt for
 # the ones with no CMake support of their own.
 # ---------------------------------------------------------------------------
@@ -87,6 +87,37 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          PowerShare does to the debug log, and 89g keeps a PowerShare
 #          upload going past the session limit while no other PowerShare
 #          request or friend slot is waiting for the slot.
+#          89n lets two LowIDs reach each other through UDP hole punching,
+#          with natd (below) and public STUN servers; nothing changes towards
+#          a HighID, nor between clients where TCP works. At startup, after
+#          UPnP and before the server and Kad, natd's NAT discovery runs on
+#          the client UDP port (the connect buttons wait for it, at most a
+#          minute); the login announces Lugdunum's NAT callback (SRVCAP_
+#          NATTRAVERSAL) and a LowID's Kad source records carry a "natd" tag
+#          when the client can be punched to, and a LowID keeps the LowID
+#          sources it can punch to instead of parking them as LowID->LowID.
+#          Two LowIDs learn each other's public endpoint only through a relay
+#          that sees both, the eD2K server or their two Kad buddies, the same
+#          way: the requester's request goes from the client UDP port to the
+#          relay, which forwards it with the endpoint it saw; the source
+#          sends its own request back the same way before punching, so both
+#          punch endpoints seen a moment ago. Through the server it is
+#          Lugdunum's OP_NAT_CALLBACK_* (obfuscated with the server's UDP
+#          key; the lower ID starts, the token comes from both IDs); through
+#          the buddies OP_REASKCALLBACKUDP/TCP, which any buddy forwards,
+#          with a natd marker (nonce) and the requester's buddy for the
+#          answer. A source with an open UDP port is asked directly
+#          (OP_DIRECTCALLBACKREQ). An endpoint-independent NAT, one with
+#          random ports in a block (mobile CGNs) or sequential ports can be
+#          punched to: the endpoint-independent side sprays the ports nearest
+#          to the endpoint the relay saw, more each round. Unanswered
+#          requests go once more, and a timed-out punch is asked for again
+#          while the socket is within CONNECTION_TIMEOUT, as TCP resends its
+#          SYN. natd hands over the path and the eD2K stream runs over it in
+#          eMule's own datagrams (KCP, kcp/ below) on the client UDP port,
+#          under a CClientReqSocket given a CNatdSocketLayer: keepalives at
+#          natd's interval, dead after three silent ones (then the public
+#          endpoint is checked again), FINs at the end and when eMule closes.
 #   90-94  the code compiles but /Wall flags it; these bring the warning
 #          count back to zero.
 #   95-96  the code compiles and is warning-clean but is not correct on
@@ -293,6 +324,30 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "Every vendored library is built static" FO
 set(PLUM_NO_EXAMPLE ON CACHE BOOL "Don't build libplum's own example program" FORCE)
 add_subdirectory(libplum EXCLUDE_FROM_ALL)
 target_compile_options(plum-static PRIVATE $<$<C_COMPILER_ID:MSVC>:/W3>)
+
+# ---------------------------------------------------------------------------
+# natd - git submodule (natd/, avwarez/natd pinned to v0.2.1), the NAT discovery and UDP
+# hole punching that emule_build/89n adds between two LowIDs: sans-I/O C++17,
+# no sockets or threads of its own (eMule moves the datagrams and the time),
+# no dependencies. It ends where the hole is open: what goes over the punched
+# path is eMule's (KCP, below). Has its own CMakeLists.txt; its examples
+# and tests stay out. Built at the standard eMule is built at, so that its
+# headers mean the same in its own translation units and in eMule's.
+# ---------------------------------------------------------------------------
+set(NATD_EXAMPLES OFF CACHE BOOL "Don't build natd's example tools" FORCE)
+set(NATD_TESTS OFF CACHE BOOL "Don't build natd's tests" FORCE)
+add_subdirectory(natd EXCLUDE_FROM_ALL)
+target_compile_features(natd PRIVATE cxx_std_23)
+
+# ---------------------------------------------------------------------------
+# KCP - vanilla git submodule (kcp/, skywind3000/kcp pinned to 1.7, MIT): the
+# transport of the eD2K stream over a punched path (CNatdKcpTransport in NatTraversal.cpp,
+# which includes "kcp/ikcp.h" through CMAKE_SOURCE_DIR). One C file, no
+# CMakeLists.txt of its own that fits a static library: built here.
+# ---------------------------------------------------------------------------
+enable_language(C)
+add_library(kcp STATIC kcp/ikcp.c)
+target_compile_options(kcp PRIVATE $<$<C_COMPILER_ID:MSVC>:/W3>)
 
 # ---------------------------------------------------------------------------
 # ResizableLib - git submodule (resizablelib/, avwarez/resizablelib pinned to

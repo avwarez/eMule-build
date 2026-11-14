@@ -224,7 +224,7 @@ index 09fd49e..eba5ed1 100644
  #ifdef _DEBUG
 diff --git a/srchybrid/FirewallBar.cpp b/srchybrid/FirewallBar.cpp
 new file mode 100644
-index 0000000..eb12e10
+index 0000000..097e065
 --- /dev/null
 +++ b/srchybrid/FirewallBar.cpp
 @@ -0,0 +1,107 @@
@@ -249,6 +249,7 @@ index 0000000..eb12e10
 +#include "emule.h"
 +#include "emuledlg.h"
 +#include "FirewallCheck.h"
++#include "OtherFunctions.h"
 +
 +#ifdef _DEBUG
 +#define new DEBUG_NEW
@@ -260,7 +261,6 @@ index 0000000..eb12e10
 +{
 +	const UINT MP_FIREWALL_ALLOW = 1;
 +	const UINT MP_FIREWALL_IGNORE = 2;
-+	LPCTSTR const s_pszText = _T("Windows Firewall is blocking your inbound connections");
 +}
 +
 +BEGIN_MESSAGE_MAP(CFirewallBar, CWnd)
@@ -280,7 +280,7 @@ index 0000000..eb12e10
 +	const int iIconSize = ::GetSystemMetrics(SM_CXSMICON);
 +	m_hIcon = (HICON)::LoadImage(NULL, IDI_WARNING, IMAGE_ICON, iIconSize, iIconSize, LR_SHARED);
 +	LPCTSTR pszClass = AfxRegisterWndClass(CS_HREDRAW | CS_VREDRAW, ::LoadCursor(NULL, IDC_HAND));
-+	if (!CreateEx(0, pszClass, s_pszText, WS_CHILD | WS_CLIPSIBLINGS, CRect(), pParent, 0))
++	if (!CreateEx(0, pszClass, GetResString(IDS_FIREWALLBAR_TEXT), WS_CHILD | WS_CLIPSIBLINGS, CRect(), pParent, 0))
 +		return false;
 +	SetFont(pParent->GetFont(), FALSE);
 +	return true;
@@ -314,7 +314,7 @@ index 0000000..eb12e10
 +	dc.SetBkMode(TRANSPARENT);
 +	dc.SetTextColor(::GetSysColor(COLOR_INFOTEXT));
 +	rc.left += iMargin + iIconSize + iMargin;
-+	dc.DrawText(s_pszText, -1, &rc, DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX);
++	dc.DrawText(GetResString(IDS_FIREWALLBAR_TEXT), &rc, DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX);
 +	dc.SelectObject(pOldFont);
 +}
 +
@@ -323,8 +323,8 @@ index 0000000..eb12e10
 +	CMenu menu;
 +	if (!menu.CreatePopupMenu())
 +		return;
-+	menu.AppendMenu(MF_STRING | (m_bCanAllow ? 0 : MF_GRAYED), MP_FIREWALL_ALLOW, _T("Allow"));
-+	menu.AppendMenu(MF_STRING, MP_FIREWALL_IGNORE, _T("Ignore"));
++	menu.AppendMenu(MF_STRING | (m_bCanAllow ? 0 : MF_GRAYED), MP_FIREWALL_ALLOW, GetResString(IDS_FIREWALLBAR_ALLOW));
++	menu.AppendMenu(MF_STRING, MP_FIREWALL_IGNORE, GetResString(IDS_FIREWALLBAR_IGNORE));
 +	ClientToScreen(&point);
 +	switch (menu.TrackPopupMenu(TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RETURNCMD | TPM_NONOTIFY, point.x, point.y, this)) {
 +	case MP_FIREWALL_ALLOW:
@@ -1010,6 +1010,20 @@ index 86434a3..2ff4648 100644
  
  		CWnd **wnds = theApp.emuledlg->toolbarWnds;
  		for (int i = (int)_countof(theApp.emuledlg->toolbarWnds); --i >= 0; ++wnds) {
+diff --git a/srchybrid/Resource.h b/srchybrid/Resource.h
+index aa656c4..8b5197e 100644
+--- a/srchybrid/Resource.h
++++ b/srchybrid/Resource.h
+@@ -1132,6 +1132,9 @@
+ #define IDS_KAD_RECHECKFW               1188
+ #define IDS_SHAREDTITLE                 1189
+ #define IDS_FIREWALLED                  1190
++#define IDS_FIREWALLBAR_TEXT            1611
++#define IDS_FIREWALLBAR_ALLOW           1612
++#define IDS_FIREWALLBAR_IGNORE          1613
+ #define IDS_KADEMLIA                    1191
+ #define IDS_KADCONTACTLAB               1192
+ #define IDS_KADDISTANCE                 1193
 diff --git a/srchybrid/UserMsgs.h b/srchybrid/UserMsgs.h
 index 2c240b1..c1c4547 100644
 --- a/srchybrid/UserMsgs.h
@@ -1023,6 +1037,20 @@ index 2c240b1..c1c4547 100644
 +	, UM_FIREWALL_STATE //+31
  };
 \ No newline at end of file
+diff --git a/srchybrid/emule.rc b/srchybrid/emule.rc
+index 2d128cc..ff63988 100644
+--- a/srchybrid/emule.rc
++++ b/srchybrid/emule.rc
+@@ -3331,6 +3331,9 @@ BEGIN
+     IDS_KAD_RECHECKFW       "Recheck Firewall"
+     IDS_SHAREDTITLE         "Shared eD2K|Kad"
+     IDS_FIREWALLED          "Firewalled"
++    IDS_FIREWALLBAR_TEXT    "Windows Firewall is blocking your inbound connections"
++    IDS_FIREWALLBAR_ALLOW   "Allow"
++    IDS_FIREWALLBAR_IGNORE  "Ignore"
+     IDS_KADEMLIA            "Kad"
+     IDS_KADCONTACTLAB       "Contacts"
+     IDS_KADDISTANCE         "Distance"
 diff --git a/srchybrid/emule.vcxproj b/srchybrid/emule.vcxproj
 index b8930e4..d0c45db 100644
 --- a/srchybrid/emule.vcxproj
@@ -1045,3 +1073,437 @@ index b8930e4..d0c45db 100644
      <ClInclude Include="FrameGrabThread.h" />
      <ClInclude Include="Friend.h" />
      <ClInclude Include="FriendList.h" />
+diff --git a/srchybrid/lang/ar_AE.rc b/srchybrid/lang/ar_AE.rc
+index 4e4a867..4a95ced 100644
+--- a/srchybrid/lang/ar_AE.rc
++++ b/srchybrid/lang/ar_AE.rc
+@@ -1523,6 +1523,9 @@ BEGIN
+     IDS_KAD_RECHECKFW       "اعادة فحص الجدار الناري"
+     IDS_SHAREDTITLE         "مشترك eD2K|Kad"
+     IDS_FIREWALLED          "محمي بجدار ناري"
++    IDS_FIREWALLBAR_TEXT    "جدار حماية Windows يحظر الاتصالات الواردة"
++    IDS_FIREWALLBAR_ALLOW   "سماح"
++    IDS_FIREWALLBAR_IGNORE  "تجاهل"
+     IDS_KADEMLIA            "كاد"
+     IDS_KADCONTACTLAB       "اتصالات"
+     IDS_KADDISTANCE         "مسافة"
+diff --git a/srchybrid/lang/bg_BG.rc b/srchybrid/lang/bg_BG.rc
+index 98090d7..3987d8c 100644
+--- a/srchybrid/lang/bg_BG.rc
++++ b/srchybrid/lang/bg_BG.rc
+@@ -1527,6 +1527,9 @@ BEGIN
+     IDS_KAD_RECHECKFW       "Провери защ. стена"
+     IDS_SHAREDTITLE         "Споделени в eD2K|Kad"
+     IDS_FIREWALLED          "Зад защитна стена"
++    IDS_FIREWALLBAR_TEXT    "Защитната стена на Windows блокира входящите връзки"
++    IDS_FIREWALLBAR_ALLOW   "Разреши"
++    IDS_FIREWALLBAR_IGNORE  "Игнорирай"
+     IDS_KADEMLIA            "Kad" //!
+     IDS_KADCONTACTLAB       "Контакти"
+     IDS_KADDISTANCE         "Отдалеченост"
+diff --git a/srchybrid/lang/ca_ES.rc b/srchybrid/lang/ca_ES.rc
+index d1ae131..31a3930 100644
+--- a/srchybrid/lang/ca_ES.rc
++++ b/srchybrid/lang/ca_ES.rc
+@@ -1463,6 +1463,9 @@ BEGIN
+     IDS_KAD_RECHECKFW       "Comprovar el Tallafocs"
+     IDS_SHAREDTITLE         "Compartit eD2K/KAD"
+     IDS_FIREWALLED          "Tallafocs"
++    IDS_FIREWALLBAR_TEXT    "El tallafocs del Windows està bloquejant les connexions entrants"
++    IDS_FIREWALLBAR_ALLOW   "Permet"
++    IDS_FIREWALLBAR_IGNORE  "Ignora"
+     IDS_KADEMLIA            "Kad"//!
+     IDS_KADCONTACTLAB       "Contactes"
+     IDS_KADDISTANCE         "Distància"
+diff --git a/srchybrid/lang/cz_CZ.rc b/srchybrid/lang/cz_CZ.rc
+index b635e18..675cdfe 100644
+--- a/srchybrid/lang/cz_CZ.rc
++++ b/srchybrid/lang/cz_CZ.rc
+@@ -1463,6 +1463,9 @@ BEGIN
+     IDS_KAD_RECHECKFW       "Překontrolujte firewall"
+     IDS_SHAREDTITLE         "Sdílené ED2K|Kad"
+     IDS_FIREWALLED          "Za firewallem"
++    IDS_FIREWALLBAR_TEXT    "Brána Windows Firewall blokuje příchozí připojení"
++    IDS_FIREWALLBAR_ALLOW   "Povolit"
++    IDS_FIREWALLBAR_IGNORE  "Ignorovat"
+     IDS_KADEMLIA            "Kad" //!
+     IDS_KADCONTACTLAB       "Kontakty"
+     IDS_KADDISTANCE         "Vzdálenost"
+diff --git a/srchybrid/lang/da_DK.rc b/srchybrid/lang/da_DK.rc
+index 5ea1107..8027461 100644
+--- a/srchybrid/lang/da_DK.rc
++++ b/srchybrid/lang/da_DK.rc
+@@ -1477,6 +1477,9 @@ BEGIN
+     IDS_KAD_RECHECKFW       "Tjek firewall igen"
+     IDS_SHAREDTITLE         "Delt ED2K|Kad"
+     IDS_FIREWALLED          "Firewalled"
++    IDS_FIREWALLBAR_TEXT    "Windows Firewall blokerer indgående forbindelser"
++    IDS_FIREWALLBAR_ALLOW   "Tillad"
++    IDS_FIREWALLBAR_IGNORE  "Ignorer"
+     IDS_KADEMLIA            "Kad"
+     IDS_KADCONTACTLAB       "Kontakter"
+     IDS_KADDISTANCE         "Afstand"
+diff --git a/srchybrid/lang/de_DE.rc b/srchybrid/lang/de_DE.rc
+index 60b4454..1edc632 100644
+--- a/srchybrid/lang/de_DE.rc
++++ b/srchybrid/lang/de_DE.rc
+@@ -1419,6 +1419,9 @@ BEGIN
+     IDS_KAD_RECHECKFW       "Firewall neu prüfen"
+     IDS_SHAREDTITLE         "Freigegeben eD2K|Kad"
+     IDS_FIREWALLED          "Firewalled" //!
++    IDS_FIREWALLBAR_TEXT    "Die Windows-Firewall blockiert eingehende Verbindungen"
++    IDS_FIREWALLBAR_ALLOW   "Zulassen"
++    IDS_FIREWALLBAR_IGNORE  "Ignorieren"
+     IDS_KADEMLIA            "Kad" //!
+     IDS_KADCONTACTLAB       "Kontakte"
+     IDS_KADDISTANCE         "Distanz"
+diff --git a/srchybrid/lang/el_GR.rc b/srchybrid/lang/el_GR.rc
+index 5163c33..4b1e33f 100644
+--- a/srchybrid/lang/el_GR.rc
++++ b/srchybrid/lang/el_GR.rc
+@@ -1430,6 +1430,9 @@ BEGIN
+     IDS_KAD_RECHECKFW       "Επανέλεγχος Firewall"
+     IDS_SHAREDTITLE         "eD2K|Kad (Κοινόχρηστο)"
+     IDS_FIREWALLED          "Firewalled" //!
++    IDS_FIREWALLBAR_TEXT    "Το Τείχος προστασίας των Windows αποκλείει τις εισερχόμενες συνδέσεις"
++    IDS_FIREWALLBAR_ALLOW   "Να επιτρέπεται"
++    IDS_FIREWALLBAR_IGNORE  "Παράβλεψη"
+     IDS_KADEMLIA            "Kad" //!
+     IDS_KADCONTACTLAB       "Σύνδεση"
+     IDS_KADDISTANCE         "Απόσταση"
+diff --git a/srchybrid/lang/es_ES_T.rc b/srchybrid/lang/es_ES_T.rc
+index 070f0c6..3dc330d 100644
+--- a/srchybrid/lang/es_ES_T.rc
++++ b/srchybrid/lang/es_ES_T.rc
+@@ -1468,6 +1468,9 @@ BEGIN
+     IDS_KAD_RECHECKFW       "Comprobar Cortafuegos"
+     IDS_SHAREDTITLE         "Compartido eD2K|Kad"
+     IDS_FIREWALLED          "Tras cortafuegos"
++    IDS_FIREWALLBAR_TEXT    "El cortafuegos de Windows está bloqueando las conexiones entrantes"
++    IDS_FIREWALLBAR_ALLOW   "Permitir"
++    IDS_FIREWALLBAR_IGNORE  "Ignorar"
+     IDS_KADEMLIA            "Kad"//!
+     IDS_KADCONTACTLAB       "Contactos"
+     IDS_KADDISTANCE         "Distancia"
+diff --git a/srchybrid/lang/fa_IR.rc b/srchybrid/lang/fa_IR.rc
+index ef61c75..5cd0db9 100644
+--- a/srchybrid/lang/fa_IR.rc
++++ b/srchybrid/lang/fa_IR.rc
+@@ -1537,6 +1537,9 @@ BEGIN
+     IDS_KAD_RECHECKFW       "چک کردن مجدد ديوار آتش"
+     IDS_SHAREDTITLE         "به اشتراک گذاشته شده eD2K|Kad"
+     IDS_FIREWALLED          "حفاظت شده توسط ديوار آتش يا فايروال"
++    IDS_FIREWALLBAR_TEXT    "دیوار آتش ویندوز اتصال‌های ورودی را مسدود می‌کند"
++    IDS_FIREWALLBAR_ALLOW   "اجازه بده"
++    IDS_FIREWALLBAR_IGNORE  "نادیده بگیر"
+     IDS_KADEMLIA            "Kad" //!
+     IDS_KADCONTACTLAB       "تماس ها"
+     IDS_KADDISTANCE         "فاصله"
+diff --git a/srchybrid/lang/fi_FI.rc b/srchybrid/lang/fi_FI.rc
+index 289d9f9..b58c5d4 100644
+--- a/srchybrid/lang/fi_FI.rc
++++ b/srchybrid/lang/fi_FI.rc
+@@ -1538,6 +1538,9 @@ BEGIN
+     IDS_KAD_RECHECKFW       "Tarkista palomuurin tila"
+     IDS_SHAREDTITLE         "Jaettu eD2K|Kademlia"
+     IDS_FIREWALLED          "Palomuurin takana"
++    IDS_FIREWALLBAR_TEXT    "Windowsin palomuuri estää saapuvat yhteydet"
++    IDS_FIREWALLBAR_ALLOW   "Salli"
++    IDS_FIREWALLBAR_IGNORE  "Ohita"
+     IDS_KADEMLIA            "Kademlia"
+     IDS_KADCONTACTLAB       "Kontaktit"
+     IDS_KADDISTANCE         "Etäisyys"
+diff --git a/srchybrid/lang/fr_FR.rc b/srchybrid/lang/fr_FR.rc
+index 3de9b41..90bb2b6 100644
+--- a/srchybrid/lang/fr_FR.rc
++++ b/srchybrid/lang/fr_FR.rc
+@@ -1460,6 +1460,9 @@ BEGIN
+     IDS_KAD_RECHECKFW       "Revérifier le pare-feu"
+     IDS_SHAREDTITLE         "Partages eD2K|Kad"
+     IDS_FIREWALLED          "Derrière un pare-feu"
++    IDS_FIREWALLBAR_TEXT    "Le Pare-feu Windows bloque vos connexions entrantes"
++    IDS_FIREWALLBAR_ALLOW   "Autoriser"
++    IDS_FIREWALLBAR_IGNORE  "Ignorer"
+     IDS_KADEMLIA            "Kad "
+     IDS_KADCONTACTLAB       "Contacts" //!
+     IDS_KADDISTANCE         "Distance" //!
+diff --git a/srchybrid/lang/gl_ES.rc b/srchybrid/lang/gl_ES.rc
+index a096daa..f6625e8 100644
+--- a/srchybrid/lang/gl_ES.rc
++++ b/srchybrid/lang/gl_ES.rc
+@@ -1467,6 +1467,9 @@ BEGIN
+     IDS_KAD_RECHECKFW       "Comprobar Cortalumes"
+     IDS_SHAREDTITLE         "Compartido ED2K|Kad"
+     IDS_FIREWALLED          "Tras un cortalumes"
++    IDS_FIREWALLBAR_TEXT    "O cortalumes de Windows está a bloquear as conexións entrantes"
++    IDS_FIREWALLBAR_ALLOW   "Permitir"
++    IDS_FIREWALLBAR_IGNORE  "Ignorar"
+     IDS_KADEMLIA            "Kad"//!
+     IDS_KADCONTACTLAB       "Contactos"
+     IDS_KADDISTANCE         "Distancia"
+diff --git a/srchybrid/lang/he_IL.rc b/srchybrid/lang/he_IL.rc
+index bdaedc6..bd323b5 100644
+--- a/srchybrid/lang/he_IL.rc
++++ b/srchybrid/lang/he_IL.rc
+@@ -1457,6 +1457,9 @@ BEGIN
+     IDS_KAD_RECHECKFW       "בדוק חומת אש מחדש"
+     IDS_SHAREDTITLE         "משותף שרת|קדמליה"
+     IDS_FIREWALLED          "מאחורי חומת אש"
++    IDS_FIREWALLBAR_TEXT    "חומת האש של Windows חוסמת את החיבורים הנכנסים"
++    IDS_FIREWALLBAR_ALLOW   "אפשר"
++    IDS_FIREWALLBAR_IGNORE  "התעלם"
+     IDS_KADEMLIA            "קדמליה"
+     IDS_KADCONTACTLAB       "אנשי קשר"
+     IDS_KADDISTANCE         "מרחק"
+diff --git a/srchybrid/lang/hu_HU.rc b/srchybrid/lang/hu_HU.rc
+index 156411b..95e1e30 100644
+--- a/srchybrid/lang/hu_HU.rc
++++ b/srchybrid/lang/hu_HU.rc
+@@ -1465,6 +1465,9 @@ BEGIN
+     IDS_KAD_RECHECKFW       "Tűzfal újraellenőrzése"
+     IDS_SHAREDTITLE         "Megosztott ED2K|Kad"
+     IDS_FIREWALLED          "Tűzfal"
++    IDS_FIREWALLBAR_TEXT    "A Windows tűzfal blokkolja a bejövő kapcsolatokat"
++    IDS_FIREWALLBAR_ALLOW   "Engedélyezés"
++    IDS_FIREWALLBAR_IGNORE  "Figyelmen kívül hagyás"
+     IDS_KADEMLIA            "Kad"
+     IDS_KADCONTACTLAB       "Személyek"
+     IDS_KADDISTANCE         "Távolság"
+diff --git a/srchybrid/lang/it_IT.rc b/srchybrid/lang/it_IT.rc
+index 973aa82..d533358 100644
+--- a/srchybrid/lang/it_IT.rc
++++ b/srchybrid/lang/it_IT.rc
+@@ -1563,6 +1563,9 @@ BEGIN
+     IDS_KAD_RECHECKFW       "Ricontrolla firewall"
+     IDS_SHAREDTITLE         "File eD2K | Kad"
+     IDS_FIREWALLED          "Dietro firewall"
++    IDS_FIREWALLBAR_TEXT    "Windows Firewall sta bloccando le connessioni in entrata"
++    IDS_FIREWALLBAR_ALLOW   "Consenti"
++    IDS_FIREWALLBAR_IGNORE  "Ignora"
+ //    IDS_KADEMLIA            "Kad"
+     IDS_KADCONTACTLAB       "Contatti"
+     IDS_KADDISTANCE         "Distanza"
+diff --git a/srchybrid/lang/jp_JP.rc b/srchybrid/lang/jp_JP.rc
+index 7bad0a9..a63dc9d 100644
+--- a/srchybrid/lang/jp_JP.rc
++++ b/srchybrid/lang/jp_JP.rc
+@@ -1520,6 +1520,9 @@ BEGIN
+     IDS_KAD_RECHECKFW       "ﾌｧｲｱｰｳｫｰﾙの再確認"
+     IDS_SHAREDTITLE         "eD2K|Kadの共有"
+     IDS_FIREWALLED          "ファイアーウォール"
++    IDS_FIREWALLBAR_TEXT    "Windows ファイアウォールが受信接続をブロックしています"
++    IDS_FIREWALLBAR_ALLOW   "許可"
++    IDS_FIREWALLBAR_IGNORE  "無視"
+     IDS_KADEMLIA            "Kad"
+     IDS_KADCONTACTLAB       "接触"
+     IDS_KADDISTANCE         "距離"
+diff --git a/srchybrid/lang/ko_KR.rc b/srchybrid/lang/ko_KR.rc
+index 842d3d1..973c807 100644
+--- a/srchybrid/lang/ko_KR.rc
++++ b/srchybrid/lang/ko_KR.rc
+@@ -1535,6 +1535,9 @@ BEGIN
+     IDS_KAD_RECHECKFW       "방화벽 다시 검사"
+     IDS_SHAREDTITLE         "공유된 eD2K|Kad"
+     IDS_FIREWALLED          "방화벽 설정됨"
++    IDS_FIREWALLBAR_TEXT    "Windows 방화벽이 들어오는 연결을 차단하고 있습니다"
++    IDS_FIREWALLBAR_ALLOW   "허용"
++    IDS_FIREWALLBAR_IGNORE  "무시"
+     IDS_KADEMLIA            "Kad"
+     IDS_KADCONTACTLAB       "연락처"
+     IDS_KADDISTANCE         "거리"
+diff --git a/srchybrid/lang/nb_NO.rc b/srchybrid/lang/nb_NO.rc
+index 75f0e3d..2cc74b5 100644
+--- a/srchybrid/lang/nb_NO.rc
++++ b/srchybrid/lang/nb_NO.rc
+@@ -1471,6 +1471,9 @@ BEGIN
+     IDS_KAD_RECHECKFW       "Kontroller brannmur"
+     IDS_SHAREDTITLE         "Delt ED2K|Kad"
+     IDS_FIREWALLED          "Bak brannmur"
++    IDS_FIREWALLBAR_TEXT    "Windows-brannmuren blokkerer innkommende tilkoblinger"
++    IDS_FIREWALLBAR_ALLOW   "Tillat"
++    IDS_FIREWALLBAR_IGNORE  "Ignorer"
+     IDS_KADEMLIA            "Kad"//!
+     IDS_KADCONTACTLAB       "Kontakter"
+     IDS_KADDISTANCE         "Distanse"
+diff --git a/srchybrid/lang/nl_NL.rc b/srchybrid/lang/nl_NL.rc
+index 71e8fe3..c63814b 100644
+--- a/srchybrid/lang/nl_NL.rc
++++ b/srchybrid/lang/nl_NL.rc
+@@ -1462,6 +1462,9 @@ BEGIN
+     IDS_KAD_RECHECKFW       "Firewall hertesten"
+     IDS_SHAREDTITLE         "Gedeeld ED2K|Kad"
+     IDS_FIREWALLED          "Gefirewalled"
++    IDS_FIREWALLBAR_TEXT    "Windows Firewall blokkeert inkomende verbindingen"
++    IDS_FIREWALLBAR_ALLOW   "Toestaan"
++    IDS_FIREWALLBAR_IGNORE  "Negeren"
+     IDS_KADEMLIA            "Kad" //!
+     IDS_KADCONTACTLAB       "Contacten"
+     IDS_KADDISTANCE         "Afstand"
+diff --git a/srchybrid/lang/nn_NO.rc b/srchybrid/lang/nn_NO.rc
+index 974fbb5..665a140 100644
+--- a/srchybrid/lang/nn_NO.rc
++++ b/srchybrid/lang/nn_NO.rc
+@@ -1438,6 +1438,9 @@ BEGIN
+     IDS_KAD_RECHECKFW       "Kontroller brannmur"
+     IDS_SHAREDTITLE         "Delt ED2K|Kad"
+     IDS_FIREWALLED          "Brannmur er aktiv"
++    IDS_FIREWALLBAR_TEXT    "Windows-brannmuren blokkerer innkomande tilkoplingar"
++    IDS_FIREWALLBAR_ALLOW   "Tillat"
++    IDS_FIREWALLBAR_IGNORE  "Ignorer"
+     IDS_KADEMLIA            "Kad"
+     IDS_KADCONTACTLAB       "Kontaktar"
+     IDS_KADDISTANCE         "Distanse"
+diff --git a/srchybrid/lang/pl_PL.rc b/srchybrid/lang/pl_PL.rc
+index 6508acf..5356aa3 100644
+--- a/srchybrid/lang/pl_PL.rc
++++ b/srchybrid/lang/pl_PL.rc
+@@ -1541,6 +1541,9 @@ BEGIN
+     IDS_KAD_RECHECKFW       "Sprawdź firewall"
+     IDS_SHAREDTITLE         "Udostępniane eD2K|Kad"
+     IDS_FIREWALLED          "Firewalled" //!
++    IDS_FIREWALLBAR_TEXT    "Zapora systemu Windows blokuje połączenia przychodzące"
++    IDS_FIREWALLBAR_ALLOW   "Zezwól"
++    IDS_FIREWALLBAR_IGNORE  "Ignoruj"
+     IDS_KADEMLIA            "Kad" //!
+     IDS_KADCONTACTLAB       "Kontakty"
+     IDS_KADDISTANCE         "Dystans"
+diff --git a/srchybrid/lang/pt_BR.rc b/srchybrid/lang/pt_BR.rc
+index a94b369..5921cc9 100644
+--- a/srchybrid/lang/pt_BR.rc
++++ b/srchybrid/lang/pt_BR.rc
+@@ -1444,6 +1444,9 @@ BEGIN
+     IDS_KAD_RECHECKFW       "Verificar Firewall"
+     IDS_SHAREDTITLE         "eD2K|Kad"
+     IDS_FIREWALLED          "Sob Firewall"
++    IDS_FIREWALLBAR_TEXT    "O Firewall do Windows está bloqueando as conexões de entrada"
++    IDS_FIREWALLBAR_ALLOW   "Permitir"
++    IDS_FIREWALLBAR_IGNORE  "Ignorar"
+     IDS_KADEMLIA            "Kad"//!
+     IDS_KADCONTACTLAB       "Contatos"
+     IDS_KADDISTANCE         "Distância"
+diff --git a/srchybrid/lang/pt_PT.rc b/srchybrid/lang/pt_PT.rc
+index 65ac274..65af8e7 100644
+--- a/srchybrid/lang/pt_PT.rc
++++ b/srchybrid/lang/pt_PT.rc
+@@ -1465,6 +1465,9 @@ BEGIN
+     IDS_KAD_RECHECKFW       "Reverificar a Firewall"
+     IDS_SHAREDTITLE         "Partilhas ED2K|Kad"
+     IDS_FIREWALLED          "Atrás de Firewall"
++    IDS_FIREWALLBAR_TEXT    "A Firewall do Windows está a bloquear as ligações de entrada"
++    IDS_FIREWALLBAR_ALLOW   "Permitir"
++    IDS_FIREWALLBAR_IGNORE  "Ignorar"
+     IDS_KADEMLIA            "Kad"//!
+     IDS_KADCONTACTLAB       "Contactos"
+     IDS_KADDISTANCE         "Distância"
+diff --git a/srchybrid/lang/ro_RO.rc b/srchybrid/lang/ro_RO.rc
+index 8f5ebf4..6f49bfa 100644
+--- a/srchybrid/lang/ro_RO.rc
++++ b/srchybrid/lang/ro_RO.rc
+@@ -1489,6 +1489,9 @@ BEGIN
+     IDS_KAD_RECHECKFW       "Reverifică Firewall"
+     IDS_SHAREDTITLE         "Share eD2k|Kad"
+     IDS_FIREWALLED          "cu Firewall"
++    IDS_FIREWALLBAR_TEXT    "Firewall-ul Windows blochează conexiunile de intrare"
++    IDS_FIREWALLBAR_ALLOW   "Permite"
++    IDS_FIREWALLBAR_IGNORE  "Ignoră"
+     IDS_KADEMLIA            "Kad" //!
+     IDS_KADCONTACTLAB       "Contacte"
+     IDS_KADDISTANCE         "Distanţă"
+diff --git a/srchybrid/lang/ru_RU.rc b/srchybrid/lang/ru_RU.rc
+index cccfe9d..2cabc37 100644
+--- a/srchybrid/lang/ru_RU.rc
++++ b/srchybrid/lang/ru_RU.rc
+@@ -1563,6 +1563,9 @@ BEGIN
+     IDS_KAD_RECHECKFW       "Проверить файрвол"
+     IDS_SHAREDTITLE         "Обмен в eD2K|Kad"
+     IDS_FIREWALLED          "Файрвол"
++    IDS_FIREWALLBAR_TEXT    "Файрвол Windows блокирует входящие соединения"
++    IDS_FIREWALLBAR_ALLOW   "Разрешить"
++    IDS_FIREWALLBAR_IGNORE  "Игнорировать"
+ //    IDS_KADEMLIA            "Kad"
+     IDS_KADCONTACTLAB       "Контакты"
+     IDS_KADDISTANCE         "Дистанция"
+diff --git a/srchybrid/lang/sv_SE.rc b/srchybrid/lang/sv_SE.rc
+index c808967..fe19a53 100644
+--- a/srchybrid/lang/sv_SE.rc
++++ b/srchybrid/lang/sv_SE.rc
+@@ -1459,6 +1459,9 @@ BEGIN
+     IDS_KAD_RECHECKFW       "Kontrollera brandvägg"
+     IDS_SHAREDTITLE         "Utdelade ED2K|Kad"
+     IDS_FIREWALLED          "Bakom brandvägg"
++    IDS_FIREWALLBAR_TEXT    "Windows-brandväggen blockerar inkommande anslutningar"
++    IDS_FIREWALLBAR_ALLOW   "Tillåt"
++    IDS_FIREWALLBAR_IGNORE  "Ignorera"
+     IDS_KADEMLIA            "Kad" //!
+     IDS_KADCONTACTLAB       "Kontakter"
+     IDS_KADDISTANCE         "Distans"
+diff --git a/srchybrid/lang/tr_TR.rc b/srchybrid/lang/tr_TR.rc
+index 1651999..31139ea 100644
+--- a/srchybrid/lang/tr_TR.rc
++++ b/srchybrid/lang/tr_TR.rc
+@@ -1486,6 +1486,9 @@ BEGIN
+     IDS_KAD_RECHECKFW       "Güvenlik Duvarı Kontrolü"
+     IDS_SHAREDTITLE         "ED2K|Kad Paylaşılmış"
+     IDS_FIREWALLED          "Güvenlik Duvarı"
++    IDS_FIREWALLBAR_TEXT    "Windows Güvenlik Duvarı gelen bağlantıları engelliyor"
++    IDS_FIREWALLBAR_ALLOW   "İzin ver"
++    IDS_FIREWALLBAR_IGNORE  "Yoksay"
+     IDS_KADEMLIA            "Kad" //!
+     IDS_KADCONTACTLAB       "Bağlantılar"
+     IDS_KADDISTANCE         "Mesafe"
+diff --git a/srchybrid/lang/ua_UA.rc b/srchybrid/lang/ua_UA.rc
+index 0ad202d..48a36af 100644
+--- a/srchybrid/lang/ua_UA.rc
++++ b/srchybrid/lang/ua_UA.rc
+@@ -1542,6 +1542,9 @@ BEGIN
+     IDS_KAD_RECHECKFW       "Перевірка брандмауера"
+     IDS_SHAREDTITLE         "Спільне у eD2K|Kad"
+     IDS_FIREWALLED          "Брандмауер"
++    IDS_FIREWALLBAR_TEXT    "Брандмауер Windows блокує вхідні з'єднання"
++    IDS_FIREWALLBAR_ALLOW   "Дозволити"
++    IDS_FIREWALLBAR_IGNORE  "Ігнорувати"
+     IDS_KADEMLIA            "Kad"
+     IDS_KADCONTACTLAB       "Контактів"
+     IDS_KADDISTANCE         "Відстань"
+diff --git a/srchybrid/lang/vi_VN.rc b/srchybrid/lang/vi_VN.rc
+index 585ecfe..127c5ad 100644
+--- a/srchybrid/lang/vi_VN.rc
++++ b/srchybrid/lang/vi_VN.rc
+@@ -1543,6 +1543,9 @@ BEGIN
+     IDS_KAD_RECHECKFW       "Kiểm tra lại Tường lửa"
+     IDS_SHAREDTITLE         "Chia sẻ eD2K|Kad"
+     IDS_FIREWALLED          "Tường lửa"
++    IDS_FIREWALLBAR_TEXT    "Tường lửa Windows đang chặn các kết nối đến"
++    IDS_FIREWALLBAR_ALLOW   "Cho phép"
++    IDS_FIREWALLBAR_IGNORE  "Bỏ qua"
+     IDS_KADEMLIA            "Kad" //!
+     IDS_KADCONTACTLAB       "Nút"
+     IDS_KADDISTANCE         "Khoảng cách"
+diff --git a/srchybrid/lang/zh_CN.rc b/srchybrid/lang/zh_CN.rc
+index bb115f7..4ff609c 100644
+--- a/srchybrid/lang/zh_CN.rc
++++ b/srchybrid/lang/zh_CN.rc
+@@ -1539,6 +1539,9 @@ BEGIN
+     IDS_KAD_RECHECKFW       "重新检查防火墙"
+     IDS_SHAREDTITLE         "共享ED2K|Kad"
+     IDS_FIREWALLED          "通过防火墙"
++    IDS_FIREWALLBAR_TEXT    "Windows 防火墙正在阻止传入连接"
++    IDS_FIREWALLBAR_ALLOW   "允许"
++    IDS_FIREWALLBAR_IGNORE  "忽略"
+     IDS_KADEMLIA            "Kad" //!
+     IDS_KADCONTACTLAB       "节点"
+     IDS_KADDISTANCE         "距离"
+diff --git a/srchybrid/lang/zh_TW.rc b/srchybrid/lang/zh_TW.rc
+index 5578355..5a3b177 100644
+--- a/srchybrid/lang/zh_TW.rc
++++ b/srchybrid/lang/zh_TW.rc
+@@ -1437,6 +1437,9 @@ BEGIN
+     IDS_KAD_RECHECKFW       "重新檢查防火牆"
+     IDS_SHAREDTITLE         "分享 eD2K|Kad"
+     IDS_FIREWALLED          "防火牆內"
++    IDS_FIREWALLBAR_TEXT    "Windows 防火牆正在封鎖連入連線"
++    IDS_FIREWALLBAR_ALLOW   "允許"
++    IDS_FIREWALLBAR_IGNORE  "忽略"
+     IDS_KADEMLIA            "Kad"//!
+     IDS_KADCONTACTLAB       "聯繫"
+     IDS_KADDISTANCE         "距離"
