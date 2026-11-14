@@ -44,7 +44,7 @@ This build is eMule 0.72a with the changes below, compiled for x64, Win32 and AR
 - **Turning it off:** a user with forwarded ports can turn it off at the bottom of Options > Connection ("Use NAT traversal between LowIDs", on by default). From the next start there is no check and no wait.
 - **STUN servers:** the servers are read from `config/stun.dat`, one `host:port` per line. If the file is missing or lists fewer than 3 servers, a built-in list is used.
 - **Through the server:** the request to punch goes first through the eD2K server, by the NAT callback of Lugdunum servers, when both clients are logged in to it, as eMule does for its callbacks.
-- **Through Kad:** otherwise, for example with no server connection or a source on another server, the request goes through the source's Kad buddy, and the answer comes back through the requester's buddy.
+- **Through Kad:** otherwise, for example with no server connection or a source on another server, the request goes through the source's Kad buddy, which can be any eMule. The requester needs no buddy: it punches the source's address from the source's Kad record.
 - **Kad sources:** the Kad sources of a client that can be punched to say so, in a tag that other clients ignore. A source with an open UDP port is asked directly, without a buddy.
 - **Mobile networks:** a client whose NAT picks a new port for each destination, inside a block of ports (as many mobile CGNATs do) or in sequence, can now be punched to by a client whose NAT keeps the same public port.
 - **Port search:** that client tries first the port the server or the buddy saw, then the ports nearest to it, more at each round, with no assumption on how an operator lays out its ports.
