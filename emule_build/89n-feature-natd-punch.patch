@@ -177,7 +177,7 @@ index 138ff6e..1397388 100644
  					SetDownloadState(DS_LOWTOLOWIP);
  				m_bReaskPending = true;
 diff --git a/srchybrid/DownloadQueue.cpp b/srchybrid/DownloadQueue.cpp
-index be32c82..0b62a8f 100644
+index be32c82..7bb17f6 100644
 --- a/srchybrid/DownloadQueue.cpp
 +++ b/srchybrid/DownloadQueue.cpp
 @@ -23,6 +23,7 @@
@@ -188,7 +188,7 @@ index be32c82..0b62a8f 100644
  #include "Statistics.h"
  #include "SharedFileList.h"
  #include "SafeFile.h"
-@@ -1520,7 +1521,20 @@ bool CDownloadQueue::DoKademliaFileRequest() const
+@@ -1520,7 +1521,41 @@ bool CDownloadQueue::DoKademliaFileRequest() const
  	return ::GetTickCount() >= m_lastkademliafilerequest + KADEMLIAASKTIME;
  }
  
@@ -206,11 +206,32 @@ index be32c82..0b62a8f 100644
 +	return bKeep;
 +}
 +
++// CheckAndAddSource drops a source we know already, from an earlier Kad record or another
++// channel, so the known one keeps what it came with. A punch goes towards the endpoint of the
++// newest Kad record: it replaces the known endpoint, buddy and options, unless a connection to
++// the source is on.
++static void UpdateNatdSource(const CUpDownClient &rec, uint8 byCryptOptions)
++{
++	CUpDownClient *pKnown = theApp.clientlist->FindClientByUserHash(rec.GetUserHash());
++	if (pKnown == NULL || pKnown == &rec || !pKnown->HasLowID() || pKnown->socket != NULL || pKnown->GetConnectingState() != CCS_NONE)
++		return;
++	if (thePrefs.GetVerbose() && (pKnown->GetConnectIP() != rec.GetConnectIP() || pKnown->GetKadPort() != rec.GetKadPort() || !pKnown->IsNatdSource()))
++		AddDebugLogLine(false, _T("NAT traversal: known LowID source %s:%u now %s:%u, from its Kad record"), (LPCTSTR)ipstr(pKnown->GetConnectIP()), pKnown->GetKadPort()
++			, (LPCTSTR)ipstr(rec.GetConnectIP()), rec.GetKadPort());
++	pKnown->SetConnectIP(rec.GetConnectIP());
++	pKnown->SetKadPort(rec.GetKadPort());
++	pKnown->SetBuddyID(rec.HasValidBuddyID() ? rec.GetBuddyID() : NULL);
++	pKnown->SetBuddyIP(rec.GetBuddyIP());
++	pKnown->SetBuddyPort(rec.GetBuddyPort());
++	pKnown->SetConnectOptions(byCryptOptions);
++	pKnown->SetNatdSource(true);
++}
++
 +void CDownloadQueue::KademliaSearchFile(uint32 nSearchID, const Kademlia::CUInt128 *pcontactID, const Kademlia::CUInt128 *pbuddyID, uint8 type, uint32 ip, uint16 tcp, uint16 udp, uint32 dwBuddyIP, uint16 dwBuddyPort, uint8 byCryptOptions, bool bNatd)
  {
  	//Safety measure to make sure we are looking for these sources
  	CPartFile *temp = GetFileByKadFileSearchID(nSearchID);
-@@ -1568,7 +1582,8 @@ void CDownloadQueue::KademliaSearchFile(uint32 nSearchID, const Kademlia::CUInt1
+@@ -1568,7 +1603,8 @@ void CDownloadQueue::KademliaSearchFile(uint32 nSearchID, const Kademlia::CUInt1
  	case 3:
  		//This will be a firewalled client connected to Kad only.
  		// if we are firewalled ourself, the source is useless to us
@@ -220,7 +241,7 @@ index be32c82..0b62a8f 100644
  			break;
  
  		if (theApp.ipfilter->IsFiltered(dwBuddyIP)) {
-@@ -1593,12 +1608,18 @@ void CDownloadQueue::KademliaSearchFile(uint32 nSearchID, const Kademlia::CUInt1
+@@ -1593,12 +1629,18 @@ void CDownloadQueue::KademliaSearchFile(uint32 nSearchID, const Kademlia::CUInt1
  			ctemp->SetBuddyID(cID);
  			ctemp->SetBuddyIP(dwBuddyIP);
  			ctemp->SetBuddyPort(dwBuddyPort);
@@ -240,7 +261,7 @@ index be32c82..0b62a8f 100644
  			break;
  
  		if ((byCryptOptions & 0x08) == 0)
-@@ -1611,6 +1632,7 @@ void CDownloadQueue::KademliaSearchFile(uint32 nSearchID, const Kademlia::CUInt1
+@@ -1611,12 +1653,15 @@ void CDownloadQueue::KademliaSearchFile(uint32 nSearchID, const Kademlia::CUInt1
  			byte cID[16];
  			pcontactID->ToByteArray(cID);
  			ctemp->SetUserHash(cID);
@@ -248,6 +269,14 @@ index be32c82..0b62a8f 100644
  		}
  	}
  
+ 	if (ctemp != NULL) {
+ 		// add encryption settings
+ 		ctemp->SetConnectOptions(byCryptOptions);
++		if (ctemp->IsNatdSource() && theApp.IsFirewalled())
++			UpdateNatdSource(*ctemp, byCryptOptions);
+ 		CheckAndAddSource(temp, ctemp);
+ 	}
+ }
 diff --git a/srchybrid/DownloadQueue.h b/srchybrid/DownloadQueue.h
 index d50ea33..6b49c3f 100644
 --- a/srchybrid/DownloadQueue.h
@@ -499,7 +528,7 @@ index 24555d4..7bf035d 100644
  
  	CString strBootstrapIP;
 diff --git a/srchybrid/KnownFile.cpp b/srchybrid/KnownFile.cpp
-index ea2b6b8..6eac80a 100644
+index ea2b6b8..54da090 100644
 --- a/srchybrid/KnownFile.cpp
 +++ b/srchybrid/KnownFile.cpp
 @@ -39,6 +39,7 @@
@@ -510,20 +539,38 @@ index ea2b6b8..6eac80a 100644
  #include "MD4.h"
  #include "Collection.h"
  #include "emuledlg.h"
-@@ -1630,8 +1631,12 @@ bool CKnownFile::PublishSrc()
+@@ -1623,6 +1624,9 @@ bool CKnownFile::PublishSrc()
+ {
+ 	uint32 lastBuddyIP;
+ 	time_t tNow = time(NULL);
++	// the other datum of the record a punch depends on: whether it carries TAG_NATDCLIENT
++	// (the client just found punchable, or no longer so), with a buddy or without
++	const bool bPunchable = theApp.IsFirewalled() && theApp.nattraversal->IsPunchable();
+ 	if (theApp.IsFirewalled()
+ 		&& (Kademlia::CUDPFirewallTester::IsFirewalledUDP(true) || !Kademlia::CUDPFirewallTester::IsVerified()))
+ 	{
+@@ -1630,17 +1634,19 @@ bool CKnownFile::PublishSrc()
  		if (!buddy)
  			return false;
  		lastBuddyIP = buddy->GetIP();
 -		if (lastBuddyIP != m_lastBuddyIP) {
-+		// the same for the other datum of the record a punch depends on: whether it carries
-+		// TAG_NATDCLIENT (the client just found punchable, or no longer so)
-+		const bool bPunchable = theApp.nattraversal->IsPunchable();
 +		if (lastBuddyIP != m_lastBuddyIP || bPunchable != m_bLastPunchable) {
  			SetLastPublishTimeKadSrc(tNow + KADEMLIAREPUBLISHTIMES, lastBuddyIP);
 +			m_bLastPunchable = bPunchable;
  			return true;
  		}
  	} else
+ 		lastBuddyIP = 0;
+ 
+-	if (tNow < m_lastPublishTimeKadSrc)
++	if (tNow < m_lastPublishTimeKadSrc && bPunchable == m_bLastPunchable)
+ 		return false;
+ 
+ 	SetLastPublishTimeKadSrc(tNow + KADEMLIAREPUBLISHTIMES, lastBuddyIP);
++	m_bLastPunchable = bPunchable;
+ 	return true;
+ }
+ 
 diff --git a/srchybrid/KnownFile.h b/srchybrid/KnownFile.h
 index 0717ac5..8c0c71a 100644
 --- a/srchybrid/KnownFile.h
@@ -567,7 +614,7 @@ index 15674a1..0c0ec72 100644
  				if (md4equ(reqfilehash, sender->GetUploadFileID())) {
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
 new file mode 100644
-index 0000000..682c1de
+index 0000000..d363f32
 --- /dev/null
 +++ b/srchybrid/NatTraversal.cpp
 @@ -0,0 +1,1749 @@
@@ -644,11 +691,11 @@ index 0000000..682c1de
 +// NATD_RELAY_RESEND; through the server it waits for the peer's request back at most
 +// NATD_RELAY_WAIT. A punch that timed out is asked for once more, with a new request, while the
 +// socket has been connecting for less than eMule's connection timeout (as TCP sends its SYN again
-+// within it), NATD_RELAY_TRIES punches at most.
++// within it): with natd's 20 s a punch, NATD_RELAY_TRIES punches fit.
 +#define NATD_RELAY_RESEND		((DWORD)SEC2MS(3))
 +#define NATD_RELAY_WAIT			((DWORD)SEC2MS(20))
 +#define NATD_RELAY_RETRY_WITHIN	((DWORD)CONNECTION_TIMEOUT)
-+#define NATD_RELAY_TRIES		3
++#define NATD_RELAY_TRIES		2
 +#define NATD_SERVER_PINGS		5		// status requests for the server's UDP key, 20 s apart
 +#define NATD_SERVER_PING_RETRY	((DWORD)SEC2MS(20))
 +// The connection waits for the discovery at most this long. natd's discovery ends within
