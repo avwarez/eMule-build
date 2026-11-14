@@ -195,7 +195,7 @@ jobs:
         # zlib/emule are all pinned to real tags). avwarez/id3lib pins to a
         # *branch* named v3.9.1 instead of a tag (confirmed locally - no tag
         # object exists there at all, `git tag -l` is empty for that repo),
-        # and avwarez/libplum to the branch v0.6.0-emule -
+        # and avwarez/libplum to the branch v0.6.0-mapping-refresh -
         # fall back to any remote branch pointing at the same commit, and
         # only fall back further to the bare short SHA if neither exists.
         #

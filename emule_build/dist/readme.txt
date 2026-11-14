@@ -292,7 +292,7 @@ within our distribution. You need the following libs:
 
 *) libplum 0.6.0, with changes for eMule
         https://github.com/paullouisageneau/libplum
-        https://github.com/avwarez/libplum/tree/v0.6.0-emule
+        https://github.com/avwarez/libplum/tree/v0.6.0-mapping-refresh
 
 *) ResizableLib 1.5.3
         https://github.com/ppescher/resizablelib
