@@ -96,21 +96,22 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          NATTRAVERSAL) and a LowID's Kad source records carry a "natd" tag
 #          when the client can be punched to, and a LowID keeps the LowID
 #          sources it can punch to instead of parking them as LowID->LowID.
-#          Two LowIDs learn each other's public endpoint only through a relay
-#          that sees both, the eD2K server or their two Kad buddies, the same
-#          way: the requester's request goes from the client UDP port to the
-#          relay, which forwards it with the endpoint it saw; the source
-#          sends its own request back the same way before punching, so both
-#          punch endpoints seen a moment ago. Through the server it is
+#          The requester's request goes from the client UDP port to a relay,
+#          which forwards it with the endpoint it saw, and the source punches
+#          that endpoint. Through the eD2K server, when both are on it, it is
 #          Lugdunum's OP_NAT_CALLBACK_* (obfuscated with the server's UDP
-#          key; the lower ID starts, the token comes from both IDs); through
-#          the buddies OP_REASKCALLBACKUDP/TCP, which any buddy forwards,
-#          with a natd marker (nonce) and the requester's buddy for the
-#          answer. A source with an open UDP port is asked directly
-#          (OP_DIRECTCALLBACKREQ). An endpoint-independent NAT, one with
-#          random ports in a block (mobile CGNs) or sequential ports can be
-#          punched to: the endpoint-independent side sprays the ports nearest
-#          to the endpoint the relay saw, more each round. Unanswered
+#          key, which a request waits for just after the login; the lower ID
+#          starts, the token comes from both IDs), and the source sends its
+#          own request back the same way before punching, so both punch
+#          endpoints seen a moment ago. Otherwise through the source's Kad
+#          buddy, which can be any eMule: OP_REASKCALLBACKUDP/TCP with a natd
+#          marker (nonce); the requester needs no buddy of its own and
+#          punches the endpoint of the source's Kad record at once. A source
+#          with an open UDP port is asked directly (OP_DIRECTCALLBACKREQ). An
+#          endpoint-independent NAT, one with random ports in a block (mobile
+#          CGNs) or sequential ports can be punched to: the
+#          endpoint-independent side sprays the ports nearest to the endpoint
+#          it punches, more each round. Unanswered
 #          requests go once more, and a timed-out punch is asked for again
 #          while the socket is within CONNECTION_TIMEOUT, as TCP resends its
 #          SYN. natd hands over the path and the eD2K stream runs over it in
@@ -326,10 +327,12 @@ add_subdirectory(libplum EXCLUDE_FROM_ALL)
 target_compile_options(plum-static PRIVATE $<$<C_COMPILER_ID:MSVC>:/W3>)
 
 # ---------------------------------------------------------------------------
-# natd - git submodule (natd/, avwarez/natd pinned to v0.2.1), the NAT discovery and UDP
-# hole punching that emule_build/89n adds between two LowIDs: sans-I/O C++17,
-# no sockets or threads of its own (eMule moves the datagrams and the time),
-# no dependencies. It ends where the hole is open: what goes over the punched
+# natd - git submodule (natd/, avwarez/natd pinned to v0.6.0), the NAT discovery and UDP
+# hole punching that emule_build/89n adds between two LowIDs: sans-I/O C++17
+# (eMule moves the datagrams and the time), no dependencies. eMule also uses
+# two of its platform adapters: the Winsock sockets of the discovery samples,
+# and the resolution of the STUN server names on a thread of its own. It ends
+# where the hole is open: what goes over the punched
 # path is eMule's (KCP, below). Has its own CMakeLists.txt; its examples
 # and tests stay out. Built at the standard eMule is built at, so that its
 # headers mean the same in its own translation units and in eMule's.
