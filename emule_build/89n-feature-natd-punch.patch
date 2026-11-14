@@ -365,7 +365,7 @@ index 6243994..75ddf15 100644
  	CWebServer			*webserver;
  	CScheduler			*scheduler;
 diff --git a/srchybrid/EmuleDlg.cpp b/srchybrid/EmuleDlg.cpp
-index fa40464..48c6b12 100644
+index fa40464..c2c0e2c 100644
 --- a/srchybrid/EmuleDlg.cpp
 +++ b/srchybrid/EmuleDlg.cpp
 @@ -90,6 +90,7 @@
@@ -384,22 +384,20 @@ index fa40464..48c6b12 100644
  	, m_bKadSuspendDisconnect()
  	, m_bEd2kSuspendDisconnect()
  	, m_bInitedCOM()
-@@ -728,9 +730,11 @@ void CALLBACK CemuleDlg::StartupTimer(HWND /*hwnd*/, UINT /*uiMsg*/, UINT_PTR /*
+@@ -728,9 +730,9 @@ void CALLBACK CemuleDlg::StartupTimer(HWND /*hwnd*/, UINT /*uiMsg*/, UINT_PTR /*
  					AddLogLine(true, GetResString(IDS_MAIN_READY), (LPCTSTR)theApp.m_strCurVersionLong);
  
  				theApp.m_app_state = APP_STATE_RUNNING; //initialization completed
 -				theApp.emuledlg->toolbar->EnableButton(TBBTN_CONNECT, TRUE);
 -				theApp.emuledlg->m_SysMenuOptions.EnableMenuItem(MP_CONNECT, MF_ENABLED);
 -				theApp.emuledlg->serverwnd->GetDlgItem(IDC_ED2KCONNECT)->EnableWindow();
-+				// the connect buttons and the automatic connection wait for UPnP and the NAT discovery:
-+				// over at once, the connection below goes; else it does nothing (StartConnection), and
-+				// EndStartupNetCheck connects when they end
++				// the connection waits for UPnP and the NAT discovery (EndStartupNetCheck)
 +				theApp.emuledlg->m_bStartupNetCheck = true;
 +				theApp.emuledlg->EndStartupNetCheck(false);
  				theApp.emuledlg->kademliawnd->UpdateControlsState(); //application state change is not tracked - force update
  
  				if (thePrefs.DoAutoConnect())
-@@ -1039,6 +1043,8 @@ void CemuleDlg::ShowConnectionState()
+@@ -1039,6 +1041,8 @@ void CemuleDlg::ShowConnectionState()
  			toolbar->SetButtonInfo(TBBTN_CONNECT, &tbbi);
  			strPane.Remove(_T('&'));
  			theApp.emuledlg->m_SysMenuOptions.ModifyMenu(MP_DISCONNECT, MF_STRING, MP_CONNECT, strPane);
@@ -408,7 +406,7 @@ index fa40464..48c6b12 100644
  		}
  	}
  	ShowUserCount();
-@@ -1747,8 +1753,10 @@ void CemuleDlg::OnClose()
+@@ -1747,8 +1751,10 @@ void CemuleDlg::OnClose()
  	// NOTE: Do not move those dtors into 'CemuleApp::InitInstance' (although they should be there). The
  	// dtors are indirectly calling functions which access several windows which would not be available
  	// after we have closed the main window -> crash!
@@ -419,7 +417,7 @@ index fa40464..48c6b12 100644
  	delete theApp.sharedfiles;				theApp.sharedfiles = NULL;
  	delete theApp.serverconnect;			theApp.serverconnect = NULL;
  	delete theApp.serverlist;				theApp.serverlist = NULL;		// CServerList::SaveServermetToFile
-@@ -1935,6 +1943,8 @@ void CemuleDlg::AddSpeedSelectorMenus(CMenu *addToMenu)
+@@ -1935,6 +1941,8 @@ void CemuleDlg::AddSpeedSelectorMenus(CMenu *addToMenu)
  
  void CemuleDlg::StartConnection()
  {
@@ -428,7 +426,7 @@ index fa40464..48c6b12 100644
  	if ((!theApp.serverconnect->IsConnecting() && !theApp.serverconnect->IsConnected()) || !Kademlia::CKademlia::IsRunning()) {
  		// UPnP is still trying to open the ports. In order to not get a LowID by connecting to the servers / kad before
  		// the ports are opened we delay the connection until UPnP gets a result or the timeout is reached
-@@ -1965,6 +1975,21 @@ void CemuleDlg::StartConnection()
+@@ -1965,6 +1973,21 @@ void CemuleDlg::StartConnection()
  	m_bKadSuspendDisconnect = false;
  }
  
@@ -450,7 +448,7 @@ index fa40464..48c6b12 100644
  void CemuleDlg::CloseConnection()
  {
  	theApp.serverconnect->StopConnectionTry();
-@@ -3415,6 +3440,8 @@ LRESULT CemuleDlg::OnUPnPResult(WPARAM wParam, LPARAM lParam)
+@@ -3415,6 +3438,8 @@ LRESULT CemuleDlg::OnUPnPResult(WPARAM wParam, LPARAM lParam)
  
  	if (theApp.IsRunning() && m_bConnectRequestDelayedForUPnP)
  		StartConnection();
@@ -460,7 +458,7 @@ index fa40464..48c6b12 100644
  	return 0;
  }
 diff --git a/srchybrid/EmuleDlg.h b/srchybrid/EmuleDlg.h
-index eba5ed1..e5f3f06 100644
+index eba5ed1..30269cf 100644
 --- a/srchybrid/EmuleDlg.h
 +++ b/srchybrid/EmuleDlg.h
 @@ -78,6 +78,11 @@ public:
@@ -479,7 +477,7 @@ index eba5ed1..e5f3f06 100644
  	bool			m_bStartMinimized;
  	bool			m_bMsgBlinkState;
  	bool			m_bConnectRequestDelayedForUPnP;
-+	bool			m_bStartupNetCheck;					// IsStartupNetCheck
++	bool			m_bStartupNetCheck;
  	bool			m_bKadSuspendDisconnect;
  	bool			m_bEd2kSuspendDisconnect;
  	bool			m_bInitedCOM;
@@ -580,10 +578,10 @@ index 15674a1..5b2cc4d 100644
  				if (md4equ(reqfilehash, sender->GetUploadFileID())) {
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
 new file mode 100644
-index 0000000..dad18c0
+index 0000000..f4f7760
 --- /dev/null
 +++ b/srchybrid/NatTraversal.cpp
-@@ -0,0 +1,1788 @@
+@@ -0,0 +1,1760 @@
 +//this file is part of eMule
 +//Copyright (C)2002-2026 Merkur ( strEmail.Format("%s@%s", "devteam", "emule-project.net") / https://www.emule-project.net )
 +//
@@ -1003,7 +1001,7 @@ index 0000000..dad18c0
 +		return nVerdict == 2 ? _T("possible") : nVerdict == 1 ? _T("possible through the server and the buddies only") : _T("not possible");
 +	}
 +
-+	CCriticalSection cs;	// pAgent and the sessions; Write() comes from the upload throttler thread too
++	CCriticalSection cs;	// pAgent and the sessions
 +	std::map<natd::SessionId, SSession> sessions;
 +	uint64 nPathsDead = 0;
 +	uint64 nPathsAddressChanged = 0;
@@ -1067,7 +1065,6 @@ index 0000000..dad18c0
 +		bool	Ready() const		{ return dwKey != 0; }
 +	} server;
 +	void ServerPing(DWORD dwNow);
-+	// pszWhy: for the log
 +	bool ServerRequest(uint32 nTargetID, LPCTSTR pszWhy);
 +
 +
@@ -1089,12 +1086,10 @@ index 0000000..dad18c0
 +		std::function<void()> send;
 +	};
 +	std::deque<SAgain> again;
-+	// our request of that socket once more, with that key
 +	bool Ask(const CNatdSocketLayer &layer, uint64 nKey, LPCTSTR pszWhy);
 +	// OP_REASKCALLBACKUDP to a buddy, from the client UDP port, at once (the punch packets that
 +	// follow go at once too): <buddy ID 16><file 16>, the marker of byKind with nNonce, and our
-+	// request, with our buddy on a request of ours (NATD_MARKER_PUNCH). The buddy forwards it
-+	// with the endpoint it saw it come from. pszWhy: for the log
++	// request, with our buddy on a request of ours (NATD_MARKER_PUNCH). pszWhy: for the log
 +	bool BuddyRequest(const uchar *pBuddyID, uint32 dwIP, uint16 nPort, const uchar *pFile, uint8 byKind, uint64 nNonce, LPCTSTR pszWhy);
 +};
 +
@@ -1201,10 +1196,8 @@ index 0000000..dad18c0
 +				sessions.erase(it);	// a punch we were asked for, or a socket already gone
 +				continue;
 +			}
-+			// through a relay, timed out: once more with a new request while the socket has been
-+			// connecting for less than eMule's connection timeout, as TCP sends its SYN again. The
-+			// peer's NAT opens a new mapping, whose endpoint its request back brings; through the
-+			// buddies with a new nonce, so a new token.
++			// through a relay, timed out: once more with a new request (NATD_RELAY_TRIES), through
++			// the buddies with a new nonce, so a new token
 +			CNatdSocketLayer *pLayer = s.pLayer;
 +			const DWORD dwNow = ::GetTickCount();
 +			const uint8 byVia = pLayer->GetVia();
@@ -1393,7 +1386,6 @@ index 0000000..dad18c0
 +	if (nLen > NATD_PATH_SEGMENT)
 +		return;
 +	SendDatagram(s.path.socket, s.path.remote, s.path.token, byFlags, pSegment, nLen);
-+	// the stream is counted by the socket above, as over TCP: the rest of the datagram is overhead
 +	theStats.AddUpDataOverheadOther(NATD_PATH_HEADER + (nLen > 0 ? KcpOverhead(pSegment, nLen, s.snSentNext, &s.snSentNext) : 0));
 +	const natd::Duration keepalive(s.path.keepalive);
 +	s.tKeepalive = natd::Clock::now() + keepalive - natd::Duration(GetRandomUInt16() % (keepalive.count() / 10 + 1));
@@ -1601,10 +1593,8 @@ index 0000000..dad18c0
 +		theApp.emuledlg->EndStartupNetCheck();
 +}
 +
-+// As UPnP before it: the login then announces what the discovery found (AnnounceServerPunch),
-+// and the discovery's own mappings, about fifty, are made before those of the server, Kad and
-+// the peers, not among them - on a NAT with a block of ports per subscriber they come from the
-+// same block.
++// As UPnP before it (NatTraversal.h). The discovery's own mappings, about fifty, then do not
++// come from the block of ports of the connection's, on a NAT with blocks per subscriber.
 +bool CNatTraversal::DelayConnection()
 +{
 +	if (!m_bEnabled)
@@ -1838,13 +1828,10 @@ index 0000000..dad18c0
 +	return true;
 +}
 +
-+// A request the server forwarded. The target we asked, asking back: our socket gets the punch.
-+// Anyone else asks us to punch: we do, the socket is made when the stream opens, and we ask back
-+// so that it learns where we are. Each request goes twice (UDP): a peer counts once. The lower
-+// ID starts the punch. Two LowIDs that asked each other at once take each other's request for the
-+// answer: both sockets then get the one punch and both send their hello, which eMule answers as
-+// a repeated one. Should both crypt layers start the handshake, that connection fails, and the
-+// next ask, no longer at once, gets through.
++// A request the server forwarded: the answer to ours, or a new one, which we punch and ask back.
++// Two LowIDs that asked each other at once both get the one punch and both send their hello,
++// which eMule answers as a repeated one; should both crypt layers start the handshake, that
++// connection fails, and the next ask, no longer at once, gets through.
 +void CNatTraversal::OnServerPeer(const SNatCallback &cb)
 +{
 +	Impl &impl = *m_pImpl;
@@ -1867,9 +1854,8 @@ index 0000000..dad18c0
 +		: natd::tokenFrom(cb.abyHash, 16, ServerNonce(cb.nID, impl.server.nID)));
 +	if (Answered(NATD_VIA_SERVER, cb.nID, cb, token.data(), bConnect))
 +		return;
-+	// The request back goes before our first punch packet, which the next Process() sends: the
-+	// endpoint the server sees is then our newest mapping, and the one towards the peer comes
-+	// right after it, as a NAT with sequential ports gives them
++	// the request back before our first punch packet, which the next Process() sends: the
++	// mapping towards the peer then comes right after the one the server sees (sequential ports)
 +	if (OpenSession(cb.dwIP, cb.nPort, token.data(), bConnect, NULL, NATD_VIA_SERVER, cb.nID) && impl.ServerRequest(cb.nID, _T("back, so that it learns our endpoint"))) {
 +		const uint32 nID = cb.nID;
 +		impl.again.push_back(Impl::SAgain{dwNow, NATD_VIA_SERVER, [&impl, nID]() { impl.ServerRequest(nID, _T("back, again")); }});
@@ -1909,7 +1895,6 @@ index 0000000..dad18c0
 +	}
 +}
 +
-+// The source's request back, through our buddy (as OnServerPeer)
 +void CNatTraversal::OnBuddyBack(const SNatCallback &cb, uint64 nNonce)
 +{
 +	if (!Answered(NATD_VIA_BUDDY, nNonce, cb, NULL, true) && thePrefs.GetVerbose())
@@ -1943,15 +1928,12 @@ index 0000000..dad18c0
 +{
 +	if (!m_pImpl->pAgent->punchable() || client.GetRequestFile() == NULL || thePrefs.GetUDPPort() == 0)
 +		return NATD_VIA_NONE;
-+	// One channel a connection attempt, as eMule's callbacks, and in their order: the server
-+	// first, for a LowID logged in to our server, which coordinates the punch (its address comes
-+	// with the server's answer); Kad only when the server cannot reach the source.
++	// one channel a connection attempt, as eMule's callbacks, and in their order: the server
++	// first, Kad only when the server cannot reach the source
 +	if (client.HasLowID() && ServerCanPunch(client.GetUserIDHybrid(), client.GetServerIP(), client.GetServerPort()))
 +		return NATD_VIA_SERVER;
-+	// A source that published in Kad that it can be punched to: directly, with an open UDP port
-+	// (we punch the endpoint it published, it the one our request came from, which needs an
-+	// endpoint-independent mapping of ours), or through its buddy and ours, which do what the
-+	// server does. The addresses are checked when they are punched to.
++	// a source that published in Kad that it can be punched to: directly, with an open UDP
++	// port, or through its buddy and ours. The addresses are checked when they are punched to.
 +	if (client.IsNatdSource() && Kademlia::CKademlia::IsConnected() && Kademlia::CKademlia::IsFirewalled()) {
 +		uchar abyBuddyID[16];
 +		uint32 dwBuddyIP = 0;
@@ -1978,12 +1960,8 @@ index 0000000..dad18c0
 +		&& theApp.serverconnect->IsLocalServer(dwServerIP, nServerPort);
 +}
 +
-+// Through Kad the request carries the marker, and the token comes from our user hash, which the
-+// request carries, and the marker's nonce. Directly, the punch goes to the endpoint the index
-+// node saw the source publish from (its Kad port), while the source punches to the endpoint the
-+// request came from. Through the buddies each side punches the endpoint the other's buddy saw,
-+// the source's with its request back (OnBuddyBack). Through the server the endpoint and
-+// the token come with the server's answer (OnServerPeer).
++// Through Kad the token comes from our user hash and the marker's nonce; through the server the
++// endpoint and the token come with the server's answer (OnServerPeer).
 +bool CNatTraversal::AttachOutgoing(CClientReqSocket *pSocket, CUpDownClient &client, uint8 byVia)
 +{
 +	if (byVia == NATD_VIA_NONE)
@@ -2005,9 +1983,7 @@ index 0000000..dad18c0
 +		theApp.clientudp->SendPacket(packet, client.GetConnectIP(), client.GetKadPort(), client.ShouldReceiveCryptUDPPackets(), client.GetUserHash(), false, 0);
 +		pLayer = new CNatdSocketLayer(client.GetConnectIP(), client.GetKadPort(), natd::tokenFrom(thePrefs.GetUserHash(), 16, nNonce).data(), byVia);
 +	} else {
-+		// through a relay: the server, keyed by the target's ID there, or the source's buddy,
-+		// which checks the buddy ID and forwards the rest as it is, with our buddy in it, keyed
-+		// by the nonce. The punch starts when the target's request back brings its endpoint.
++		// through a relay, keyed by the target's ID on the server, by the nonce through the buddies
 +		const bool bServer = byVia == NATD_VIA_SERVER;
 +		const uint64 nKey = bServer ? client.GetUserIDHybrid() : nNonce;
 +		pLayer = new CNatdSocketLayer(0, 0, bServer ? NULL : natd::tokenFrom(thePrefs.GetUserHash(), 16, nNonce).data(), byVia);
@@ -2073,11 +2049,9 @@ index 0000000..dad18c0
 +	return true;
 +}
 +
-+// Through the buddies the request back goes before our first punch packet, which the next
-+// Process() sends, as through the server: the endpoint the requester's buddy sees is then our
-+// newest mapping, and the one towards the requester comes right after it. A request
-+// without the requester's buddy is not taken: the requester would punch the endpoint we
-+// published, which nobody keeps fresh, while the buddies bring each side the other's.
++// Through the buddies the request back goes before our first punch packet, as in OnServerPeer.
++// A request without the requester's buddy is not taken: the requester would punch the endpoint
++// we published, which nobody keeps fresh.
 +// The requester's endpoint is the one its buddy saw a UDP datagram come from, which a forged
 +// source address can make up, as it can for eMule's own callback: the punch towards it then
 +// finds no one punching back, and ends within natd's caps (small datagrams, at most maxPackets
@@ -2123,11 +2097,7 @@ index 0000000..dad18c0
 +	// through a relay carries the endpoint the relay saw, which no filter has checked yet
 +	if (IsFilteredOrBanned(dwIP))
 +		return false;
-+	// Through the server nothing says whether the peer's mapping is endpoint-independent,
-+	// random in a block of ports (a mobile CGN) or sequential: natd punches the endpoint the
-+	// server saw and, should nobody answer there, the ports nearest to it, more each round, with
-+	// no block size assumed (PeerNat::Unknown). The same through the two
-+	// buddies, which bring both endpoints fresh as the server does.
++	// through a relay the endpoints are fresh and the peer's NAT unknown (NatTraversal.h)
 +	const bool bFresh = byVia != NATD_VIA_DIRECT;
 +	LPCTSTR pszNot = NULL;
 +	if (bFresh ? !m_pImpl->pAgent->punchable() : !m_pImpl->pAgent->directPunchable())
@@ -2374,10 +2344,10 @@ index 0000000..dad18c0
 +}
 diff --git a/srchybrid/NatTraversal.h b/srchybrid/NatTraversal.h
 new file mode 100644
-index 0000000..a814717
+index 0000000..4d54ff7
 --- /dev/null
 +++ b/srchybrid/NatTraversal.h
-@@ -0,0 +1,271 @@
+@@ -0,0 +1,263 @@
 +//this file is part of eMule
 +//Copyright (C)2002-2026 Merkur ( strEmail.Format("%s@%s", "devteam", "emule-project.net") / https://www.emule-project.net )
 +//
@@ -2410,14 +2380,11 @@ index 0000000..a814717
 +// - the source starts its punch towards that endpoint, and first sends its own request back,
 +//   which brings its endpoint to the requester the same way; the requester punches it then;
 +// - a request goes once more when unanswered (UDP), and a punch that times out is asked for once
-+//   more while the socket has been connecting for less than eMule's connection timeout, as TCP
-+//   sends its SYN again: the peer's NAT opens a new mapping, whose endpoint the relay brings.
-+// Both endpoints being fresh, a NAT that maps the port endpoint-independently (natd
-+// Predictability::Stable), to random ports inside a block of ports (Bounded, mobile CGNs) or to
-+// sequential ports (Predictable) can be punched to: nothing tells either side the other's NAT,
-+// so an endpoint-independent side punches the endpoint the relay saw and, should nobody answer
-+// there, the ports nearest to it, more each round, whatever the size of the block (natd::
-+// PeerNat::Unknown); the other side punches the endpoint from the client UDP port.
++//   more within eMule's connection timeout, as TCP sends its SYN again.
++// Both endpoints being fresh, a NAT that maps endpoint-independently (natd Stable), to random
++// ports in a block (Bounded, mobile CGNs) or to sequential ports (Predictable) can be punched to:
++// nothing tells either side the other's NAT, so natd punches the endpoint the relay saw and then
++// the ports nearest to it, more each round, whatever the size of the block (PeerNat::Unknown).
 +//
 +// The request is the one the eD2K servers forward between two LowIDs (Lugdunum's NAT callback,
 +// SNatCallback): the requester's endpoint as the relay saw it, its ID on the server (0 off a
@@ -2499,14 +2466,10 @@ index 0000000..a814717
 +	bool	OnDatagram(const BYTE *pData, int nLen, uint32 dwIP, uint16 nPort);
 +	// every 100 ms, from the upload timer
 +	void	Process();
-+	// At startup, before the connection to the server and to Kad: true while it should wait for
-+	// the NAT discovery, which this starts (after UPnP). The dialog is told when the discovery
-+	// has a result, or when the wait (at most NATD_CONNECT_WAIT) is over
-+	// (CemuleDlg::EndStartupNetCheck); after it, false whatever the discovery.
++	// At startup, after UPnP: true while the connection should wait for the NAT discovery, which
++	// this starts; at most NATD_CONNECT_WAIT, then CemuleDlg::EndStartupNetCheck is called.
 +	bool	DelayConnection();
-+	// eMule closes, before the client UDP socket goes: every punched stream still open ends with
-+	// its FINs at once, as a TCP connection gets its FIN, so that the peer does not wait for the
-+	// path to go silent
++	// eMule closes, before the client UDP socket goes: the FINs of every punched stream, at once
 +	void	Shutdown();
 +
 +	// The discovery found a mapping of the client UDP port that can be punched to through a
@@ -2564,8 +2527,7 @@ index 0000000..a814717
 +private:
 +	// A punch session towards dwIP:nPort (network order IP): natd connects when bConnect, else
 +	// accepts. pLayer: the socket's, NULL for a socket made when the stream opens.
-+	// nServerPeer: through the server, the peer's ID there. Through a relay (the server, the
-+	// buddies) both endpoints are fresh; directly, the source's is the one it published.
++	// nServerPeer: through the server, the peer's ID there.
 +	bool	OpenSession(uint32 dwIP, uint16 nPort, const BYTE *pToken12, bool bConnect, CNatdSocketLayer *pLayer, uint8 byVia, uint32 nServerPeer = 0);
 +	void	ServerTimer();
 +	void	OnServerPeer(const SNatCallback &cb);
@@ -2650,7 +2612,7 @@ index 0000000..a814717
 +	BYTE	m_abyToken[12];
 +};
 diff --git a/srchybrid/Opcodes.h b/srchybrid/Opcodes.h
-index 139f6b3..b13c0b5 100644
+index 139f6b3..a2b83f2 100644
 --- a/srchybrid/Opcodes.h
 +++ b/srchybrid/Opcodes.h
 @@ -173,6 +173,7 @@
@@ -2676,7 +2638,7 @@ index 139f6b3..b13c0b5 100644
  #define TAG_SOURCETYPE			"\xFF"	// <uint8>
 +// A string name, unlike the eMule tags above: a mod with tags of its own uses one-byte names.
 +#define TAG_NATDCLIENT			"natd"	// <uint8> the stream transports the source runs over a punched path (NATD_TRANSPORT_*): it can be punched to
-+#define NATD_TRANSPORT_KCP		0x01	// KCP
++#define NATD_TRANSPORT_KCP		0x01
 +#define NATD_TRANSPORTS			NATD_TRANSPORT_KCP	// the ones we run
  
  #define	TAGTYPE_NONE			0x00
