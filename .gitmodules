@@ -22,7 +22,7 @@
 [submodule "libplum"]
 	path = libplum
 	url = https://github.com/avwarez/libplum.git
-	branch = v0.6.0-emule
+	branch = v0.6.0-mapping-refresh
 [submodule "natd"]
 	path = natd
 	url = https://github.com/avwarez/natd.git

@@ -303,7 +303,7 @@ target_compile_options(zlibstatic PRIVATE $<$<C_COMPILER_ID:MSVC>:/W3>)
 add_subdirectory(id3lib_build)
 
 # ---------------------------------------------------------------------------
-# libplum - git submodule (libplum/, avwarez/libplum pinned to v0.6.0-emule:
+# libplum - git submodule (libplum/, avwarez/libplum pinned to v0.6.0-mapping-refresh:
 # tag v0.6.0 plus four commits - UPnP error 725 falls back to a permanent
 # lease, error 714 on unmapping is a success, UPnP mappings are checked with
 # GetSpecificPortMappingEntry every recheck period and made again only when
