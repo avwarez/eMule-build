@@ -752,10 +752,10 @@ index 15674a1..ce86b22 100644
  void CClientReqSocket::OnSend(int nErrorCode)
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
 new file mode 100644
-index 0000000..1840767
+index 0000000..98d2aed
 --- /dev/null
 +++ b/srchybrid/NatTraversal.cpp
-@@ -0,0 +1,1870 @@
+@@ -0,0 +1,1894 @@
 +//this file is part of eMule
 +//Copyright (C)2002-2026 Merkur ( strEmail.Format("%s@%s", "devteam", "emule-project.net") / https://www.emule-project.net )
 +//
@@ -1180,6 +1180,30 @@ index 0000000..1840767
 +		natd::AgentConfig cfg;
 +		cfg.discovery.primarySocket = kPrimarySocket;	// the caps and waits of the punches: natd's
 +		pAgent = std::make_unique<natd::Agent>(cfg, io);
++		nUnknownSpray = cfg.limits.unknownSpray;
++	}
++	int nUnknownSpray = 0;	// natd's PunchLimits::unknownSpray
++	// How far a port Kad sees us on may be from the one our records were published from before
++	// a punch towards them no longer reaches us, as natd measured the client UDP port's mappings
++	// to new destinations: random in a block (Bounded), the size of the block, past which the
++	// ports are of another one; sequential (Predictable), the ports the first spray round of a
++	// punch reaches past the endpoint, at least half of unknownSpray (a port past it ranks as one
++	// twice as far before it). 0: any other mapping, whose port is the same for every destination
++	// (natd's endpoint checks see it change) or not one a punch can find.
++	uint16 KadPortReach() const
++	{
++		if (!pAgent->profileReady() || !pAgent->punchable())
++			return 0;
++		const natd::AllocationInfo &a = pAgent->profile().details.sameSocket;
++		switch (a.pattern) {
++		case natd::AllocationPattern::RandomInBlock:
++			return a.block.size;
++		case natd::AllocationPattern::Sequential:
++		case natd::AllocationPattern::SequentialNoisy:
++			return (uint16)(nUnknownSpray / 2);
++		default:
++			return 0;
++		}
 +	}
 +	void StartDiscovery(natd::TimePoint now);
 +	void Poll(natd::TimePoint now);
@@ -1773,6 +1797,9 @@ index 0000000..1840767
 +	if (Kademlia::CKademlia::IsConnected() && NoBuddyToPublish()) {
 +		if (impl.dwNoBuddySince == 0)
 +			impl.dwNoBuddySince = max(::GetTickCount(), (DWORD)1);
++		// the records a new buddy brings go from the port Kad sees then (OnKadPort)
++		if (impl.KadPortReach() > 0)
++			impl.publishedEndpoint.port = 0;
 +	} else
 +		impl.dwNoBuddySince = 0;
 +	bool bConnect = false;
@@ -2158,39 +2185,36 @@ index 0000000..1840767
 +		&& m_pImpl->dwNoBuddySince != 0 && ::GetTickCount() - m_pImpl->dwNoBuddySince >= NATD_GONE_AFTER;
 +}
 +
-+// natd's block is the one the discovery measured on the client UDP port for new destinations
++// Only with a buddy or a direct callback: without, our records name no buddy a punch could go
++// through (NATD_SOURCETYPE_GONE), and a new port changes nothing in them
 +bool CNatTraversal::WantsKadPort() const
 +{
-+	if (!m_bEnabled || !theApp.IsFirewalled() || !m_pImpl->pAgent->profileReady() || !m_pImpl->pAgent->punchable()
-+		|| theApp.sharedfiles == NULL || theApp.sharedfiles->GetCount() == 0)
-+	{
-+		return false;
-+	}
-+	const natd::AllocationInfo &a = m_pImpl->pAgent->profile().details.sameSocket;
-+	return a.pattern == natd::AllocationPattern::RandomInBlock && a.block.size > 0;
++	return m_bEnabled && theApp.IsFirewalled() && !NoBuddyToPublish() && theApp.sharedfiles != NULL && theApp.sharedfiles->GetCount() > 0
++		&& m_pImpl->KadPortReach() > 0;
 +}
 +
 +// Ports of one block are at most its size apart; the ports of a new block too when it is next
 +// to the old one, and the punch then reaches them from the old port. Nothing else is assumed of
-+// where the operator puts the blocks.
++// where the operator puts the blocks. Sequential ports move on with every destination, ours and
++// those of the other subscribers of the NAT.
 +void CNatTraversal::OnKadPort(uint16 nPort)
 +{
 +	if (nPort == 0 || !WantsKadPort())
 +		return;
 +	Impl &impl = *m_pImpl;
-+	const uint16 nBlock = impl.pAgent->profile().details.sameSocket.block.size;
++	const uint16 nReach = impl.KadPortReach();
 +	if (impl.publishedEndpoint.port == 0) {
 +		impl.publishedEndpoint.port = nPort;
 +		return;
 +	}
-+	if ((uint16)abs((int)nPort - (int)impl.publishedEndpoint.port) < nBlock)
++	if ((uint16)abs((int)nPort - (int)impl.publishedEndpoint.port) < nReach)
 +		return;
 +	const DWORD dwNow = ::GetTickCount();
 +	if (impl.dwRepublished != 0 && dwNow - impl.dwRepublished < NATD_REPUBLISH_GAP)
 +		return;	// a later port says it again
 +	if (thePrefs.GetVerbose())
-+		AddDebugLogLine(false, _T("NAT traversal: Kad sees us on port %u, not of the block of port %u (%u ports): Kad sources published again"), nPort
-+			, impl.publishedEndpoint.port, nBlock);
++		AddDebugLogLine(false, _T("NAT traversal: Kad sees us on port %u, %u or more from port %u, which our records have: Kad sources published again"), nPort
++			, nReach, impl.publishedEndpoint.port);
 +	impl.dwRepublished = dwNow;
 +	impl.publishedEndpoint.port = nPort;
 +	theApp.sharedfiles->ClearKadSourcePublishInfo();
@@ -2628,10 +2652,10 @@ index 0000000..1840767
 +}
 diff --git a/srchybrid/NatTraversal.h b/srchybrid/NatTraversal.h
 new file mode 100644
-index 0000000..97181b8
+index 0000000..b846b5a
 --- /dev/null
 +++ b/srchybrid/NatTraversal.h
-@@ -0,0 +1,286 @@
+@@ -0,0 +1,288 @@
 +//this file is part of eMule
 +//Copyright (C)2002-2026 Merkur ( strEmail.Format("%s@%s", "devteam", "emule-project.net") / https://www.emule-project.net )
 +//
@@ -2722,9 +2746,10 @@ index 0000000..97181b8
 +#define NATD_VIA_DIRECT			2	// OP_DIRECTCALLBACKREQ to a source with an open UDP port
 +#define NATD_VIA_SERVER			3	// through the server both are logged in to
 +
-+// A LowID whose NAT gives each destination its own port, at random in a block of ports (natd
-+// Bounded): a Kad contact is asked this often (s) which port it sees us on (KADEMLIA2_PING),
-+// so that our Kad source records are published again once the block changed (OnKadPort)
++// A LowID with a buddy whose NAT gives each destination its own port, at random in a block of
++// ports (natd Bounded) or in sequence (Predictable): a Kad contact is asked this often (s) which
++// port it sees us on (KADEMLIA2_PING), so that our Kad source records are published again once
++// the ports moved past what a punch towards them reaches (OnKadPort)
 +#define NATD_KAD_PORT_PROBE		60
 +
 +// A LowID left with no buddy (and no direct callback) for NATD_GONE_AFTER: our Kad source records
@@ -2791,8 +2816,9 @@ index 0000000..97181b8
 +	// Whether Kad should ask a contact for the port it sees us on (NATD_KAD_PORT_PROBE)
 +	bool	WantsKadPort() const;
 +	// The port a Kad contact saw us on (KADEMLIA2_PONG). A punch through our buddy goes towards
-+	// the port the index nodes saw our records come from: once ports come from another block, the
-+	// records are published again, at most every NATD_REPUBLISH_GAP.
++	// the port the index nodes saw our records come from: once ports come from another block, or
++	// sequential ones moved past what the punch reaches, the records are published again, at most
++	// every NATD_REPUBLISH_GAP.
 +	void	OnKadPort(uint16 nPort);
 +	// A LowID with no buddy and no direct callback, which cannot publish its Kad sources
 +	// (CSharedFileList::Publish)
