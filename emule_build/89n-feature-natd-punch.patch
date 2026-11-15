@@ -610,7 +610,7 @@ index 24555d4..7bf035d 100644
  
  	CString strBootstrapIP;
 diff --git a/srchybrid/KnownFile.cpp b/srchybrid/KnownFile.cpp
-index ea2b6b8..54da090 100644
+index ea2b6b8..152b967 100644
 --- a/srchybrid/KnownFile.cpp
 +++ b/srchybrid/KnownFile.cpp
 @@ -39,6 +39,7 @@
@@ -621,7 +621,7 @@ index ea2b6b8..54da090 100644
  #include "MD4.h"
  #include "Collection.h"
  #include "emuledlg.h"
-@@ -1623,6 +1624,9 @@ bool CKnownFile::PublishSrc()
+@@ -1623,24 +1624,44 @@ bool CKnownFile::PublishSrc()
  {
  	uint32 lastBuddyIP;
  	time_t tNow = time(NULL);
@@ -631,9 +631,17 @@ index ea2b6b8..54da090 100644
  	if (theApp.IsFirewalled()
  		&& (Kademlia::CUDPFirewallTester::IsFirewalledUDP(true) || !Kademlia::CUDPFirewallTester::IsVerified()))
  	{
-@@ -1630,17 +1634,19 @@ bool CKnownFile::PublishSrc()
- 		if (!buddy)
+ 		CUpDownClient *buddy = theApp.clientlist->GetBuddy();
+-		if (!buddy)
++		if (!buddy) {
++			// NAT traversal: once, a record that takes the place of those naming the buddy we had
++			// (NATD_SOURCETYPE_GONE); a buddy found later makes the next one a plain record again
++			if (theApp.nattraversal->WantsGoneRecords() && m_lastBuddyIP != NATD_GONE_BUDDYIP) {
++				SetLastPublishTimeKadSrc(tNow + KADEMLIAREPUBLISHTIMES, NATD_GONE_BUDDYIP);
++				return true;
++			}
  			return false;
++		}
  		lastBuddyIP = buddy->GetIP();
 -		if (lastBuddyIP != m_lastBuddyIP) {
 +		if (lastBuddyIP != m_lastBuddyIP || bPunchable != m_bLastPunchable) {
@@ -641,8 +649,17 @@ index ea2b6b8..54da090 100644
 +			m_bLastPunchable = bPunchable;
  			return true;
  		}
- 	} else
+-	} else
++	} else {
  		lastBuddyIP = 0;
++		// a record of ours that no client takes as a source is out (NATD_SOURCETYPE_GONE): the
++		// plain one now, not when it would be due
++		if (m_lastBuddyIP == NATD_GONE_BUDDYIP) {
++			SetLastPublishTimeKadSrc(tNow + KADEMLIAREPUBLISHTIMES, lastBuddyIP);
++			m_bLastPunchable = bPunchable;
++			return true;
++		}
++	}
  
 -	if (tNow < m_lastPublishTimeKadSrc)
 +	if (tNow < m_lastPublishTimeKadSrc && bPunchable == m_bLastPunchable)
@@ -726,10 +743,10 @@ index 15674a1..ce86b22 100644
  void CClientReqSocket::OnSend(int nErrorCode)
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
 new file mode 100644
-index 0000000..a7a761f
+index 0000000..9164100
 --- /dev/null
 +++ b/srchybrid/NatTraversal.cpp
-@@ -0,0 +1,1922 @@
+@@ -0,0 +1,1941 @@
 +//this file is part of eMule
 +//Copyright (C)2002-2026 Merkur ( strEmail.Format("%s@%s", "devteam", "emule-project.net") / https://www.emule-project.net )
 +//
@@ -776,6 +793,7 @@ index 0000000..a7a761f
 +#include "Log.h"
 +#include "kademlia/kademlia/Kademlia.h"
 +#include "kademlia/kademlia/Prefs.h"
++#include "kademlia/kademlia/UDPFirewallTester.h"
 +#include "kademlia/utils/UInt128.h"
 +#include "natd/natd.hpp"
 +#include "natd/resolve.hpp"
@@ -816,6 +834,9 @@ index 0000000..a7a761f
 +// Kad source records published again for a new port block at most this often: every shared
 +// file's records go again (CSharedFileList::ClearKadSourcePublishInfo)
 +#define NATD_REPUBLISH_GAP		((DWORD)MIN2MS(5))
++// with no buddy this long (from the start, or since it went), the records naming the old one
++// give way (NATD_SOURCETYPE_GONE): Kad looks for a buddy in the meantime
++#define NATD_GONE_AFTER			((DWORD)MIN2MS(5))
 +
 +namespace
 +{
@@ -1196,6 +1217,7 @@ index 0000000..a7a761f
 +	// the public endpoint our Kad source records were last published from, as natd found it
 +	natd::Endpoint publishedEndpoint;
 +	DWORD dwRepublished = 0;	// when OnKadPort last had them published again
++	DWORD dwNoBuddySince = 0;	// connected to Kad as a LowID with no buddy since then (0: not so)
 +	DWORD dwConnectWait = 0;
 +	bool bConnectWaiting = false;
 +
@@ -1764,6 +1786,14 @@ index 0000000..a7a761f
 +	}
 +	ServerTimer();
 +	RelayTimer();
++	// as CSharedFileList::Publish has it: a LowID that cannot publish its sources
++	if (Kademlia::CKademlia::IsConnected() && theApp.IsFirewalled() && theApp.clientlist->GetBuddyStatus() != Connected
++		&& (Kademlia::CUDPFirewallTester::IsFirewalledUDP(true) || !Kademlia::CUDPFirewallTester::IsVerified()))
++	{
++		if (impl.dwNoBuddySince == 0)
++			impl.dwNoBuddySince = max(::GetTickCount(), (DWORD)1);
++	} else
++		impl.dwNoBuddySince = 0;
 +	bool bConnect = false;
 +	if (impl.bConnectWaiting && (impl.pAgent->profileReady() || ::GetTickCount() - impl.dwConnectWait >= NATD_CONNECT_WAIT)) {
 +		impl.bConnectWaiting = false;
@@ -2150,6 +2180,12 @@ index 0000000..a7a761f
 +			AddDebugLogLine(false, _T("NAT traversal: buddy lost, checking the public endpoint%s"), m_pImpl->pAgent->checking() ? _T(" (a check is on already)") : _T(""));
 +		m_pImpl->pAgent->checkEndpoint(natd::Clock::now());
 +	}
++}
++
++bool CNatTraversal::WantsGoneRecords() const
++{
++	return m_bEnabled && m_pImpl->pAgent->profileReady() && m_pImpl->pAgent->punchable()
++		&& m_pImpl->dwNoBuddySince != 0 && ::GetTickCount() - m_pImpl->dwNoBuddySince >= NATD_GONE_AFTER;
 +}
 +
 +// natd's block is the one the discovery measured on the client UDP port for new destinations
@@ -2654,10 +2690,10 @@ index 0000000..a7a761f
 +}
 diff --git a/srchybrid/NatTraversal.h b/srchybrid/NatTraversal.h
 new file mode 100644
-index 0000000..bc374fa
+index 0000000..9e00d72
 --- /dev/null
 +++ b/srchybrid/NatTraversal.h
-@@ -0,0 +1,290 @@
+@@ -0,0 +1,300 @@
 +//this file is part of eMule
 +//Copyright (C)2002-2026 Merkur ( strEmail.Format("%s@%s", "devteam", "emule-project.net") / https://www.emule-project.net )
 +//
@@ -2753,6 +2789,14 @@ index 0000000..bc374fa
 +// so that our Kad source records are published again once the block changed (OnKadPort)
 +#define NATD_KAD_PORT_PROBE		60
 +
++// A LowID left with no buddy (and no direct callback) for NATD_GONE_AFTER: our Kad source records
++// still name the buddy we had, for up to 5 hours, and a punch through it reaches no one. A record
++// of this source type takes their place on the index nodes (they keep one record per IP and
++// port): eMule and aMule read only types 1 and 3-6, and an index node any type.
++#define NATD_SOURCETYPE_GONE	0
++// CKnownFile's last buddy IP once that record is out: none is published again until a buddy comes
++#define NATD_GONE_BUDDYIP		1
++
 +// The punch request: <ID 4><crypt 1>[<user hash 16> if crypt & NATD_CALLBACK_HASH] after the
 +// endpoint the relay adds, as Lugdunum forwards it (OP_NAT_CALLBACK_*). crypt is the requester's
 +// crypt layer support, request and require in bits 0-2, as GetMyConnectOptions puts them; the
@@ -2812,6 +2856,8 @@ index 0000000..bc374fa
 +	// the port the index nodes saw our records come from: once ports come from another block, the
 +	// records are published again, at most every NATD_REPUBLISH_GAP.
 +	void	OnKadPort(uint16 nPort);
++	// Whether our Kad source records should give way to NATD_SOURCETYPE_GONE ones now
++	bool	WantsGoneRecords() const;
 +
 +	// Downloader side. True when TCP cannot reach the client (LowID->LowID) but a punch can.
 +	bool	CanPunchTo(const CUpDownClient &client) const	{ return PunchVia(client) != NATD_VIA_NONE; }
@@ -3240,6 +3286,56 @@ index 6e7c81f..0ebad03 100644
  		case OP_CALLBACK_FAIL:
  			if (thePrefs.GetDebugServerTCPLevel() > 0)
  				Debug(_T("ServerMsg - OP_Callback_Fail %s\n"), (LPCTSTR)DbgGetHexDump(packet, size));
+diff --git a/srchybrid/SharedFileList.cpp b/srchybrid/SharedFileList.cpp
+index fa91bed..bae2adc 100644
+--- a/srchybrid/SharedFileList.cpp
++++ b/srchybrid/SharedFileList.cpp
+@@ -38,6 +38,7 @@
+ #include "Log.h"
+ #include "Collection.h"
+ #include "kademlia/kademlia/UDPFirewallTester.h"
++#include "NatTraversal.h"
+ #include "ImportParts.h"
+ #include "MD5Sum.h"
+ 
+@@ -1240,12 +1241,14 @@ void CSharedFileList::Process()
+ 
+ void CSharedFileList::Publish()
+ {
++	// NAT traversal: a LowID with no buddy publishes only the source records that take the place
++	// of those naming the buddy it had (CNatTraversal::WantsGoneRecords): no keywords, no notes
++	const bool bNoBuddy = theApp.IsFirewalled()
++		&& theApp.clientlist->GetBuddyStatus() != Connected
++		//direct callback
++		&& (Kademlia::CUDPFirewallTester::IsFirewalledUDP(true) || !Kademlia::CUDPFirewallTester::IsVerified());
+ 	if (!Kademlia::CKademlia::IsConnected()
+-		|| (theApp.IsFirewalled()
+-			&& theApp.clientlist->GetBuddyStatus() != Connected
+-			//direct callback
+-			&& (Kademlia::CUDPFirewallTester::IsFirewalledUDP(true) || !Kademlia::CUDPFirewallTester::IsVerified())
+-		   )
++		|| (bNoBuddy && !theApp.nattraversal->WantsGoneRecords())
+ 		|| !GetCount()
+ 		|| !Kademlia::CKademlia::GetPublish())
+ 	{
+@@ -1254,7 +1257,7 @@ void CSharedFileList::Publish()
+ 
+ 	//We are connected to Kad. We are either open or have a buddy. And Kad is ready to start publishing.
+ 	time_t tNow = time(NULL);
+-	if (Kademlia::CKademlia::GetTotalStoreKey() < KADEMLIATOTALSTOREKEY) {
++	if (!bNoBuddy && Kademlia::CKademlia::GetTotalStoreKey() < KADEMLIATOTALSTOREKEY) {
+ 		//We are not at the max simultaneous keyword publishes
+ 		if (tNow >= m_keywords->GetNextPublishTime()) {
+ 			//Enough time has passed since last keyword publish
+@@ -1331,7 +1334,7 @@ void CSharedFileList::Publish()
+ 		}
+ 	}
+ 
+-	if (Kademlia::CKademlia::GetTotalStoreNotes() < KADEMLIATOTALSTORENOTES) {
++	if (!bNoBuddy && Kademlia::CKademlia::GetTotalStoreNotes() < KADEMLIATOTALSTORENOTES) {
+ 		if (tNow >= m_lastPublishKadNotes) {
+ 			if (m_currFileNotes >= GetCount())
+ 				m_currFileNotes = 0;
 diff --git a/srchybrid/UpdownClient.h b/srchybrid/UpdownClient.h
 index 5fe1ef2..2d8e9c1 100644
 --- a/srchybrid/UpdownClient.h
@@ -3382,7 +3478,7 @@ index cb719c7..84eb80b 100644
  		CRoutingZone *pZone = itEventMap->first;
  		if (bUpdateUserFile) {
 diff --git a/srchybrid/kademlia/kademlia/Search.cpp b/srchybrid/kademlia/kademlia/Search.cpp
-index 2a22b0e..f8ba80c 100644
+index 2a22b0e..5efd3f4 100644
 --- a/srchybrid/kademlia/kademlia/Search.cpp
 +++ b/srchybrid/kademlia/kademlia/Search.cpp
 @@ -43,6 +43,7 @@ their client on the eMule forum.
@@ -3393,18 +3489,48 @@ index 2a22b0e..f8ba80c 100644
  #include "kademlia/io/ByteIO.h"
  #include "kademlia/io/IOException.h"
  #include "kademlia/kademlia/Defines.h"
-@@ -691,6 +692,10 @@ void CSearch::StorePacket()
+@@ -645,15 +646,27 @@ void CSearch::StorePacket()
+ 			//6 Firewalled Source with Direct Callback (supports >4GB)
+ 
+ 			TagList listTag;
++			bool bGone = false;
+ 			if (theApp.IsFirewalled()) {
+ 				bool bDirectCallback = (Kademlia::CKademlia::IsRunning() && !Kademlia::CUDPFirewallTester::IsFirewalledUDP(true) && Kademlia::CUDPFirewallTester::IsVerified());
+-				if (!bDirectCallback && !theApp.clientlist->GetBuddy()) {
++				if (!bDirectCallback && !theApp.clientlist->GetBuddy() && !theApp.nattraversal->WantsGoneRecords()) {
+ 					// We are firewalled, no direct callback and no buddy. Stop everything.
+ 					PrepareToStop();
+ 					break;
+ 				}
+ 
+-				if (bDirectCallback) {
++				if (!bDirectCallback && !theApp.clientlist->GetBuddy()) {
++					// NAT traversal: no buddy for a while, a record no client takes as a source in
++					// place of ours that name the buddy we had (same IP and TCP port); the size, as
++					// the index node answers by it
++					bGone = true;
++					listTag.push_back(new CKadTagUInt8(TAG_SOURCETYPE, NATD_SOURCETYPE_GONE));
++					listTag.push_back(new CKadTagUInt(TAG_SOURCEPORT, thePrefs.GetPort()));
++					if (!CKademlia::GetPrefs()->GetUseExternKadPort())
++						listTag.push_back(new CKadTagUInt16(TAG_SOURCEUPORT, CKademlia::GetPrefs()->GetInternKadPort()));
++					if (pFromContact->GetVersion() >= KADEMLIA_VERSION2_47a)
++						listTag.push_back(new CKadTagUInt(TAG_FILESIZE, pFile->GetFileSize()));
++				} else if (bDirectCallback) {
+ 					// firewalled, but direct UDP callback is possible without buddies
+ 					listTag.push_back(new CKadTagUInt(TAG_SOURCETYPE, 6));
+ 					listTag.push_back(new CKadTagUInt(TAG_SOURCEPORT, thePrefs.GetPort()));
+@@ -691,6 +704,10 @@ void CSearch::StorePacket()
  			}
  
  			listTag.push_back(new CKadTagUInt8(TAG_ENCRYPTION, CKademlia::GetPrefs()->GetMyConnectOptions(true, true)));
 +			// A LowID that can be punched to says so: a LowID downloader keeps the source only then
 +			// (the index node keeps tags it does not know, as every other client ignores them)
-+			if (theApp.IsFirewalled() && theApp.nattraversal->IsPunchable())
++			if (!bGone && theApp.IsFirewalled() && theApp.nattraversal->IsPunchable())
 +				listTag.push_back(new CKadTagUInt8(TAG_NATDCLIENT, NATD_TRANSPORTS));
  
  			// Send packet
  			CKademlia::GetUDPListener()->SendPublishSourcePacket(pFromContact, m_uTarget, uID, listTag);
-@@ -923,9 +928,14 @@ void CSearch::ProcessResultFile(const CUInt128 &uAnswer, TagList &rlistInfo)
+@@ -923,9 +940,14 @@ void CSearch::ProcessResultFile(const CUInt128 &uAnswer, TagList &rlistInfo)
  	//uint32 uClientID = 0;
  	CUInt128 uBuddy;
  	uint8 byCryptOptions = 0; // 0 = not supported
@@ -3419,7 +3545,7 @@ index 2a22b0e..f8ba80c 100644
  		if (cTag.m_name.GetLength() != 1) //all names are 1 byte strings
  			continue;
  		switch ((byte)cTag.m_name[0]) {
-@@ -973,7 +983,7 @@ void CSearch::ProcessResultFile(const CUInt128 &uAnswer, TagList &rlistInfo)
+@@ -973,7 +995,7 @@ void CSearch::ProcessResultFile(const CUInt128 &uAnswer, TagList &rlistInfo)
  	case 6:
  		++m_uAnswers;
  		theApp.emuledlg->kademliawnd->searchList->SearchRef(this);
