@@ -24,7 +24,7 @@ index 683f556..28162c7 100644
  
  	ADDRESS_FAMILY m_nFamily;
 diff --git a/srchybrid/BaseClient.cpp b/srchybrid/BaseClient.cpp
-index c2805f7..d9859d6 100644
+index c2805f7..acfcc69 100644
 --- a/srchybrid/BaseClient.cpp
 +++ b/srchybrid/BaseClient.cpp
 @@ -56,6 +56,7 @@
@@ -35,7 +35,7 @@ index c2805f7..d9859d6 100644
  #include "CaptchaGenerator.h"
  #include <atlimage.h>
  
-@@ -65,6 +66,13 @@
+@@ -65,6 +66,21 @@
  static char THIS_FILE[] = __FILE__;
  #endif
  
@@ -46,10 +46,18 @@ index c2805f7..d9859d6 100644
 +// the retry punches towards, and a source whose NAT changed its port block publishes again
 +#define NATD_RETRY_SEARCH_LEAD	MIN2MS(1)
 +
++bool CUpDownClient::TakeNatdSearch(DWORD dwNow)
++{
++	if (m_dwNatdRetryAt == 0 || m_bNatdSearched || dwNow + NATD_RETRY_SEARCH_LEAD < m_dwNatdRetryAt)
++		return false;
++	m_bNatdSearched = true;
++	return true;
++}
++
  #define URLINDICATOR	_T("http:|www.|.de |.net |.com |.org |.to |.tk |.cc |.fr |ftp:|ed2k:|https:|ftp.|.info|.biz|.uk|.eu|.es|.tv|.cn|.tw|.ws|.nu|.jp")
  
  IMPLEMENT_DYNAMIC(CClientException, CException)
-@@ -1176,6 +1184,27 @@ bool CUpDownClient::Disconnected(LPCTSTR pszReason, bool bFromSocket)
+@@ -1176,6 +1192,24 @@ bool CUpDownClient::Disconnected(LPCTSTR pszReason, bool bFromSocket)
  		bDelete = (m_eUploadState != US_ONUPLOADQUEUE);
  	}
  
@@ -60,13 +68,10 @@ index c2805f7..d9859d6 100644
 +		&& m_eDownloadState != DS_NONE && m_eDownloadState != DS_ERROR && m_nNatdRetries < _countof(s_adwNatdRetry);
 +	m_bNatdConnecting = false;
 +	m_dwNatdRetryAt = 0;
-+	m_dwNatdSearchAt = 0;
 +	if (bNatdRetry) {
 +		const DWORD dwDelay = s_adwNatdRetry[m_nNatdRetries++];
-+		const DWORD dwNow = ::GetTickCount();
-+		m_dwNatdRetryAt = max(dwNow + dwDelay, (DWORD)1);
-+		if (IsNatdSource())
-+			m_dwNatdSearchAt = max(dwNow + dwDelay - min(dwDelay, (DWORD)NATD_RETRY_SEARCH_LEAD), (DWORD)1);
++		m_dwNatdRetryAt = max(::GetTickCount() + dwDelay, (DWORD)1);
++		m_bNatdSearched = false;
 +		if (thePrefs.GetVerbose())
 +			AddDebugLogLine(false, _T("NAT traversal: the punched connection to the LowID source %s failed (%s): asked again in %u min (%u of %u)")
 +				, (LPCTSTR)ipstr(GetConnectIP()), pszReason, (unsigned)(dwDelay / MIN2MS(1)), (unsigned)m_nNatdRetries, (unsigned)_countof(s_adwNatdRetry));
@@ -77,7 +82,7 @@ index c2805f7..d9859d6 100644
  	// Dead Source Handling
  	//
  	// If we failed to connect to that client, it is supposed to be 'dead'. Add the IP
-@@ -1186,8 +1215,8 @@ bool CUpDownClient::Disconnected(LPCTSTR pszReason, bool bFromSocket)
+@@ -1186,8 +1220,8 @@ bool CUpDownClient::Disconnected(LPCTSTR pszReason, bool bFromSocket)
  	// is supposed to be valid until the proxy itself tells us that the IP can not be
  	// connected to (e.g. 504 Bad Gateway)
  	//
@@ -88,7 +93,7 @@ index c2805f7..d9859d6 100644
  	{
  		if (m_eDownloadState != DS_NONE) // Unable to connect = Remove any download state
  			theApp.downloadqueue->RemoveSource(this);
-@@ -1340,7 +1369,12 @@ bool CUpDownClient::TryToConnect(bool bIgnoreMaxCon, bool bNoCallbacks, CRuntime
+@@ -1340,7 +1374,12 @@ bool CUpDownClient::TryToConnect(bool bIgnoreMaxCon, bool bNoCallbacks, CRuntime
  		}
  	}
  
@@ -102,13 +107,12 @@ index c2805f7..d9859d6 100644
  		ASSERT(pClassSocket == NULL);
  		if (!theApp.CanDoCallback(this)) { // lowid2lowid check used for the whole function, don't remove
  			// We cannot reach this client, so we hard fail to connect, if this client should be kept,
-@@ -1382,6 +1416,23 @@ bool CUpDownClient::TryToConnect(bool bIgnoreMaxCon, bool bNoCallbacks, CRuntime
+@@ -1382,6 +1421,22 @@ bool CUpDownClient::TryToConnect(bool bIgnoreMaxCon, bool bNoCallbacks, CRuntime
  
  	theApp.clientlist->AddConnectingClient(this); // Starts and checks for the timeout, ensures following Disconnect() or ConnectionEstablished() call
  
 +	m_bNatdConnecting = bPunch;
 +	m_dwNatdRetryAt = 0;
-+	m_dwNatdSearchAt = 0;
 +	if (bPunch) {
 +		m_eConnectingState = CCS_DIRECTTCP;
 +		socket = static_cast<CClientReqSocket*>(RUNTIME_CLASS(CClientReqSocket)->CreateObject());
@@ -126,14 +130,13 @@ index c2805f7..d9859d6 100644
  	////////////////////////////////////////////////////////////
  	// 3) Normal Outgoing TCP Connection
  	if (!HasLowID() || GetKadState() == KS_CONNECTING_FWCHECK) {
-@@ -1513,6 +1564,10 @@ void CUpDownClient::ConnectionEstablished()
+@@ -1513,6 +1568,9 @@ void CUpDownClient::ConnectionEstablished()
  */
  	m_eConnectingState = CCS_NONE;
  	theApp.clientlist->RemoveConnectingClient(this);
 +	m_bNatdConnecting = false;
 +	m_nNatdRetries = 0;
 +	m_dwNatdRetryAt = 0;
-+	m_dwNatdSearchAt = 0;
  
  /*	// check if we should use this client to retrieve our public IP
  	if (theApp.GetPublicIP() == 0 && theApp.IsConnected() && m_fPeerCache)
@@ -253,7 +256,7 @@ index 138ff6e..1397388 100644
  					SetDownloadState(DS_LOWTOLOWIP);
  				m_bReaskPending = true;
 diff --git a/srchybrid/DownloadQueue.cpp b/srchybrid/DownloadQueue.cpp
-index be32c82..7bb17f6 100644
+index be32c82..ecdda44 100644
 --- a/srchybrid/DownloadQueue.cpp
 +++ b/srchybrid/DownloadQueue.cpp
 @@ -23,6 +23,7 @@
@@ -264,7 +267,7 @@ index be32c82..7bb17f6 100644
  #include "Statistics.h"
  #include "SharedFileList.h"
  #include "SafeFile.h"
-@@ -1520,7 +1521,41 @@ bool CDownloadQueue::DoKademliaFileRequest() const
+@@ -1520,7 +1521,45 @@ bool CDownloadQueue::DoKademliaFileRequest() const
  	return ::GetTickCount() >= m_lastkademliafilerequest + KADEMLIAASKTIME;
  }
  
@@ -276,21 +279,24 @@ index be32c82..7bb17f6 100644
 +	if (!theApp.IsFirewalled())
 +		return true;
 +	const bool bKeep = bNatd && (bDirect ? theApp.nattraversal->IsDirectPunchable() : theApp.nattraversal->IsPunchable());
-+	if (bNatd && thePrefs.GetVerbose())
-+		AddDebugLogLine(false, bKeep ? _T("NAT traversal: LowID source %s for \"%s\" not dropped as LowID-to-LowID: both of us can be punched to")
-+			: _T("NAT traversal: LowID source %s for \"%s\" dropped: it can be punched to, we cannot"), (LPCTSTR)ipstr(dwIP), (LPCTSTR)file.GetFileName());
++	if (bNatd && !bKeep && thePrefs.GetVerbose())
++		AddDebugLogLine(false, _T("NAT traversal: LowID source %s for \"%s\" dropped: it can be punched to, we cannot"), (LPCTSTR)ipstr(dwIP), (LPCTSTR)file.GetFileName());
 +	return bKeep;
 +}
 +
 +// CheckAndAddSource drops a source we know already, from an earlier Kad record or another
-+// channel, so the known one keeps what it came with. A punch goes towards the endpoint of the
-+// newest Kad record: it replaces the known endpoint, buddy and options, unless a connection to
-+// the source is on.
-+static void UpdateNatdSource(const CUpDownClient &rec, uint8 byCryptOptions)
++// channel, so the known one keeps what it came with. A punch goes towards the endpoint of a Kad
++// record of a later search: it replaces the known endpoint, buddy and options, unless a
++// connection to the source is on. Kad does not say how old a record is: of the records one
++// search brings (an index node each), the first one stays, so the endpoint does not change with each.
++static void UpdateNatdSource(const CUpDownClient &rec, uint8 byCryptOptions, uint32 nSearchID)
 +{
 +	CUpDownClient *pKnown = theApp.clientlist->FindClientByUserHash(rec.GetUserHash());
-+	if (pKnown == NULL || pKnown == &rec || !pKnown->HasLowID() || pKnown->socket != NULL || pKnown->GetConnectingState() != CCS_NONE)
++	if (pKnown == NULL || pKnown == &rec || !pKnown->HasLowID() || pKnown->socket != NULL || pKnown->GetConnectingState() != CCS_NONE
++		|| pKnown->GetNatdKadSearch() == nSearchID)
++	{
 +		return;
++	}
 +	if (thePrefs.GetVerbose() && (pKnown->GetConnectIP() != rec.GetConnectIP() || pKnown->GetKadPort() != rec.GetKadPort() || !pKnown->IsNatdSource()))
 +		AddDebugLogLine(false, _T("NAT traversal: known LowID source %s:%u now %s:%u, from its Kad record"), (LPCTSTR)ipstr(pKnown->GetConnectIP()), pKnown->GetKadPort()
 +			, (LPCTSTR)ipstr(rec.GetConnectIP()), rec.GetKadPort());
@@ -301,13 +307,14 @@ index be32c82..7bb17f6 100644
 +	pKnown->SetBuddyPort(rec.GetBuddyPort());
 +	pKnown->SetConnectOptions(byCryptOptions);
 +	pKnown->SetNatdSource(true);
++	pKnown->SetNatdKadSearch(nSearchID);
 +}
 +
 +void CDownloadQueue::KademliaSearchFile(uint32 nSearchID, const Kademlia::CUInt128 *pcontactID, const Kademlia::CUInt128 *pbuddyID, uint8 type, uint32 ip, uint16 tcp, uint16 udp, uint32 dwBuddyIP, uint16 dwBuddyPort, uint8 byCryptOptions, bool bNatd)
  {
  	//Safety measure to make sure we are looking for these sources
  	CPartFile *temp = GetFileByKadFileSearchID(nSearchID);
-@@ -1568,7 +1603,8 @@ void CDownloadQueue::KademliaSearchFile(uint32 nSearchID, const Kademlia::CUInt1
+@@ -1568,7 +1607,8 @@ void CDownloadQueue::KademliaSearchFile(uint32 nSearchID, const Kademlia::CUInt1
  	case 3:
  		//This will be a firewalled client connected to Kad only.
  		// if we are firewalled ourself, the source is useless to us
@@ -317,7 +324,7 @@ index be32c82..7bb17f6 100644
  			break;
  
  		if (theApp.ipfilter->IsFiltered(dwBuddyIP)) {
-@@ -1593,12 +1629,18 @@ void CDownloadQueue::KademliaSearchFile(uint32 nSearchID, const Kademlia::CUInt1
+@@ -1593,12 +1633,18 @@ void CDownloadQueue::KademliaSearchFile(uint32 nSearchID, const Kademlia::CUInt1
  			ctemp->SetBuddyID(cID);
  			ctemp->SetBuddyIP(dwBuddyIP);
  			ctemp->SetBuddyPort(dwBuddyPort);
@@ -337,7 +344,7 @@ index be32c82..7bb17f6 100644
  			break;
  
  		if ((byCryptOptions & 0x08) == 0)
-@@ -1611,12 +1653,15 @@ void CDownloadQueue::KademliaSearchFile(uint32 nSearchID, const Kademlia::CUInt1
+@@ -1611,12 +1657,17 @@ void CDownloadQueue::KademliaSearchFile(uint32 nSearchID, const Kademlia::CUInt1
  			byte cID[16];
  			pcontactID->ToByteArray(cID);
  			ctemp->SetUserHash(cID);
@@ -348,8 +355,10 @@ index be32c82..7bb17f6 100644
  	if (ctemp != NULL) {
  		// add encryption settings
  		ctemp->SetConnectOptions(byCryptOptions);
-+		if (ctemp->IsNatdSource() && theApp.IsFirewalled())
-+			UpdateNatdSource(*ctemp, byCryptOptions);
++		if (ctemp->IsNatdSource() && theApp.IsFirewalled()) {
++			ctemp->SetNatdKadSearch(nSearchID);
++			UpdateNatdSource(*ctemp, byCryptOptions, nSearchID);
++		}
  		CheckAndAddSource(temp, ctemp);
  	}
  }
@@ -743,10 +752,10 @@ index 15674a1..ce86b22 100644
  void CClientReqSocket::OnSend(int nErrorCode)
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
 new file mode 100644
-index 0000000..9164100
+index 0000000..1840767
 --- /dev/null
 +++ b/srchybrid/NatTraversal.cpp
-@@ -0,0 +1,1941 @@
+@@ -0,0 +1,1870 @@
 +//this file is part of eMule
 +//Copyright (C)2002-2026 Merkur ( strEmail.Format("%s@%s", "devteam", "emule-project.net") / https://www.emule-project.net )
 +//
@@ -819,13 +828,10 @@ index 0000000..9164100
 +#define NATD_PATH_LINGER		((DWORD)SEC2MS(10))	// a stream eMule closed, until its FIN is through
 +// Through a relay (the server, the source's buddy): a request goes once more after
 +// NATD_RELAY_RESEND; through the server it waits for the peer's request back at most
-+// NATD_RELAY_WAIT. A punch that timed out is asked for once more, with a new request, while the
-+// socket has been connecting for less than eMule's connection timeout (as TCP sends its SYN again
-+// within it): with natd's 20 s a punch, NATD_RELAY_TRIES punches fit.
++// NATD_RELAY_WAIT. A punch that timed out fails the connection, as a TCP one that timed out: the
++// source is asked again later (CUpDownClient::Disconnected).
 +#define NATD_RELAY_RESEND		((DWORD)SEC2MS(3))
 +#define NATD_RELAY_WAIT			((DWORD)SEC2MS(20))
-+#define NATD_RELAY_RETRY_WITHIN	((DWORD)CONNECTION_TIMEOUT)
-+#define NATD_RELAY_TRIES		2
 +#define NATD_SERVER_PINGS		5		// status requests for the server's UDP key, 20 s apart
 +#define NATD_SERVER_PING_RETRY	((DWORD)SEC2MS(20))
 +// The connection waits for the discovery at most this long. natd's discovery ends within
@@ -1258,17 +1264,15 @@ index 0000000..9164100
 +		std::function<void()> send;
 +	};
 +	std::deque<SAgain> again;
-+	// our request through the source's buddy, and once more after NATD_RELAY_RESEND: nothing
-+	// answers it but the source's punch, or its request back through our buddy, which the
-+	// request names (NATD_CALLBACK_BUDDY)
-+	bool AskBuddy(const CNatdSocketLayer &layer, uint64 nNonce, LPCTSTR pszWhy);
-+	// source side: our request back through the requester's buddy, and once more after
-+	// NATD_RELAY_RESEND, with the nonce of its request (NATD_MARKER_BACK)
-+	bool AskBack(const SNatCallback &cb, const uchar *pFile, uint64 nNonce);
++	// Our request through a buddy, and once more after NATD_RELAY_RESEND. NATD_MARKER_PUNCH:
++	// through the source's, which nothing answers but the source's punch, or its request back
++	// through our buddy, which the request names (NATD_CALLBACK_BUDDY). NATD_MARKER_BACK, source
++	// side: through the requester's, with the nonce of its request.
++	bool AskBuddy(const uchar *pBuddyID, uint32 dwIP, uint16 nPort, const uchar *pFile, uint64 nNonce, uint8 byKind, LPCTSTR pszWhy);
 +	// OP_REASKCALLBACKUDP to a buddy, from the client UDP port, at once (the punch packets that
 +	// follow go at once too): <buddy ID 16><file 16>, the marker of byKind with nNonce, and our
 +	// request (with our buddy for NATD_MARKER_PUNCH). pszWhy: for the log
-+	bool BuddyRequest(const uchar *pBuddyID, uint32 dwIP, uint16 nPort, const uchar *pFile, uint64 nNonce, LPCTSTR pszWhy, uint8 byKind = NATD_MARKER_PUNCH);
++	bool BuddyRequest(const uchar *pBuddyID, uint32 dwIP, uint16 nPort, const uchar *pFile, uint64 nNonce, uint8 byKind, LPCTSTR pszWhy);
 +};
 +
 +#define NATD_STUN_FILE			_T("stun.dat")
@@ -1386,26 +1390,6 @@ index 0000000..9164100
 +			if (s.pLayer == NULL) {
 +				sessions.erase(it);	// a punch we were asked for, or a socket already gone
 +				continue;
-+			}
-+			// through a relay, timed out: once more with a new request (NATD_RELAY_TRIES). Through
-+			// the server it waits for the peer's request back again; through the source's buddy it
-+			// has a new nonce, so a new token, and we punch the source's endpoint again at once.
-+			CNatdSocketLayer *pLayer = s.pLayer;
-+			const DWORD dwNow = ::GetTickCount();
-+			const uint8 byVia = pLayer->GetVia();
-+			if (e.error == natd::PunchError::TimedOut && (byVia == NATD_VIA_SERVER || byVia == NATD_VIA_BUDDY)
-+				&& pLayer->GetTries() < NATD_RELAY_TRIES && dwNow - pLayer->GetAskedAt() < NATD_RELAY_RETRY_WITHIN && pLayer->IsConnecting())
-+			{
-+				if (byVia == NATD_VIA_SERVER) {
-+					if (waits.find(pLayer->GetServerPeer()) == waits.end() && theApp.nattraversal->AskServer(pLayer, _T("ours, once more: the punch timed out"))) {
-+						sessions.erase(it);
-+						pLayer->Retry(NULL);
-+						continue;
-+					}
-+				} else if (theApp.nattraversal->RetryThroughBuddy(pLayer)) {
-+					sessions.erase(it);
-+					continue;
-+				}
 +			}
 +			// as a TCP connection: refused, or timed out
 +			s.bOver = true;
@@ -1786,10 +1770,7 @@ index 0000000..9164100
 +	}
 +	ServerTimer();
 +	RelayTimer();
-+	// as CSharedFileList::Publish has it: a LowID that cannot publish its sources
-+	if (Kademlia::CKademlia::IsConnected() && theApp.IsFirewalled() && theApp.clientlist->GetBuddyStatus() != Connected
-+		&& (Kademlia::CUDPFirewallTester::IsFirewalledUDP(true) || !Kademlia::CUDPFirewallTester::IsVerified()))
-+	{
++	if (Kademlia::CKademlia::IsConnected() && NoBuddyToPublish()) {
 +		if (impl.dwNoBuddySince == 0)
 +			impl.dwNoBuddySince = max(::GetTickCount(), (DWORD)1);
 +	} else
@@ -1909,7 +1890,7 @@ index 0000000..9164100
 +	return true;
 +}
 +
-+bool CNatTraversal::Impl::BuddyRequest(const uchar *pBuddyID, uint32 dwIP, uint16 nPort, const uchar *pFile, uint64 nNonce, LPCTSTR pszWhy, uint8 byKind)
++bool CNatTraversal::Impl::BuddyRequest(const uchar *pBuddyID, uint32 dwIP, uint16 nPort, const uchar *pFile, uint64 nNonce, uint8 byKind, LPCTSTR pszWhy)
 +{
 +	if (IsFilteredOrBanned(dwIP) || nPort == 0)
 +		return false;
@@ -1925,37 +1906,20 @@ index 0000000..9164100
 +	theStats.AddUpDataOverheadOther(nLen);
 +	const bool bSent = io.send(kPrimarySocket, natd::Endpoint{ntohl(dwIP), nPort}, data.GetBuffer(), nLen);
 +	if (thePrefs.GetVerbose())
-+		AddDebugLogLine(false, _T("NAT traversal: %s %s:%u%s (%s)"), bBack ? _T("request back to the requester's buddy") : _T("request to the source's buddy")
++		AddDebugLogLine(false, _T("NAT traversal: %s %s:%u%s (%s)"), bBack ? _T("our request back to the requester's buddy") : _T("our request to the source's buddy")
 +			, (LPCTSTR)ipstr(dwIP), nPort, bSent ? _T("") : _T(" not sent"), pszWhy);
 +	return bSent;
 +}
 +
-+bool CNatTraversal::Impl::AskBack(const SNatCallback &cb, const uchar *pFile, uint64 nNonce)
++bool CNatTraversal::Impl::AskBuddy(const uchar *pBuddyID, uint32 dwIP, uint16 nPort, const uchar *pFile, uint64 nNonce, uint8 byKind, LPCTSTR pszWhy)
 +{
-+	if (!BuddyRequest(cb.abyBuddyID, cb.dwBuddyIP, cb.nBuddyPort, pFile, nNonce, _T("so that it learns our endpoint"), NATD_MARKER_BACK))
++	if (!BuddyRequest(pBuddyID, dwIP, nPort, pFile, nNonce, byKind, pszWhy))
 +		return false;
 +	std::array<uchar, 16> abyBuddyID, abyFile;
-+	md4cpy(abyBuddyID.data(), cb.abyBuddyID);
++	md4cpy(abyBuddyID.data(), pBuddyID);
 +	md4cpy(abyFile.data(), pFile);
-+	const uint32 dwIP = cb.dwBuddyIP;
-+	const uint16 nPort = cb.nBuddyPort;
-+	again.push_back(SAgain{::GetTickCount(), NATD_VIA_BUDDY, [this, abyBuddyID, dwIP, nPort, abyFile, nNonce]() {
-+		BuddyRequest(abyBuddyID.data(), dwIP, nPort, abyFile.data(), nNonce, _T("again"), NATD_MARKER_BACK);
-+	}});
-+	return true;
-+}
-+
-+bool CNatTraversal::Impl::AskBuddy(const CNatdSocketLayer &layer, uint64 nNonce, LPCTSTR pszWhy)
-+{
-+	if (!BuddyRequest(layer.GetRelayID(), layer.GetRelayIP(), layer.GetRelayPort(), layer.GetFile(), nNonce, pszWhy))
-+		return false;
-+	std::array<uchar, 16> abyBuddyID, abyFile;
-+	md4cpy(abyBuddyID.data(), layer.GetRelayID());
-+	md4cpy(abyFile.data(), layer.GetFile());
-+	const uint32 dwIP = layer.GetRelayIP();
-+	const uint16 nPort = layer.GetRelayPort();
-+	again.push_back(SAgain{::GetTickCount(), NATD_VIA_BUDDY, [this, abyBuddyID, dwIP, nPort, abyFile, nNonce]() {
-+		BuddyRequest(abyBuddyID.data(), dwIP, nPort, abyFile.data(), nNonce, _T("ours, again"));
++	again.push_back(SAgain{::GetTickCount(), NATD_VIA_BUDDY, [this, abyBuddyID, dwIP, nPort, abyFile, nNonce, byKind]() {
++		BuddyRequest(abyBuddyID.data(), dwIP, nPort, abyFile.data(), nNonce, byKind, _T("again"));
 +	}});
 +	return true;
 +}
@@ -1967,7 +1931,7 @@ index 0000000..9164100
 +	w.bSent = true;
 +	again.push_back(SAgain{w.dwSent, NATD_VIA_SERVER, [this, nID]() {
 +		if (waits.find(nID) != waits.end())
-+			ServerRequest(nID, _T("ours, again: no answer yet"));
++			ServerRequest(nID, _T("we ask, again: no answer yet"));
 +	}});
 +}
 +
@@ -2022,7 +1986,7 @@ index 0000000..9164100
 +					, theApp.ipfilter->IsFiltered(sv.dwIP) ? _T(" - the server is in the IP filter, its answers let through") : _T(""));
 +			for (std::pair<const uint32, Impl::SWait> &w : m_pImpl->waits)
 +				if (!w.second.bSent)
-+					m_pImpl->SendWait(w.first, w.second, _T("ours, which waited for the server's UDP key"));
++					m_pImpl->SendWait(w.first, w.second, _T("we ask, it waited for the server's UDP key"));
 +		} else if (thePrefs.GetVerbose())
 +			AddDebugLogLine(false, _T("NAT traversal: status answer of the server dropped: %s"), sv.dwKey != 0 ? _T("we have its UDP key already")
 +				: nPacket < 2 + 40 ? _T("too short") : _T("not the challenge of our last request"));
@@ -2182,6 +2146,12 @@ index 0000000..9164100
 +	}
 +}
 +
++bool CNatTraversal::NoBuddyToPublish()
++{
++	return theApp.IsFirewalled() && theApp.clientlist->GetBuddyStatus() != Connected
++		&& (Kademlia::CUDPFirewallTester::IsFirewalledUDP(true) || !Kademlia::CUDPFirewallTester::IsVerified());
++}
++
 +bool CNatTraversal::WantsGoneRecords() const
 +{
 +	return m_bEnabled && m_pImpl->pAgent->profileReady() && m_pImpl->pAgent->punchable()
@@ -2275,7 +2245,7 @@ index 0000000..9164100
 +		// through the server, keyed by the target's ID there
 +		pLayer = new CNatdSocketLayer(0, 0, NULL, byVia);
 +		pLayer->m_nServerPeer = client.GetUserIDHybrid();
-+		if (!AskServer(pLayer, _T("ours"))) {
++		if (!AskServer(pLayer, _T("we ask"))) {
 +			delete pLayer;
 +			return false;
 +		}
@@ -2299,17 +2269,14 @@ index 0000000..9164100
 +			// through the source's buddy, which forwards our request with the endpoint it saw it
 +			// come from; nothing comes back but the source's punch, so the socket punches the
 +			// source's endpoint from its Kad record as soon as it connects, as for a direct punch
-+			pLayer->m_dwRelayIP = client.GetBuddyIP();
-+			pLayer->m_nRelayPort = client.GetBuddyPort();
-+			md4cpy(pLayer->m_abyRelayID, client.GetBuddyID());
-+			md4cpy(pLayer->m_abyFile, client.GetRequestFile()->GetFileHash());
-+			if (!m_pImpl->AskBuddy(*pLayer, nNonce, _T("ours"))) {
++			if (!m_pImpl->AskBuddy(client.GetBuddyID(), client.GetBuddyIP(), client.GetBuddyPort(), client.GetRequestFile()->GetFileHash(), nNonce
++				, NATD_MARKER_PUNCH, _T("so that it punches towards us")))
++			{
 +				delete pLayer;
 +				return false;
 +			}
 +		}
 +	}
-+	pLayer->m_dwAsked = ::GetTickCount();
 +	pSocket->AttachNatdLayer(pLayer);
 +	if (thePrefs.GetVerbose())
 +		AddDebugLogLine(false, _T("NAT traversal: punch requested %s, %s"), ViaStr(byVia), (LPCTSTR)client.DbgGetClientInfo());
@@ -2371,7 +2338,7 @@ index 0000000..9164100
 +	// that may be used up by now: our request back through the requester's buddy brings it
 +	// one of the block in use, as the server's endpoint does.
 +	if (byVia == NATD_VIA_BUDDY && pFile != NULL && cb.bBuddy && !m_pImpl->pAgent->directPunchable())
-+		m_pImpl->AskBack(cb, pFile, nNonce);
++		m_pImpl->AskBuddy(cb.abyBuddyID, cb.dwBuddyIP, cb.nBuddyPort, pFile, nNonce, NATD_MARKER_BACK, _T("so that it learns our endpoint"));
 +	return true;
 +}
 +
@@ -2412,21 +2379,6 @@ index 0000000..9164100
 +	pLayer->m_nSession = 0;
 +	pLayer->m_nPort = cb.nPort;
 +	return OpenSession(pLayer->GetIP(), pLayer->GetPort(), pLayer->GetToken(), true, pLayer, NATD_VIA_BUDDY);
-+}
-+
-+// A punch through the source's buddy timed out: a new request with a new nonce, and a new punch
-+// towards the source's endpoint at once. False when none started (the layer keeps its session).
-+bool CNatTraversal::RetryThroughBuddy(CNatdSocketLayer *pLayer)
-+{
-+	const uint64 nNonce = RandomUInt64();
-+	if (!m_pImpl->AskBuddy(*pLayer, nNonce, _T("ours, once more: the punch timed out")))
-+		return false;
-+	const uint32 nOld = pLayer->m_nSession;
-+	pLayer->Retry(natd::tokenFrom(thePrefs.GetUserHash(), 16, nNonce).data());
-+	if (OpenSession(pLayer->GetIP(), pLayer->GetPort(), pLayer->GetToken(), true, pLayer, NATD_VIA_BUDDY))
-+		return true;
-+	pLayer->m_nSession = nOld;
-+	return false;
 +}
 +
 +bool CNatTraversal::Connect(CNatdSocketLayer *pLayer)
@@ -2546,12 +2498,6 @@ index 0000000..9164100
 +	: m_nSession()
 +	, m_nServerPeer()
 +	, m_bWaiting()
-+	, m_dwAsked()
-+	, m_nTries(1)
-+	, m_dwRelayIP()
-+	, m_nRelayPort()
-+	, m_abyRelayID()
-+	, m_abyFile()
 +	, m_dwIP(dwIP)
 +	, m_nPort(nPort)
 +	, m_byVia(byVia)
@@ -2573,14 +2519,6 @@ index 0000000..9164100
 +	m_nSession = 0;
 +	if (m_bWaiting && theApp.nattraversal != NULL)
 +		theApp.nattraversal->ForgetLayer(this);
-+}
-+
-+void CNatdSocketLayer::Retry(const BYTE *pToken12)
-+{
-+	m_nSession = 0;
-+	if (pToken12 != NULL)
-+		memcpy(m_abyToken, pToken12, sizeof m_abyToken);
-+	++m_nTries;
 +}
 +
 +// incoming connection: the socket starts as an accepted one, and the first event makes it connected
@@ -2690,10 +2628,10 @@ index 0000000..9164100
 +}
 diff --git a/srchybrid/NatTraversal.h b/srchybrid/NatTraversal.h
 new file mode 100644
-index 0000000..9e00d72
+index 0000000..97181b8
 --- /dev/null
 +++ b/srchybrid/NatTraversal.h
-@@ -0,0 +1,300 @@
+@@ -0,0 +1,286 @@
 +//this file is part of eMule
 +//Copyright (C)2002-2026 Merkur ( strEmail.Format("%s@%s", "devteam", "emule-project.net") / https://www.emule-project.net )
 +//
@@ -2732,8 +2670,8 @@ index 0000000..9e00d72
 +//   port (its Kad record's port is then of a block of ports that may be used up already) sends
 +//   its own request back through the requester's buddy, as through the server, and the
 +//   requester punches the endpoint that buddy saw (NATD_MARKER_BACK).
-+// A request through a relay goes once more after a while (UDP), and a punch that times out is
-+// asked for once more within eMule's connection timeout, as TCP sends its SYN again.
++// A request through a relay goes once more after a while (UDP); a punch that times out fails the
++// connection as a TCP one does, and the source is asked again later (CUpDownClient::Disconnected).
 +// The endpoint a relay saw is fresh, so a NAT that maps endpoint-independently (natd Stable), to
 +// random ports in a block (Bounded, mobile CGNs) or to sequential ports (Predictable) can be
 +// punched to: nothing tells either side the other's NAT, so natd punches that endpoint and then
@@ -2856,6 +2794,9 @@ index 0000000..9e00d72
 +	// the port the index nodes saw our records come from: once ports come from another block, the
 +	// records are published again, at most every NATD_REPUBLISH_GAP.
 +	void	OnKadPort(uint16 nPort);
++	// A LowID with no buddy and no direct callback, which cannot publish its Kad sources
++	// (CSharedFileList::Publish)
++	static bool NoBuddyToPublish();
 +	// Whether our Kad source records should give way to NATD_SOURCETYPE_GONE ones now
 +	bool	WantsGoneRecords() const;
 +
@@ -2918,7 +2859,6 @@ index 0000000..9e00d72
 +	// back arrived (pToken12 NULL: the socket's), false when nothing waited for it.
 +	bool	AskServer(CNatdSocketLayer *pLayer, LPCTSTR pszWhy);
 +	void	RelayTimer();
-+	bool	RetryThroughBuddy(CNatdSocketLayer *pLayer);
 +	void	DropWait(uint32 nID, int nError);
 +	bool	Answered(uint32 nID, const SNatCallback &cb, const BYTE *pToken12, bool bConnect);
 +
@@ -2946,18 +2886,8 @@ index 0000000..9e00d72
 +	const BYTE* GetToken() const					{ return m_abyToken; }
 +	uint8	GetVia() const							{ return m_byVia; }
 +	bool	IsConnecting() const					{ return GetLayerState() == connecting; }
-+	// Through a relay: the target's ID on the server, the source's buddy and the file, when the
-+	// first request went, the punches asked for
++	// through the server: the target's ID there
 +	uint32	GetServerPeer() const					{ return m_nServerPeer; }
-+	const uchar* GetRelayID() const					{ return m_abyRelayID; }
-+	uint32	GetRelayIP() const						{ return m_dwRelayIP; }
-+	uint16	GetRelayPort() const					{ return m_nRelayPort; }
-+	const uchar* GetFile() const					{ return m_abyFile; }
-+	DWORD	GetAskedAt() const						{ return m_dwAsked; }
-+	uint8	GetTries() const						{ return m_nTries; }
-+	// the punch timed out and a new request went: through the buddy with the new token
-+	// (pToken12 NULL: the same; through the server it comes with the peer again)
-+	void	Retry(const BYTE *pToken12);
 +
 +protected:
 +	// Events of the socket handle under this layer: there is no connection on it, so there
@@ -2983,12 +2913,6 @@ index 0000000..9e00d72
 +	uint32	m_nSession;		// 0: none (not connected yet, or gone)
 +	uint32	m_nServerPeer;	// through the server: the target's ID there
 +	bool	m_bWaiting;		// through the server: our request waits for the target's endpoint
-+	DWORD	m_dwAsked;		// when the first request to it went
-+	uint8	m_nTries;		// punches asked for, the first included
-+	uint32	m_dwRelayIP;	// through the buddy: the source's buddy, network order
-+	uint16	m_nRelayPort;
-+	uchar	m_abyRelayID[16];
-+	uchar	m_abyFile[16];
 +	uint32	m_dwIP;			// network order
 +	uint16	m_nPort;		// host order, the UDP port of the peer
 +	uint8	m_byVia;		// NATD_VIA_*, the channel of the request
@@ -3073,7 +2997,7 @@ index 24a3f66..f096d47 100644
  		SetDlgItemText(IDC_WIZARD, GetResString(IDS_WIZARD) + _T("..."));
  		SetDlgItemText(IDC_UDPDISABLE, GetResString(IDS_UDPDISABLED));
 diff --git a/srchybrid/PartFile.cpp b/srchybrid/PartFile.cpp
-index 0053cff..5108ca8 100644
+index 0053cff..dcd641d 100644
 --- a/srchybrid/PartFile.cpp
 +++ b/srchybrid/PartFile.cpp
 @@ -49,6 +49,7 @@
@@ -3100,7 +3024,7 @@ index 0053cff..5108ca8 100644
  			case DS_WAITCALLBACKKAD:
 +				// a LowID source whose punched connection failed: asked again at its own time
 +				if (cur_src->IsNatdRetryPending()) {
-+					// the newest Kad record of the source, only when the retry will punch towards
++					// a newer Kad record of the source, only when the retry will punch towards
 +					// one: a LowID we can punch to through its buddy or directly (not the server,
 +					// whose endpoint is fresh)
 +					if (cur_src->TakeNatdSearch(curTick) && cur_src->HasLowID()) {
@@ -3287,7 +3211,7 @@ index 6e7c81f..0ebad03 100644
  			if (thePrefs.GetDebugServerTCPLevel() > 0)
  				Debug(_T("ServerMsg - OP_Callback_Fail %s\n"), (LPCTSTR)DbgGetHexDump(packet, size));
 diff --git a/srchybrid/SharedFileList.cpp b/srchybrid/SharedFileList.cpp
-index fa91bed..bae2adc 100644
+index fa91bed..07c58c3 100644
 --- a/srchybrid/SharedFileList.cpp
 +++ b/srchybrid/SharedFileList.cpp
 @@ -38,6 +38,7 @@
@@ -3298,16 +3222,13 @@ index fa91bed..bae2adc 100644
  #include "ImportParts.h"
  #include "MD5Sum.h"
  
-@@ -1240,12 +1241,14 @@ void CSharedFileList::Process()
+@@ -1240,12 +1241,11 @@ void CSharedFileList::Process()
  
  void CSharedFileList::Publish()
  {
 +	// NAT traversal: a LowID with no buddy publishes only the source records that take the place
 +	// of those naming the buddy it had (CNatTraversal::WantsGoneRecords): no keywords, no notes
-+	const bool bNoBuddy = theApp.IsFirewalled()
-+		&& theApp.clientlist->GetBuddyStatus() != Connected
-+		//direct callback
-+		&& (Kademlia::CUDPFirewallTester::IsFirewalledUDP(true) || !Kademlia::CUDPFirewallTester::IsVerified());
++	const bool bNoBuddy = CNatTraversal::NoBuddyToPublish();
  	if (!Kademlia::CKademlia::IsConnected()
 -		|| (theApp.IsFirewalled()
 -			&& theApp.clientlist->GetBuddyStatus() != Connected
@@ -3318,7 +3239,7 @@ index fa91bed..bae2adc 100644
  		|| !GetCount()
  		|| !Kademlia::CKademlia::GetPublish())
  	{
-@@ -1254,7 +1257,7 @@ void CSharedFileList::Publish()
+@@ -1254,7 +1254,7 @@ void CSharedFileList::Publish()
  
  	//We are connected to Kad. We are either open or have a buddy. And Kad is ready to start publishing.
  	time_t tNow = time(NULL);
@@ -3327,7 +3248,7 @@ index fa91bed..bae2adc 100644
  		//We are not at the max simultaneous keyword publishes
  		if (tNow >= m_keywords->GetNextPublishTime()) {
  			//Enough time has passed since last keyword publish
-@@ -1331,7 +1334,7 @@ void CSharedFileList::Publish()
+@@ -1331,7 +1331,7 @@ void CSharedFileList::Publish()
  		}
  	}
  
@@ -3337,10 +3258,10 @@ index fa91bed..bae2adc 100644
  			if (m_currFileNotes >= GetCount())
  				m_currFileNotes = 0;
 diff --git a/srchybrid/UpdownClient.h b/srchybrid/UpdownClient.h
-index 5fe1ef2..2d8e9c1 100644
+index 5fe1ef2..75c1d23 100644
 --- a/srchybrid/UpdownClient.h
 +++ b/srchybrid/UpdownClient.h
-@@ -118,6 +118,24 @@ public:
+@@ -118,6 +118,21 @@ public:
  	uint32			GetBuddyIP() const								{ return m_nBuddyIP; }
  	void			SetBuddyPort(uint16 val)						{ m_nBuddyPort = val; }
  	uint16			GetBuddyPort() const							{ return m_nBuddyPort; }
@@ -3353,19 +3274,16 @@ index 5fe1ef2..2d8e9c1 100644
 +	void			ClearNatdRetry()								{ m_dwNatdRetryAt = 0; }
 +	// the punch of the connection being made succeeded (the socket connected)
 +	void			NatdConnected()									{ m_bNatdConnecting = false; }
-+	// a Kad source search for its newest record is due before the retry (the caller checks that
-+	// the retry will be a punch towards a Kad record)
-+	bool			TakeNatdSearch(DWORD dwNow)
-+	{
-+		if (m_dwNatdSearchAt == 0 || dwNow < m_dwNatdSearchAt)
-+			return false;
-+		m_dwNatdSearchAt = 0;
-+		return true;
-+	}
++	// a Kad source search for a newer record is due, once, a minute before the retry (the caller
++	// checks that the retry will be a punch towards a Kad record)
++	bool			TakeNatdSearch(DWORD dwNow);
++	// the Kad source search whose record gave the endpoint (CDownloadQueue::KademliaSearchFile)
++	uint32			GetNatdKadSearch() const						{ return m_nNatdKadSearch; }
++	void			SetNatdKadSearch(uint32 nSearchID)				{ m_nNatdKadSearch = nSearchID; }
  	EClientSoftware	GetClientSoft() const							{ return m_clientSoft; }
  	const CString&	GetClientSoftVer() const						{ return m_strClientSoftware; }
  	const CString&	GetClientModVer() const							{ return m_strModVersion; }
-@@ -506,6 +524,11 @@ protected:
+@@ -506,6 +521,12 @@ protected:
  	//--group aligned to int32
  	uint16	m_nBuddyPort;
  	bool	m_bBuddyIDValid;
@@ -3373,7 +3291,8 @@ index 5fe1ef2..2d8e9c1 100644
 +	bool	m_bNatdConnecting = false;	// the connection being made goes over a punch
 +	uint8	m_nNatdRetries = 0;			// punched connections failed in a row
 +	DWORD	m_dwNatdRetryAt = 0;		// 0: no retry pending
-+	DWORD	m_dwNatdSearchAt = 0;		// 0: no Kad source search before it
++	bool	m_bNatdSearched = false;	// the Kad source search before the retry went
++	uint32	m_nNatdKadSearch = 0;
  	bool	m_bUnicodeSupport;
  	//--group aligned to int32
  	uint32	m_nBuddyIP;
