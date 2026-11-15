@@ -49,6 +49,7 @@ This build is eMule 0.72a with the changes below, compiled for x64, Win32 and AR
 - **Mobile networks:** a client whose NAT picks a new port for each destination, inside a block of ports (as many mobile CGNATs do) or in sequence, can now be punched to by a client whose NAT keeps the same public port.
 - **Port search:** that client tries first the port the server or the buddy saw, then the ports nearest to it, more at each round, with no assumption on how an operator lays out its ports.
 - **Retries:** a request with no answer goes once more after 3 seconds. A punch that times out is asked for once more, within the time a TCP connection would take to give up.
+- **Failed punches:** a LowID source whose punched connection fails stays in the download's sources, instead of being dropped and blocked for 30 minutes as an unreachable source. It is asked again after 2, 5, 15 and 29 minutes; after a fourth failure it is treated as eMule treats any source it cannot connect to. A HighID source is handled as before.
 - **Filters:** the IP filter and the list of banned clients apply to the addresses a punch goes to or comes from, as they do to any other connection.
 - **Closing eMule:** the transfers that go through a punched UDP path now end at once on the other side, as TCP connections do, instead of after about 45 seconds of silence.
 - **Limits:** two clients whose NATs both pick a new port for each destination cannot reach each other, nor can a client whose NAT picks ports at random from its whole range. Such a client stays a plain LowID.
