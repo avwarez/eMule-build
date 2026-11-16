@@ -461,10 +461,21 @@ index 24555d4..7bf035d 100644
  
  	CString strBootstrapIP;
 diff --git a/srchybrid/ListenSocket.cpp b/srchybrid/ListenSocket.cpp
-index 15674a1..792e3aa 100644
+index 15674a1..0612368 100644
 --- a/srchybrid/ListenSocket.cpp
 +++ b/srchybrid/ListenSocket.cpp
-@@ -1690,9 +1690,13 @@ void CClientReqSocket::OnConnect(int nErrorCode)
+@@ -90,7 +90,9 @@ void CClientReqSocket::SetConState(SocketState val)
+ 
+ void CClientReqSocket::WaitForOnConnect()
+ {
+-	SetConState(SS_Half);
++	// a punched connection sends no TCP SYN: it takes no half-open slot (MaxHalfConnections),
++	// and times out as the client's connection try does
++	SetConState(m_pNatdLayer != NULL ? SS_Other : SS_Half);
+ }
+ 
+ CClientReqSocket::~CClientReqSocket()
+@@ -1690,9 +1692,13 @@ void CClientReqSocket::OnConnect(int nErrorCode)
  			Disconnect(strTCPError);
  		} else
  			Disconnect(_T(""));
