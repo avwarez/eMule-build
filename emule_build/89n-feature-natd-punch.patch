@@ -469,10 +469,10 @@ index 15674a1..792e3aa 100644
  void CClientReqSocket::OnSend(int nErrorCode)
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
 new file mode 100644
-index 0000000..bf15aca
+index 0000000..fbffe19
 --- /dev/null
 +++ b/srchybrid/NatTraversal.cpp
-@@ -0,0 +1,1527 @@
+@@ -0,0 +1,1524 @@
 +//this file is part of eMule
 +//Copyright (C)2002-2026 Merkur ( strEmail.Format("%s@%s", "devteam", "emule-project.net") / https://www.emule-project.net )
 +//
@@ -491,7 +491,6 @@ index 0000000..bf15aca
 +//Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 +#include "stdafx.h"
 +#include <algorithm>
-+#include <array>
 +#include <chrono>
 +#include <deque>
 +#include <functional>
@@ -507,8 +506,6 @@ index 0000000..bf15aca
 +#include "ListenSocket.h"
 +#include "Opcodes.h"
 +#include "OtherFunctions.h"
-+#include "Packets.h"
-+#include "PartFile.h"
 +#include "Server.h"
 +#include "ServerConnect.h"
 +#include "Preferences.h"
@@ -1765,7 +1762,7 @@ index 0000000..bf15aca
 +bool CNatTraversal::Connect(CNatdSocketLayer *pLayer)
 +{
 +	// the punch starts when the target's endpoint arrives (OnServerPeer)
-+	return pLayer->m_bWaiting && m_pImpl->waits.find(pLayer->GetServerPeer()) != m_pImpl->waits.end();
++	return pLayer->m_bWaiting;
 +}
 +
 +bool CNatTraversal::OpenSession(uint32 dwIP, uint16 nPort, const BYTE *pToken12, bool bConnect, CNatdSocketLayer *pLayer, uint32 nServerPeer)
@@ -2002,10 +1999,10 @@ index 0000000..bf15aca
 +}
 diff --git a/srchybrid/NatTraversal.h b/srchybrid/NatTraversal.h
 new file mode 100644
-index 0000000..9614161
+index 0000000..b0b5bfd
 --- /dev/null
 +++ b/srchybrid/NatTraversal.h
-@@ -0,0 +1,180 @@
+@@ -0,0 +1,178 @@
 +//this file is part of eMule
 +//Copyright (C)2002-2026 Merkur ( strEmail.Format("%s@%s", "devteam", "emule-project.net") / https://www.emule-project.net )
 +//
@@ -2154,8 +2151,6 @@ index 0000000..9614161
 +	void	Accepted(uint32 nSession);
 +	void	RaiseEvent(long lEvent, int nErrorCode);
 +	void	Orphan()								{ m_nSession = 0; }
-+	uint32	GetIP() const							{ return m_dwIP; }
-+	uint16	GetPort() const							{ return m_nPort; }
 +	// the target's ID on the server
 +	uint32	GetServerPeer() const					{ return m_nServerPeer; }
 +
