@@ -24,7 +24,7 @@ index 683f556..28162c7 100644
  
  	ADDRESS_FAMILY m_nFamily;
 diff --git a/srchybrid/BaseClient.cpp b/srchybrid/BaseClient.cpp
-index c2805f7..0ce4a0b 100644
+index c2805f7..cb45655 100644
 --- a/srchybrid/BaseClient.cpp
 +++ b/srchybrid/BaseClient.cpp
 @@ -56,6 +56,7 @@
@@ -46,23 +46,28 @@ index c2805f7..0ce4a0b 100644
  #define URLINDICATOR	_T("http:|www.|.de |.net |.com |.org |.to |.tk |.cc |.fr |ftp:|ed2k:|https:|ftp.|.info|.biz|.uk|.eu|.es|.tv|.cn|.tw|.ws|.nu|.jp")
  
  IMPLEMENT_DYNAMIC(CClientException, CException)
-@@ -1176,6 +1181,23 @@ bool CUpDownClient::Disconnected(LPCTSTR pszReason, bool bFromSocket)
+@@ -1176,6 +1181,28 @@ bool CUpDownClient::Disconnected(LPCTSTR pszReason, bool bFromSocket)
  		bDelete = (m_eUploadState != US_ONUPLOADQUEUE);
  	}
  
 +	// A LowID source whose punched connection failed stays a source, out of the dead sources,
 +	// and is asked again after the next of s_adwNatdRetry; past the last one it fails as a TCP
-+	// connection does
++	// connection does. A failure of our side (the request never went, natd had no room) is not
++	// the source's: it is asked again after the same delay, which it does not use up.
++	const bool bOurSide = m_bNatdConnecting && socket != NULL && socket->GetNatdLocalFailure();
 +	const bool bNatdRetry = m_bNatdConnecting && m_eConnectingState != CCS_NONE && HasLowID() && m_reqfile != NULL
-+		&& m_eDownloadState != DS_NONE && m_eDownloadState != DS_ERROR && m_nNatdRetries < _countof(s_adwNatdRetry);
++		&& m_eDownloadState != DS_NONE && m_eDownloadState != DS_ERROR && (bOurSide || m_nNatdRetries < _countof(s_adwNatdRetry));
 +	m_bNatdConnecting = false;
 +	m_dwNatdRetryAt = 0;
 +	if (bNatdRetry) {
-+		const DWORD dwDelay = s_adwNatdRetry[m_nNatdRetries++];
++		const DWORD dwDelay = s_adwNatdRetry[min(m_nNatdRetries, (uint8)(_countof(s_adwNatdRetry) - 1))];
++		if (!bOurSide)
++			++m_nNatdRetries;
 +		m_dwNatdRetryAt = max(::GetTickCount() + dwDelay, (DWORD)1);
 +		if (thePrefs.GetVerbose())
-+			AddDebugLogLine(false, _T("NAT traversal: the punched connection to the LowID source %s failed (%s): asked again in %u min (%u of %u)")
-+				, (LPCTSTR)ipstr(GetConnectIP()), pszReason, (unsigned)(dwDelay / MIN2MS(1)), (unsigned)m_nNatdRetries, (unsigned)_countof(s_adwNatdRetry));
++			AddDebugLogLine(false, _T("NAT traversal: the punched connection to the LowID source %s failed (%s%s): asked again in %u min (%u of %u)")
++				, (LPCTSTR)ipstr(GetConnectIP()), pszReason, bOurSide ? _T(", on our side: not counted") : _T("")
++				, (unsigned)(dwDelay / MIN2MS(1)), (unsigned)m_nNatdRetries, (unsigned)_countof(s_adwNatdRetry));
 +		SetDownloadState(DS_NONE, CString(_T("Disconnected: ")) + pszReason);
 +		bDelete = false;
 +	}
@@ -70,7 +75,7 @@ index c2805f7..0ce4a0b 100644
  	// Dead Source Handling
  	//
  	// If we failed to connect to that client, it is supposed to be 'dead'. Add the IP
-@@ -1186,8 +1208,8 @@ bool CUpDownClient::Disconnected(LPCTSTR pszReason, bool bFromSocket)
+@@ -1186,8 +1213,8 @@ bool CUpDownClient::Disconnected(LPCTSTR pszReason, bool bFromSocket)
  	// is supposed to be valid until the proxy itself tells us that the IP can not be
  	// connected to (e.g. 504 Bad Gateway)
  	//
@@ -81,7 +86,7 @@ index c2805f7..0ce4a0b 100644
  	{
  		if (m_eDownloadState != DS_NONE) // Unable to connect = Remove any download state
  			theApp.downloadqueue->RemoveSource(this);
-@@ -1340,7 +1362,11 @@ bool CUpDownClient::TryToConnect(bool bIgnoreMaxCon, bool bNoCallbacks, CRuntime
+@@ -1340,7 +1367,11 @@ bool CUpDownClient::TryToConnect(bool bIgnoreMaxCon, bool bNoCallbacks, CRuntime
  		}
  	}
  
@@ -94,7 +99,7 @@ index c2805f7..0ce4a0b 100644
  		ASSERT(pClassSocket == NULL);
  		if (!theApp.CanDoCallback(this)) { // lowid2lowid check used for the whole function, don't remove
  			// We cannot reach this client, so we hard fail to connect, if this client should be kept,
-@@ -1382,6 +1408,22 @@ bool CUpDownClient::TryToConnect(bool bIgnoreMaxCon, bool bNoCallbacks, CRuntime
+@@ -1382,6 +1413,22 @@ bool CUpDownClient::TryToConnect(bool bIgnoreMaxCon, bool bNoCallbacks, CRuntime
  
  	theApp.clientlist->AddConnectingClient(this); // Starts and checks for the timeout, ensures following Disconnect() or ConnectionEstablished() call
  
@@ -117,7 +122,7 @@ index c2805f7..0ce4a0b 100644
  	////////////////////////////////////////////////////////////
  	// 3) Normal Outgoing TCP Connection
  	if (!HasLowID() || GetKadState() == KS_CONNECTING_FWCHECK) {
-@@ -1513,6 +1555,9 @@ void CUpDownClient::ConnectionEstablished()
+@@ -1513,6 +1560,9 @@ void CUpDownClient::ConnectionEstablished()
  */
  	m_eConnectingState = CCS_NONE;
  	theApp.clientlist->RemoveConnectingClient(this);
@@ -206,7 +211,7 @@ index 138ff6e..1397388 100644
  					SetDownloadState(DS_LOWTOLOWIP);
  				m_bReaskPending = true;
 diff --git a/srchybrid/EMSocket.cpp b/srchybrid/EMSocket.cpp
-index 8d73530..6f54038 100644
+index 8d73530..e74b240 100644
 --- a/srchybrid/EMSocket.cpp
 +++ b/srchybrid/EMSocket.cpp
 @@ -22,6 +22,7 @@
@@ -226,7 +231,7 @@ index 8d73530..6f54038 100644
  
  	// Proxy Initialization
  	const ProxySettings &settings = thePrefs.GetProxySettings();
-@@ -1007,6 +1010,17 @@ void CEMSocket::RemoveAllLayers()
+@@ -1007,6 +1010,22 @@ void CEMSocket::RemoveAllLayers()
  	CEncryptedStreamSocket::RemoveAllLayers();
  	delete m_pProxyLayer;
  	m_pProxyLayer = NULL;
@@ -241,11 +246,16 @@ index 8d73530..6f54038 100644
 +	m_bUseOverlappedSend = false;
 +	m_pNatdLayer = pLayer;
 +	AddLayer(pLayer);
++}
++
++bool CEMSocket::GetNatdLocalFailure() const
++{
++	return m_pNatdLayer != NULL && m_pNatdLayer->LocalFailure();
  }
  
  int CEMSocket::OnLayerCallback(std::vector<t_callbackMsg> &callbacks)
 diff --git a/srchybrid/EMSocket.h b/srchybrid/EMSocket.h
-index bb97efe..996ec86 100644
+index bb97efe..1749232 100644
 --- a/srchybrid/EMSocket.h
 +++ b/srchybrid/EMSocket.h
 @@ -20,6 +20,7 @@
@@ -256,15 +266,17 @@ index bb97efe..996ec86 100644
  
  #define EMS_DISCONNECTED	0xFF
  #define EMS_NOTCONNECTED	0x00
-@@ -66,6 +67,7 @@ public:
+@@ -66,6 +67,9 @@ public:
  
  	void InitProxySupport();
  	virtual void RemoveAllLayers();
 +	void AttachNatdLayer(CNatdSocketLayer *pLayer);
++	// the punched connection failed on our side (natd's limits, no request sent), not the peer's
++	bool GetNatdLocalFailure() const;
  	const CString GetLastProxyError() const					{ return m_strLastProxyError; }
  	bool GetProxyConnectFailed() const						{ return m_bProxyConnectFailed; }
  
-@@ -96,6 +98,7 @@ protected:
+@@ -96,6 +100,7 @@ protected:
  	virtual bool	PacketReceived(Packet *packet) = 0;
  	virtual void	OnError(int nErrorCode) = 0;
  	CAsyncProxySocketLayer *m_pProxyLayer;
@@ -492,10 +504,10 @@ index 15674a1..0612368 100644
  void CClientReqSocket::OnSend(int nErrorCode)
 diff --git a/srchybrid/NatTraversal.cpp b/srchybrid/NatTraversal.cpp
 new file mode 100644
-index 0000000..1ca6344
+index 0000000..8defb32
 --- /dev/null
 +++ b/srchybrid/NatTraversal.cpp
-@@ -0,0 +1,1499 @@
+@@ -0,0 +1,1520 @@
 +//this file is part of eMule
 +//Copyright (C)2002-2026 Merkur ( strEmail.Format("%s@%s", "devteam", "emule-project.net") / https://www.emule-project.net )
 +//
@@ -1050,6 +1062,9 @@ index 0000000..1ca6344
 +				sessions.erase(it);	// a punch we were asked for, or a socket already gone
 +				continue;
 +			}
++			// it waited for room in natd and never began (no punch, so no packets or rounds)
++			if (e.packets == 0 && e.rounds == 0)
++				s.pLayer->SetLocalFailure();
 +			// as a TCP connection: refused, or timed out
 +			s.bOver = true;
 +			s.nPendingError = e.error == natd::PunchError::Refused ? WSAECONNREFUSED : WSAETIMEDOUT;
@@ -1492,8 +1507,10 @@ index 0000000..1ca6344
 +			impl.ServerPing(*pListed, dwNow);
 +	} else if (!sv.bGaveUp && dwNow - sv.dwPinged >= NATD_SERVER_PING_RETRY) {
 +		sv.bGaveUp = true;
-+		while (!impl.waits.empty())	// requests that waited for the key
++		while (!impl.waits.empty()) {	// requests that waited for the key: none went
++			impl.waits.begin()->second.pLayer->SetLocalFailure();
 +			DropWait(impl.waits.begin()->first, WSAECONNREFUSED);
++		}
 +		if (thePrefs.GetVerbose())
 +			AddDebugLogLine(false, _T("NAT traversal: the server %s:%u did not answer %u status requests on UDP port %u: no punches through it until the next login, and its requests to us are dropped")
 +				, (LPCTSTR)ipstr(sv.dwIP), sv.nPort, sv.nPings, (unsigned)(uint16)(sv.nPort + 12));
@@ -1678,8 +1695,14 @@ index 0000000..1ca6344
 +			if (thePrefs.GetVerbose())
 +				AddDebugLogLine(false, _T("NAT traversal: punch with %s:%u not started: our socket is no longer connecting"), (LPCTSTR)ipstr(cb.dwIP), cb.nPort);
 +			pLayer->RaiseEvent(FD_CONNECT, WSAECONNREFUSED);
-+		} else if (!OpenSession(cb.dwIP, cb.nPort, token.data(), bConnect, pLayer, cb.nID))
-+			pLayer->RaiseEvent(FD_CONNECT, WSAECONNREFUSED);
++		} else {
++			bool bOurSide = false;
++			if (!OpenSession(cb.dwIP, cb.nPort, token.data(), bConnect, pLayer, cb.nID, &bOurSide)) {
++				if (bOurSide)
++					pLayer->SetLocalFailure();
++				pLayer->RaiseEvent(FD_CONNECT, WSAECONNREFUSED);
++			}
++		}
 +		return;
 +	}
 +	// the request back before our first punch packet, which the next Process() sends: the
@@ -1709,9 +1732,12 @@ index 0000000..1ca6344
 +		if (dwNow - w.second.dwSent >= NATD_RELAY_WAIT)
 +			expired.push_back(w.first);
 +	for (uint32 nID : expired) {
++		const Impl::SWait &w = impl.waits.at(nID);
 +		if (thePrefs.GetVerbose())
-+			AddDebugLogLine(false, impl.waits.at(nID).bSent ? _T("NAT traversal: no answer through the server to our punch request")
++			AddDebugLogLine(false, w.bSent ? _T("NAT traversal: no answer through the server to our punch request")
 +				: _T("NAT traversal: our punch request not sent: no UDP key of the server in time"));
++		if (!w.bSent)
++			w.pLayer->SetLocalFailure();	// the source never heard of it
 +		DropWait(nID, WSAETIMEDOUT);
 +	}
 +	while (!impl.again.empty() && dwNow - impl.again.front().dwSent >= NATD_RELAY_RESEND) {
@@ -1763,8 +1789,10 @@ index 0000000..1ca6344
 +	return pLayer->m_bWaiting;
 +}
 +
-+bool CNatTraversal::OpenSession(uint32 dwIP, uint16 nPort, const BYTE *pToken12, bool bConnect, CNatdSocketLayer *pLayer, uint32 nServerPeer)
++bool CNatTraversal::OpenSession(uint32 dwIP, uint16 nPort, const BYTE *pToken12, bool bConnect, CNatdSocketLayer *pLayer, uint32 nServerPeer, bool *pbOurSide)
 +{
++	if (pbOurSide != NULL)
++		*pbOurSide = false;
 +	CSingleLock lock(&m_pImpl->cs, TRUE);
 +	// the IP filter, as for anything we would send to or read from that address: a request
 +	// through the server carries the endpoint the server saw, which no filter has checked yet
@@ -1778,6 +1806,8 @@ index 0000000..1ca6344
 +	if (pszNot != NULL) {
 +		if (thePrefs.GetVerbose())
 +			AddDebugLogLine(false, _T("NAT traversal: punch with %s:%u not started: %s"), (LPCTSTR)ipstr(dwIP), nPort, pszNot);
++		if (pbOurSide != NULL)
++			*pbOurSide = !m_pImpl->pAgent->punchable();
 +		return false;
 +	}
 +	const natd::Endpoint remote{ntohl(dwIP), nPort};
@@ -1791,6 +1821,8 @@ index 0000000..1ca6344
 +	if (id == 0) {
 +		if (thePrefs.GetVerbose())
 +			AddDebugLogLine(false, _T("NAT traversal: punch with %s not started: a punch with it is on already, or the session limit is reached"), (LPCTSTR)ipstr(htonl(remote.ip), remote.port));
++		if (pbOurSide != NULL)
++			*pbOurSide = true;
 +		return false;
 +	}
 +	SSession &s = m_pImpl->sessions[id];
@@ -1871,6 +1903,7 @@ index 0000000..1ca6344
 +	: m_nSession()
 +	, m_nServerPeer()
 +	, m_bWaiting()
++	, m_bLocalFailure()
 +	, m_dwIP(dwIP)
 +	, m_nPort(nPort)
 +{
@@ -1997,10 +2030,10 @@ index 0000000..1ca6344
 +}
 diff --git a/srchybrid/NatTraversal.h b/srchybrid/NatTraversal.h
 new file mode 100644
-index 0000000..b0b5bfd
+index 0000000..05a846a
 --- /dev/null
 +++ b/srchybrid/NatTraversal.h
-@@ -0,0 +1,178 @@
+@@ -0,0 +1,185 @@
 +//this file is part of eMule
 +//Copyright (C)2002-2026 Merkur ( strEmail.Format("%s@%s", "devteam", "emule-project.net") / https://www.emule-project.net )
 +//
@@ -2119,7 +2152,9 @@ index 0000000..b0b5bfd
 +	// A punch session towards dwIP:nPort (network order IP): natd connects when bConnect, else
 +	// accepts. pLayer: the socket's, NULL for a socket made when the stream opens.
 +	// nServerPeer: the peer's ID on the server.
-+	bool	OpenSession(uint32 dwIP, uint16 nPort, const BYTE *pToken12, bool bConnect, CNatdSocketLayer *pLayer, uint32 nServerPeer);
++	// false when it was not opened; *pbOurSide then says whether that was for a reason of ours
++	// (we cannot be punched to now, natd has no room), not the peer's
++	bool	OpenSession(uint32 dwIP, uint16 nPort, const BYTE *pToken12, bool bConnect, CNatdSocketLayer *pLayer, uint32 nServerPeer, bool *pbOurSide = NULL);
 +	void	ServerTimer();
 +	void	OnServerPeer(const SNatCallback &cb);
 +	// Our requests through the server wait for the peer's request back, by the target's ID there.
@@ -2151,6 +2186,10 @@ index 0000000..b0b5bfd
 +	void	Orphan()								{ m_nSession = 0; }
 +	// the target's ID on the server
 +	uint32	GetServerPeer() const					{ return m_nServerPeer; }
++	// the connection failed before any punch began, for a reason of our side: the request
++	// never went, or natd had no room for the punch; the source is not to blame
++	bool	LocalFailure() const					{ return m_bLocalFailure; }
++	void	SetLocalFailure()						{ m_bLocalFailure = true; }
 +
 +protected:
 +	// Events of the socket handle under this layer: there is no connection on it, so there
@@ -2176,6 +2215,7 @@ index 0000000..b0b5bfd
 +	uint32	m_nSession;		// 0: none (not connected yet, or gone)
 +	uint32	m_nServerPeer;	// the target's ID on the server
 +	bool	m_bWaiting;		// our request waits for the target's endpoint
++	bool	m_bLocalFailure;	// see LocalFailure()
 +	uint32	m_dwIP;			// network order
 +	uint16	m_nPort;		// host order, the UDP port of the peer
 +};
