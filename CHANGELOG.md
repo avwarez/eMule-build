@@ -36,23 +36,21 @@ This build is eMule 0.72a with the changes below, compiled for x64, Win32 and AR
 
 ### NAT traversal (beta)
 
-- **Downloads between two LowIDs:** two LowID clients can now transfer files to each other; in 0.72a a LowID could not reach another LowID at all. They open a direct UDP path through their NATs (hole punching).
+- **Downloads between two LowIDs:** two LowID clients logged in to the same eD2K server can now transfer files to each other; in 0.72a a LowID could not reach another LowID at all. They open a direct UDP path through their NATs (hole punching).
 - **Transport:** the eD2K connection runs unchanged over that path, on the client UDP port that Kad uses, carried by KCP as it would be by TCP. Speed limits, queues and obfuscation work as over TCP.
 - **NAT discovery:** at startup eMule checks its NAT with public STUN servers, using the natd library, right after UPnP and before connecting to the server and Kad. It takes a few seconds, at most a minute.
-- **Startup wait:** until the check is over the Connect buttons are disabled, and the automatic connection starts when it ends. The server login then announces whether other LowIDs can punch through to this client.
+- **Startup wait:** until the check is over the Connect buttons are disabled, and the automatic connection starts when it ends. The status bar says so while it lasts: eMule's own notice while UPnP sets up the ports, then «Checking the NAT, please wait...», and at the end «Connecting» or, without the automatic connection, «eMule ready». The server login then announces whether other LowIDs can punch through to this client.
 - **Log:** the log gives the public address found and whether downloads between LowIDs can use hole punching. With verbose logging on, it also gives the kind of NAT and each step of a punch.
 - **Turning it off:** a user with forwarded ports can turn it off at the bottom of Options > Connection ("Use NAT traversal between LowIDs", on by default). From the next start there is no check and no wait.
 - **STUN servers:** the servers are read from `config/stun.dat`, one `host:port` per line. If the file is missing or lists fewer than 3 servers, a built-in list is used.
-- **Through the server:** the request to punch goes first through the eD2K server, by the NAT callback of Lugdunum servers, when both clients are logged in to it, as eMule does for its callbacks.
-- **Through Kad:** otherwise, for example with no server connection or a source on another server, the request goes through the source's Kad buddy, which can be any eMule. The requester needs no buddy: it punches the source's address from the source's Kad record.
-- **Kad sources:** the Kad sources of a client that can be punched to say so, in a tag that other clients ignore. A source with an open UDP port is asked directly, without a buddy. When its public IP changes, or its port with a NAT that keeps one port for every destination, a client publishes its sources again, and a source already known takes the address of its newest Kad record.
+- **Through the server:** the request to punch goes through the eD2K server, by the NAT callback of Lugdunum servers, when both clients are logged in to it, as eMule does for its callbacks. Kad is not used: a LowID source found only through Kad, or on another server, stays out of reach as in 0.72a.
 - **Mobile networks:** a client whose NAT picks a new port for each destination, inside a block of ports (as many mobile CGNATs do) or in sequence, can now be punched to by a client whose NAT keeps the same public port.
-- **Port search:** that client tries first the port the server or the buddy saw, then the ports nearest to it, more at each round, with no assumption on how an operator lays out its ports.
-- **Retries:** a request with no answer goes once more after 3 seconds. A punch that times out is asked for once more, within the time a TCP connection would take to give up.
+- **Port search:** that client tries first the port the server saw, then the ports nearest to it, more at each round, with no assumption on how an operator lays out its ports.
+- **Retries:** a request with no answer goes once more after 3 seconds. A punch that times out fails as a TCP connection that times out, and the source is asked again later, as described under Failed punches.
+- **Failed punches:** a LowID source whose punched connection fails stays in the download's sources, instead of being dropped and blocked for 30 minutes as an unreachable source. It is asked again 2, 5, 15 and 29 minutes after each failure in turn; if the attempt after 29 minutes fails too, it is treated as eMule treats any source it cannot connect to. This holds only while the punch itself fails: a connection that breaks after the punch succeeded is handled as before, as is a HighID source. A try that our own side could not start (the request could not go to the server, or too many punches were already under way) does not count: the source is asked again after the same delay.
 - **Filters:** the IP filter and the list of banned clients apply to the addresses a punch goes to or comes from, as they do to any other connection.
 - **Closing eMule:** the transfers that go through a punched UDP path now end at once on the other side, as TCP connections do, instead of after about 45 seconds of silence.
 - **Limits:** two clients whose NATs both pick a new port for each destination cannot reach each other, nor can a client whose NAT picks ports at random from its whole range. Such a client stays a plain LowID.
-- **Direct sources:** a Kad source with an open UDP port is punched to only by a client whose NAT keeps the same public port for every destination.
 
 ### Web interface
 

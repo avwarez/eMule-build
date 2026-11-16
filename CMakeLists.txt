@@ -87,38 +87,33 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #          PowerShare does to the debug log, and 89g keeps a PowerShare
 #          upload going past the session limit while no other PowerShare
 #          request or friend slot is waiting for the slot.
-#          89n lets two LowIDs reach each other through UDP hole punching,
-#          with natd (below) and public STUN servers; nothing changes towards
-#          a HighID, nor between clients where TCP works. At startup, after
+#          89n lets two LowIDs on the same eD2K server reach each other
+#          through UDP hole punching, with natd (below) and public STUN
+#          servers; nothing changes towards a HighID, nor between clients
+#          where TCP works, and Kad plays no part in it. At startup, after
 #          UPnP and before the server and Kad, natd's NAT discovery runs on
 #          the client UDP port (the connect buttons wait for it, at most a
 #          minute); the login announces Lugdunum's NAT callback (SRVCAP_
-#          NATTRAVERSAL) and a LowID's Kad source records carry a "natd" tag
-#          when the client can be punched to, and a LowID keeps the LowID
-#          sources it can punch to instead of parking them as LowID->LowID.
-#          The requester's request goes from the client UDP port to a relay,
-#          which forwards it with the endpoint it saw, and the source punches
-#          that endpoint. Through the eD2K server, when both are on it, it is
-#          Lugdunum's OP_NAT_CALLBACK_* (obfuscated with the server's UDP
-#          key, which a request waits for just after the login; the lower ID
-#          starts, the token comes from both IDs), and the source sends its
-#          own request back the same way before punching, so both punch
-#          endpoints seen a moment ago. Otherwise through the source's Kad
-#          buddy, which can be any eMule: OP_REASKCALLBACKUDP/TCP with a natd
-#          marker (nonce); the requester needs no buddy of its own and
-#          punches the endpoint of the source's Kad record at once. A source
-#          with an open UDP port is asked directly (OP_DIRECTCALLBACKREQ). An
-#          endpoint-independent NAT, one with random ports in a block (mobile
-#          CGNs) or sequential ports can be punched to: the
-#          endpoint-independent side sprays the ports nearest to the endpoint
-#          it punches, more each round. Unanswered
-#          requests go once more, and a timed-out punch is asked for again
-#          while the socket is within CONNECTION_TIMEOUT, as TCP resends its
-#          SYN. natd hands over the path and the eD2K stream runs over it in
-#          eMule's own datagrams (KCP, kcp/ below) on the client UDP port,
-#          under a CClientReqSocket given a CNatdSocketLayer: keepalives at
-#          natd's interval, dead after three silent ones (then the public
-#          endpoint is checked again), FINs at the end and when eMule closes.
+#          NATTRAVERSAL) when the client can be punched to, and a LowID
+#          keeps the LowID sources on its server it can punch to instead of
+#          parking them as LowID->LowID. The requester's request goes from
+#          the client UDP port to the server as Lugdunum's OP_NAT_CALLBACK_*
+#          (obfuscated with the server's UDP key, which a request waits for
+#          just after the login; the lower ID starts, the token comes from
+#          both IDs); the server forwards it with the endpoint it saw, and
+#          the source sends its own request back the same way before
+#          punching, so both punch endpoints seen a moment ago. An
+#          endpoint-independent NAT, one with random ports in a block
+#          (mobile CGNs) or sequential ports can be punched to: the punch
+#          sprays the ports nearest to the endpoint it punches, more each
+#          round. Unanswered requests go once more; a timed-out punch fails
+#          the connection as TCP does, and the source is asked again after
+#          2, 5, 15 and 29 minutes. natd hands over the path and the eD2K
+#          stream runs over it in eMule's own datagrams (KCP, kcp/ below) on
+#          the client UDP port, under a CClientReqSocket given a
+#          CNatdSocketLayer: keepalives at natd's interval, dead after three
+#          silent ones (then the public endpoint is checked again), FINs at
+#          the end and when eMule closes.
 #   90-94  the code compiles but /Wall flags it; these bring the warning
 #          count back to zero.
 #   95-96  the code compiles and is warning-clean but is not correct on
