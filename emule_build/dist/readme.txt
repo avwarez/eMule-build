@@ -287,17 +287,17 @@ within our distribution. You need the following libs:
 *) id3lib v3.8.3
         https://sourceforge.net/projects/id3lib/
 
-*) Mbed TLS 4.2.0
+*) Mbed TLS 4.3.0
         https://www.trustedfirmware.org/projects/mbed-tls/
 
-*) libplum 0.6.0, with changes for eMule
+*) libplum 0.6.0 and later upstream fixes, with changes for eMule
         https://github.com/paullouisageneau/libplum
-        https://github.com/avwarez/libplum/tree/v0.6.0-mapping-refresh
+        https://github.com/avwarez/libplum/tree/master-mapping-refresh
 
 *) ResizableLib 1.5.3
         https://github.com/ppescher/resizablelib
 
-*) zlib v1.3.2
+*) zlib v1.4
         http://zlib.net
 
 Download and save libraries source code one level above the eMule source code

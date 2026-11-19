@@ -222,7 +222,7 @@ emule_apply_patches(resizablelib resizablelib_build)
 
 # ---------------------------------------------------------------------------
 # mbedtls - vanilla git submodule (mbedtls/, with nested tf-psa-crypto/ and
-# framework/ submodules), pinned to v4.2.0. Never edited in place. eMule
+# framework/ submodules), pinned to v4.3.0. Never edited in place. eMule
 # needs two customizations on top of it, both supplied from outside the
 # submodule via extension points mbedTLS itself documents for this purpose,
 # so there is nothing to re-apply after updating the submodule to a newer
@@ -272,7 +272,7 @@ include_directories("${CMAKE_SOURCE_DIR}/emule/mbedtls/tf-psa-crypto/include/mbe
 add_subdirectory(cryptopp_build)
 
 # ---------------------------------------------------------------------------
-# zlib - vanilla git submodule (zlib/, madler/zlib pinned to v1.3.2). Has its
+# zlib - vanilla git submodule (zlib/, madler/zlib pinned to v1.4). Has its
 # own CMakeLists.txt, so add_subdirectory() alone is enough; only the static
 # lib is needed (matches every other dependency here - MFC linked static) and
 # ZLIB_INSTALL would otherwise add install() rules we don't want for a
@@ -299,9 +299,9 @@ target_compile_options(zlibstatic PRIVATE $<$<C_COMPILER_ID:MSVC>:/W3>)
 add_subdirectory(id3lib_build)
 
 # ---------------------------------------------------------------------------
-# libplum - git submodule (libplum/, avwarez/libplum pinned to v0.6.0-mapping-refresh:
-# tag v0.6.0 plus four commits - UPnP error 725 falls back to a permanent
-# lease, error 714 on unmapping is a success, UPnP mappings are checked with
+# libplum - git submodule (libplum/, avwarez/libplum pinned to master-mapping-refresh:
+# upstream master, which already has the UPnP 725/714 fixes, plus the two
+# commits of the still open upstream PR #59 - UPnP mappings are checked with
 # GetSpecificPortMappingEntry every recheck period and made again only when
 # gone, and plum_refresh_mapping() checks one at once), for the port mapping
 # emule_build/89a adds (PCP, NAT-PMP and UPnP-IGD). Has its own CMakeLists.txt.
@@ -338,7 +338,7 @@ add_subdirectory(natd EXCLUDE_FROM_ALL)
 target_compile_features(natd PRIVATE cxx_std_23)
 
 # ---------------------------------------------------------------------------
-# KCP - vanilla git submodule (kcp/, skywind3000/kcp pinned to 1.7, MIT): the
+# KCP - vanilla git submodule (kcp/, skywind3000/kcp pinned to 2.1.1, MIT): the
 # transport of the eD2K stream over a punched path (CNatdKcpTransport in NatTraversal.cpp,
 # which includes "kcp/ikcp.h" through CMAKE_SOURCE_DIR). One C file, no
 # CMakeLists.txt of its own that fits a static library: built here.

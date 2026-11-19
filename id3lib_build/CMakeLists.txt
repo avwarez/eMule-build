@@ -11,7 +11,7 @@ cmake_minimum_required(VERSION 3.20)
 # that copy is never built here: id3lib's zlib usage (io_decorators.cpp/.h,
 # frame_render.cpp - just compress()/uncompress()/Z_OK/uLong, all unchanged
 # since 1.1.x) is instead pointed at eMule's own zlib submodule (zlib/,
-# pinned to v1.3.2, added to the top-level CMakeLists.txt before this
+# pinned to v1.4, added to the top-level CMakeLists.txt before this
 # directory), via the target_link_libraries(id3lib ... zlibstatic) below -
 # one zlib in the final binary instead of two.
 # ---------------------------------------------------------------------------
