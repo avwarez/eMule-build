@@ -31,7 +31,6 @@ This build is eMule 0.72a with the changes below, compiled for x64, Win32 and AR
 - **Firewall bar:** if inbound connections are blocked, a bar at the top of the window offers «Allow», which adds the needed rules with administrator rights, or «Ignore».
 - **Send after close:** a network send that completes after its connection has already closed no longer writes into freed memory. This was a cause of random crashes.
 - **Short UDP packets:** a UDP packet from a server too short to hold an opcode is no longer read past its end.
-- **Banned clients:** a banned client that keeps sending data no longer keeps the interface busy.
 - **IP filter through the buddy:** a firewalled client no longer answers a request that its Kad buddy forwards from a filtered address or a banned client. Before, it replied and updated that client's place in the upload queue.
 
 ### NAT traversal (beta)
@@ -55,7 +54,7 @@ This build is eMule 0.72a with the changes below, compiled for x64, Win32 and AR
 ### Web interface
 
 - **HTTPS on 64-bit:** HTTPS works on 64-bit builds. TLS was given only half of the socket handle.
-- **Incoming connections:** the web server accepts every incoming connection instead of missing some under load.
+- **Certificate files:** the HTTPS certificate and key can be in any folder. A folder whose name has characters outside the system code page kept HTTPS from starting.
 - **Column changes:** a column change with an out-of-range index is ignored instead of writing outside the settings.
 - **Search results:** file names in the search results are escaped, so a name with HTML characters can no longer alter the page.
 
@@ -72,7 +71,7 @@ This build is eMule 0.72a with the changes below, compiled for x64, Win32 and AR
 - **Windows 10 or later required:** Windows XP, Vista, 7 and 8 no longer receive security updates, a risk for a program exposed to the network. This build targets Windows 10, which still has extended support.
 - **Old systems removed:** the code for the older systems has been removed: old firewall opener, run-as-user, legacy UI paths, version checks.
 - **Current Windows calls:** Windows calls that were looked up at runtime for old systems are now called directly, and deprecated ones are replaced with their current equivalents.
-- **Wine:** Wine 11.0 is supported; it is the version this build is tested with. Under Wine, the error text of a failed ping no longer makes eMule exit.
+- **Wine:** Wine 11.0 is supported; it is the version this build is tested with. Under Wine, the web interface no longer stops accepting connections for the rest of the session, a banned client that keeps sending data no longer keeps the interface busy, and the error text of a failed ping no longer makes eMule exit.
 
 ### Languages
 
