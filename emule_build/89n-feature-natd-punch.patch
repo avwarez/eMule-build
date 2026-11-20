@@ -414,10 +414,10 @@ index fa40464..51ed7ac 100644
 +	m_SysMenuOptions.EnableMenuItem(MP_CONNECT, MF_ENABLED);
 +	serverwnd->GetDlgItem(IDC_ED2KCONNECT)->EnableWindow();
 +	kademliawnd->UpdateControlsState();
-+	// after a wait (bAutoConnect): the connection starts, or the status bar says that eMule is ready now
++	// after a wait (bAutoConnect): what is not connected yet connects, as after UPnP (a connection started meanwhile stays), or the status bar says that eMule is ready now
 +	if (bAutoConnect) {
 +		if (thePrefs.DoAutoConnect())
-+			OnBnClickedConnect();
++			StartConnection();
 +		else
 +			AddLogLine(true, GetResString(IDS_MAIN_READY), (LPCTSTR)theApp.m_strCurVersionLong);
 +	}
