@@ -2416,8 +2416,8 @@ index 8b5197e..6f85556 100644
  #define _APS_NEXT_COMMAND_VALUE         32773
 -#define _APS_NEXT_CONTROL_VALUE         3048
 -#define _APS_NEXT_SYMED_VALUE           1610
-+#define _APS_NEXT_CONTROL_VALUE         3049
-+#define _APS_NEXT_SYMED_VALUE           1615
++#define _APS_NEXT_CONTROL_VALUE         3050
++#define _APS_NEXT_SYMED_VALUE           1616
  #endif
  #endif
 diff --git a/srchybrid/ServerConnect.cpp b/srchybrid/ServerConnect.cpp

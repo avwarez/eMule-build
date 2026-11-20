@@ -28,7 +28,8 @@ This build is eMule 0.72a with the changes below, compiled for x64, Win32 and AR
 
 - **Port mapping:** port mapping (UPnP IGD, NAT-PMP, PCP) is done with libplum, which is now the default method. The old Windows UPnP service method has been removed, along with its two Tweaks options.
 - **Windows Firewall check:** at startup eMule checks whether Windows Firewall lets other clients reach its TCP and UDP ports, and the log says which rule or network profile allows or blocks each port.
-- **Firewall bar:** if inbound connections are blocked, a bar at the top of the window offers «Allow», which adds the needed rules with administrator rights, or «Ignore».
+- **Firewall bar:** if inbound connections are blocked, a bar at the top of the window offers «Allow», which adds the needed rules with administrator rights, or «Ignore». A block rule limited to some remote addresses is left as it is, so those addresses stay blocked.
+- **Turning the check off:** the check can be turned off in Options > Connection ("Check Windows Firewall", on by default). Turned off, eMule does not read the firewall rules and shows no bar; the change takes effect at once.
 - **Send after close:** a network send that completes after its connection has already closed no longer writes into freed memory. This was a cause of random crashes.
 - **Short UDP packets:** a UDP packet from a server too short to hold an opcode is no longer read past its end.
 - **IP filter through the buddy:** a firewalled client no longer answers a request that its Kad buddy forwards from a filtered address or a banned client. Before, it replied and updated that client's place in the upload queue.
