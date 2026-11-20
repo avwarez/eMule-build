@@ -1,0 +1,31 @@
+diff --git a/src/utils.cpp b/src/utils.cpp
+index 5c03984..075a1d1 100644
+--- a/src/utils.cpp
++++ b/src/utils.cpp
+@@ -155,8 +155,11 @@ String msconvert(String data, ID3_TextEnc sourceEnc, ID3_TextEnc targetEnc)
+ 
+   unsigned char* src = (unsigned char*)data.data();
+   UINT srcsize = static_cast<UINT>(data.size());
+-  unsigned char* dst = LEAKTESTNEW(unsigned char[2 * data.size()]);
+-  UINT dstsize = static_cast<UINT>((2u * data.size()) + 2u); //big enough for 1 byte to two byte conversion, plus two bytes for byte order mark
++  // The buffer is allocated with the size DoConversion is given: a buffer of
++  // 2*N bytes declared as 2*N+2 let a byte order mark be written past its end.
++  const UINT dstcap = static_cast<UINT>((2u * data.size()) + 2u); //big enough for 1 byte to two byte conversion, plus two bytes for byte order mark
++  UINT dstsize = dstcap;
++  unsigned char* dst = LEAKTESTNEW(unsigned char[dstcap]);
+ 
+   hResult = conv->DoConversion(src, &srcsize, dst, &dstsize);
+   conv->Release();
+@@ -168,7 +171,11 @@ String msconvert(String data, ID3_TextEnc sourceEnc, ID3_TextEnc targetEnc)
+     return oldconvert(data, sourceEnc, targetEnc);
+   }
+ 
+-  target = (char*)dst;
++  // DoConversion returns the number of bytes written in dstsize and does not
++  // terminate the output with a NUL. Copying up to the first NUL read past the
++  // converted bytes into memory never written (and beyond the buffer when no
++  // NUL followed), and cut a UTF-16 result at its first zero byte.
++  target.assign((const char*)dst, dstsize < dstcap ? dstsize : dstcap);
+   delete[] dst;
+   return target;
+ }
