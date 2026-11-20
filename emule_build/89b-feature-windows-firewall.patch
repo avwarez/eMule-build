@@ -25,22 +25,14 @@ diff --git a/srchybrid/Emule.h b/srchybrid/Emule.h
 index 92f25cc..6243994 100644
 --- a/srchybrid/Emule.h
 +++ b/srchybrid/Emule.h
-@@ -47,6 +47,7 @@ class CWebServer;
- class CAbstractFile;
- class CUpDownClient;
- class CUPnPImplWrapper;
+@@ -50,2 +50,3 @@ class CAbstractFile;
 +class CFirewallCheck;
  class CUploadDiskIOThread;
  class CPartFileWriteThread;
- 
-@@ -90,6 +91,7 @@ public:
- 	CWebServer			*webserver;
- 	CScheduler			*scheduler;
- 	CUPnPImplWrapper	*m_pUPnPFinder;
+@@ -93,2 +94,3 @@ public:
 +	CFirewallCheck		*m_pFirewallCheck;
  	CUploadDiskIOThread	*m_pUploadDiskIOThread;
  	CPartFileWriteThread *m_pPartFileWriteThread;
- 
 diff --git a/srchybrid/EmuleDlg.cpp b/srchybrid/EmuleDlg.cpp
 index 2c0f81e..2db466a 100644
 --- a/srchybrid/EmuleDlg.cpp
@@ -1055,24 +1047,16 @@ diff --git a/srchybrid/emule.vcxproj b/srchybrid/emule.vcxproj
 index b8930e4..d0c45db 100644
 --- a/srchybrid/emule.vcxproj
 +++ b/srchybrid/emule.vcxproj
-@@ -220,6 +220,8 @@
-     <ClCompile Include="FileDetailDlgStatistics.cpp" />
-     <ClCompile Include="FileIdentifier.cpp" />
-     <ClCompile Include="FileInfoDialog.cpp" />
+@@ -223,2 +223,4 @@
 +    <ClCompile Include="FirewallBar.cpp" />
 +    <ClCompile Include="FirewallCheck.cpp" />
      <ClCompile Include="FrameGrabThread.cpp" />
      <ClCompile Include="Friend.cpp" />
-     <ClCompile Include="FriendList.cpp" />
-@@ -491,6 +493,8 @@
-     <ClInclude Include="FileDetailDlgStatistics.h" />
-     <ClInclude Include="FileIdentifier.h" />
-     <ClInclude Include="FileInfoDialog.h" />
+@@ -494,2 +496,4 @@
 +    <ClInclude Include="FirewallBar.h" />
 +    <ClInclude Include="FirewallCheck.h" />
      <ClInclude Include="FrameGrabThread.h" />
      <ClInclude Include="Friend.h" />
-     <ClInclude Include="FriendList.h" />
 diff --git a/srchybrid/lang/ar_AE.rc b/srchybrid/lang/ar_AE.rc
 index 4e4a867..4a95ced 100644
 --- a/srchybrid/lang/ar_AE.rc

@@ -235,26 +235,22 @@ index 03acd39..97e935c 100644
  CDownloadListCtrl::CDownloadListCtrl()
  	: CDownloadListListCtrlItemWalk(this)
 diff --git a/srchybrid/EmuleDlg.cpp b/srchybrid/EmuleDlg.cpp
-index 8094ce1..3f361f0 100644
+index 601c2b2..36f101e 100644
 --- a/srchybrid/EmuleDlg.cpp
 +++ b/srchybrid/EmuleDlg.cpp
-@@ -122,6 +122,8 @@ static const UINT UWM_TASK_BUTTON_CREATED = RegisterWindowMessage(_T("TaskbarBut
- 
+@@ -126,4 +126,6 @@ static const UINT UWM_TASK_BUTTON_CREATED = RegisterWindowMessage(_T("TaskbarBut
  IMPLEMENT_DYNAMIC(CMsgBoxException, CException)
  
 +#pragma warning(push)
 +#pragma warning(disable:4191) // MFC message maps cast every handler to AFX_PMSG; only a pragma inside the .cpp reaches this
  BEGIN_MESSAGE_MAP(CemuleDlg, CTrayDialog)
  	///////////////////////////////////////////////////////////////////////////
- 	// Windows messages
-@@ -200,6 +202,7 @@ BEGIN_MESSAGE_MAP(CemuleDlg, CTrayDialog)
- 	ON_REGISTERED_MESSAGE(UWM_TASK_BUTTON_CREATED, OnTaskbarBtnCreated)
+@@ -205,4 +207,5 @@ BEGIN_MESSAGE_MAP(CemuleDlg, CTrayDialog)
  
  END_MESSAGE_MAP()
 +#pragma warning(pop)
  
  CemuleDlg::CemuleDlg(CWnd *pParent /*=NULL*/)
- 	: CTrayDialog(CemuleDlg::IDD, pParent)
 diff --git a/srchybrid/FriendListCtrl.cpp b/srchybrid/FriendListCtrl.cpp
 index eea00c1..5578de0 100644
 --- a/srchybrid/FriendListCtrl.cpp
@@ -357,26 +353,22 @@ index f4ab80c..0b37353 100644
  CMetaDataDlg::CMetaDataDlg()
  	: CResizablePage(CMetaDataDlg::IDD)
 diff --git a/srchybrid/PPgConnection.cpp b/srchybrid/PPgConnection.cpp
-index e1c5703..24a3f66 100644
+index e4812ae..f096d47 100644
 --- a/srchybrid/PPgConnection.cpp
 +++ b/srchybrid/PPgConnection.cpp
-@@ -41,6 +41,8 @@ static char THIS_FILE[] = __FILE__;
- 
+@@ -42,4 +42,6 @@ static char THIS_FILE[] = __FILE__;
  IMPLEMENT_DYNAMIC(CPPgConnection, CPropertyPage)
  
 +#pragma warning(push)
 +#pragma warning(disable:4191) // MFC message maps cast every handler to AFX_PMSG; only a pragma inside the .cpp reaches this
  BEGIN_MESSAGE_MAP(CPPgConnection, CPropertyPage)
  	ON_BN_CLICKED(IDC_STARTTEST, OnStartPortTest)
- 	ON_EN_CHANGE(IDC_DOWNLOAD_CAP, OnSettingsChange)
-@@ -64,6 +66,7 @@ BEGIN_MESSAGE_MAP(CPPgConnection, CPropertyPage)
- 	ON_WM_HELPINFO()
+@@ -66,4 +68,5 @@ BEGIN_MESSAGE_MAP(CPPgConnection, CPropertyPage)
  	ON_BN_CLICKED(IDC_PREF_UPNPONSTART, OnSettingsChange)
  END_MESSAGE_MAP()
 +#pragma warning(pop)
  
  CPPgConnection::CPPgConnection()
- 	: CPropertyPage(CPPgConnection::IDD)
 diff --git a/srchybrid/PShtWiz1.cpp b/srchybrid/PShtWiz1.cpp
 index 15c6ca3..c6c4786 100644
 --- a/srchybrid/PShtWiz1.cpp
