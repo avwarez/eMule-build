@@ -4,11 +4,6 @@ project(eMule VERSION 0.72 LANGUAGES CXX RC)
 # ---------------------------------------------------------------------------
 # This build targets the original MFC/Windows application, as built today by
 # srchybrid/emule.vcxproj (MSVC + static MFC/ATL). It is Windows-only.
-#
-# All third-party dependencies (mbedtls, cryptopp, id3lib, zlib, libplum,
-# natd, resizablelib) are vendored as vanilla git submodules - see each
-# add_subdirectory() below and the corresponding *_build/CMakeLists.txt for
-# the ones with no CMake support of their own.
 # ---------------------------------------------------------------------------
 
 if(NOT WIN32)
@@ -21,31 +16,23 @@ endif()
 # is set to "MultiThreaded$<$<CONFIG:Debug>:Debug>" on every *_build target
 # below). zlib, libplum and mbedtls/tf-psa-crypto have their own upstream
 # CMakeLists.txt that we don't edit, and none of them set this explicitly, so
-# without this they fall back to CMake's own default (dynamic CRT, /MD) -
-# confirmed by an actual build attempt: LNK2001 on __imp_close/__imp_read/
-# __imp_open/__imp_write/__imp_setbuf/__imp__memicmp (DLL-import CRT thunks
-# that only exist when linking the dynamic CRT) from zs.lib/libminiupnpc.lib/
-# tfpsacrypto.lib, mixed into an otherwise fully statically-linked emule.exe.
+# without this they fall back to CMake's own default (dynamic CRT, /MD).
 # CMP0091 (default NEW here - cmake_minimum_required is well past 3.15, the
 # policy's introduction) makes CMAKE_MSVC_RUNTIME_LIBRARY, set before any
 # target is created, the default for every target in every add_subdirectory()
 # below unless a target overrides it itself - already the case for cryptopp,
-# id3lib, resizablelib and zlibstatic.
+# id3lib and resizablelib.
 cmake_policy(SET CMP0091 NEW)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 # ---------------------------------------------------------------------------
 # Submodule patching
 #
-# Every submodule in this repo is vanilla and is never edited in place. When
+# No submodule in this repo is ever edited in place. When
 # one of them needs a source change - an upstream bug, an incompatibility
 # with a newer dependency, or a construct the C++ standard we compile at has
 # removed - the fix lives as a .patch file in that submodule's *_build/
 # directory here, and is applied at configure time by the function below.
-#
-# Idempotent: `git apply --check --reverse` succeeds exactly when a patch is
-# already applied, so re-configuring an existing build tree is a no-op
-# instead of a failure.
 #
 # --ignore-whitespace: these patches are generated against the repository's
 # own bytes (LF line endings), but a Windows checkout with core.autocrlf=true
@@ -117,15 +104,11 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 #   90-94  the code compiles but /Wall flags it; these bring the warning
 #          count back to zero.
 #   95-96  the code compiles and is warning-clean but is not correct on
-#          every target we build (see each patch's own subject).
-#   97     the code is wrong on every target: on input a peer or a web
-#          client controls, or in how it stops its threads and what it does
-#          with the failures it catches. 97a-97c are the commits on the
-#          fork's v0.72a-secfix branch, offered upstream as irwir/eMule#7; a
-#          file here goes away when the same change reaches a released v0.72x.
-#   98     corrections to the shipped language resources, from the fork's
-#          v0.72a-lang branch - source data for the `languages` target
-#          rather than code, so they change no binary.
+#          every target we build.
+#   97     the code is wrong on every target; a file here goes away when the
+#          same change reaches a released v0.72x.
+#   98     corrections to the shipped language resources - source data for
+#          the `languages` target rather than code.
 #   99     reserved for temporary diagnostics - a patch that makes a build
 #          report something rather than fix it; whatever lands here is meant
 #          to be deleted once it has been read.
@@ -211,10 +194,6 @@ endfunction()
 # land after the directory that consumes it has already been processed.
 # An empty (or patch-less) *_build directory is simply a no-op here, so these
 # calls stay valid whether or not that submodule currently needs anything.
-# The first four are the C++ submodules whose headers eMule actually includes:
-# eMule is the only target that compiles at C++23 (see emule_build/
-# CMakeLists.txt), but cryptopp/id3lib/resizablelib headers get pulled into
-# its translation units and are therefore parsed under that same standard.
 emule_apply_patches(emule emule_build)
 emule_apply_patches(cryptopp cryptopp_build)
 emule_apply_patches(id3lib id3lib_build)
@@ -292,7 +271,7 @@ add_subdirectory(zlib)
 target_compile_options(zlibstatic PRIVATE $<$<C_COMPILER_ID:MSVC>:/W3>)
 
 # ---------------------------------------------------------------------------
-# id3lib - vanilla git submodule (id3lib/, avwarez/id3lib pinned to v3.9.1),
+# id3lib - git submodule (id3lib/, avwarez/id3lib pinned to v3.9.1),
 # built via our own id3lib_build/CMakeLists.txt since the upstream repo ships
 # no CMake support of its own (see that file for why).
 # ---------------------------------------------------------------------------
@@ -340,8 +319,7 @@ target_compile_features(natd PRIVATE cxx_std_23)
 # ---------------------------------------------------------------------------
 # KCP - vanilla git submodule (kcp/, skywind3000/kcp pinned to 2.1.1, MIT): the
 # transport of the eD2K stream over a punched path (CNatdKcpTransport in NatTraversal.cpp,
-# which includes "kcp/ikcp.h" through CMAKE_SOURCE_DIR). One C file, no
-# CMakeLists.txt of its own that fits a static library: built here.
+# which includes "kcp/ikcp.h" through CMAKE_SOURCE_DIR). One C file, built here.
 # ---------------------------------------------------------------------------
 enable_language(C)
 add_library(kcp STATIC kcp/ikcp.c)

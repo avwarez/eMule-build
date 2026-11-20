@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.20)
 
 # ---------------------------------------------------------------------------
-# Crypto++ (weidai11/cryptopp @ CRYPTOPP_8_9_0, vanilla submodule at
-# eMule/cryptopp) has no CMakeLists.txt of its own - only cryptlib.vcxproj
+# Crypto++ (weidai11/cryptopp @ CRYPTOPP_8_9_0, vanilla submodule) has no
+# CMakeLists.txt of its own - only cryptlib.vcxproj
 # (MSVC) and GNUmakefile. Rather than pull in a third-party CMake wrapper,
 # this file is our own, transcribed directly from cryptlib.vcxproj's
 # Debug/Release (static lib) configuration - the DLL-Import configs and
@@ -16,8 +16,7 @@ set(CRYPTOPP_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../cryptopp")
 # (== _MSC_VER) >= 1500/1600 - non-standard MSVC STL (Dinkumware) extensions
 # cryptopp assumes every such MSVC ships. Newer MSVC STL releases have removed
 # them entirely (confirmed by an actual CI build attempt: C2653/C3861, "not a
-# class or namespace name" / "identifier not found", on a toolset newer than
-# the one this project is otherwise developed against, which still has them).
+# class or namespace name" / "identifier not found").
 # Redefining CRYPTOPP_MSC_VERSION itself to dodge this would be wrong - it
 # gates plenty of other, legitimate feature detection that should still see
 # the real (and genuinely more capable) compiler version. Instead, probe
@@ -25,8 +24,8 @@ set(CRYPTOPP_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../cryptopp")
 # include our own compatibility shim (msvc_stdext_compat.h - a raw-pointer
 # passthrough; both functions only ever existed to silence the old "Checked
 # Iterators" MSVC debug feature, not to add real bounds enforcement cryptopp's
-# logic depends on) when they're genuinely missing - inert on a toolset (like
-# this project's own dev machine, as of this writing) where they still exist.
+# logic depends on) when they're genuinely missing - inert on a toolset where
+# they still exist.
 include(CheckCXXSourceCompiles)
 check_cxx_source_compiles("
     #include <iterator>

@@ -1,11 +1,10 @@
 cmake_minimum_required(VERSION 3.20)
 
 # ---------------------------------------------------------------------------
-# ResizableLib (ppescher/resizablelib @ v1.5.3, vanilla submodule at
-# eMule/resizablelib) has no top-level CMakeLists.txt - only
+# ResizableLib has no top-level CMakeLists.txt - only
 # ResizableLib/ResizableLib.vcxproj (MSVC). This file is our own, transcribed
 # from that vcxproj's "... Static Unicode" configurations (static MFC,
-# Unicode - matches how srchybrid/CMakeLists.txt builds emule itself), same
+# Unicode), same
 # approach as cryptopp_build and id3lib_build. The submodule itself is never
 # edited.
 #
@@ -16,8 +15,7 @@ cmake_minimum_required(VERSION 3.20)
 set(RESIZABLELIB_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../resizablelib/ResizableLib")
 
 # Source list - read directly from ResizableLib.vcxproj so this can never
-# drift (same technique as srchybrid/CMakeLists.txt, cryptopp_build and
-# id3lib_build).
+# drift (same technique as cryptopp_build and id3lib_build).
 file(STRINGS "${RESIZABLELIB_SRC_DIR}/ResizableLib.vcxproj" _clcompile_lines
      REGEX "<ClCompile Include=\"[^\"]+\\.cpp\"")
 
@@ -88,6 +86,5 @@ set_target_properties(resizablelib PROPERTIES
 # StdAfx.cpp creates the PCH in the vcxproj (PrecompiledHeader=Create); all
 # other files use it. CMake generates its own hidden PCH translation unit
 # instead, so StdAfx.cpp here just compiles as an ordinary (trivial) source
-# that also happens to use the PCH - same as srchybrid/CMakeLists.txt does
-# for emule's own Stdafx.cpp.
+# that also happens to use the PCH.
 target_precompile_headers(resizablelib PRIVATE "${RESIZABLELIB_SRC_DIR}/StdAfx.h")
