@@ -1,23 +1,19 @@
 diff --git a/srchybrid/PPgTweaks.cpp b/srchybrid/PPgTweaks.cpp
-index 9ad2d8e..6c5f9d4 100644
+index d1b207b..61fb8ab 100644
 --- a/srchybrid/PPgTweaks.cpp
 +++ b/srchybrid/PPgTweaks.cpp
-@@ -312,7 +312,6 @@ void CPPgTweaks::DoDataExchange(CDataExchange *pDX)
- 	/////////////////////////////////////////////////////////////////////////////
+@@ -313,5 +313,4 @@ void CPPgTweaks::DoDataExchange(CDataExchange *pDX)
  	// Miscellaneous group
  	//
 -	WORD wv = thePrefs.GetWindowsVersion();
  	DDX_TreeCheck(pDX, IDC_EXT_OPTS, m_htiAutoTakeEd2kLinks, m_bAutoTakeEd2kLinks);
  	DDX_TreeCheck(pDX, IDC_EXT_OPTS, m_htiCreditSystem, m_bCreditSystem);
- 	DDX_TreeCheck(pDX, IDC_EXT_OPTS, m_htiFilterLANIPs, m_bFilterLANIPs);
-@@ -408,7 +407,6 @@ void CPPgTweaks::DoDataExchange(CDataExchange *pDX)
- 	// eMule Shared User
+@@ -410,5 +409,4 @@ void CPPgTweaks::DoDataExchange(CDataExchange *pDX)
  	//
  	DDX_TreeRadio(pDX, IDC_EXT_OPTS, m_htiShareeMule, m_iShareeMule);
 -	m_ctrlTreeOptions.SetRadioButtonEnable(m_htiShareeMulePublicUser, wv >= _WINVER_VISTA_);
  }
  
- BOOL CPPgTweaks::OnInitDialog()
 diff --git a/srchybrid/Preferences.cpp b/srchybrid/Preferences.cpp
 index 7269139..fc84353 100644
 --- a/srchybrid/Preferences.cpp

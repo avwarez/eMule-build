@@ -2,9 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 
 # ---------------------------------------------------------------------------
 # eMule sources live in the "emule" submodule (avwarez/eMule @ v0.72a, never
-# edited in place) at emule/srchybrid, not in this directory - this file
-# exists only so the srchybrid/CMakeLists.txt logic from the original
-# (unsplit) eMule-build layout has somewhere to live outside the submodule.
+# edited in place) at emule/srchybrid, not in this directory.
 # Every path below is therefore anchored on EMULE_SRC_DIR instead of
 # CMAKE_CURRENT_SOURCE_DIR.
 # ---------------------------------------------------------------------------
@@ -13,7 +11,7 @@ set(EMULE_SRC_DIR "${CMAKE_SOURCE_DIR}/emule/srchybrid")
 # ---------------------------------------------------------------------------
 # Source list - read directly from emule.vcxproj (<ClCompile Include="...">)
 # so this file can never drift from what the original Visual Studio project
-# actually builds. 244 files as of the v0.72a restructure.
+# actually builds.
 # ---------------------------------------------------------------------------
 file(STRINGS "${EMULE_SRC_DIR}/emule.vcxproj" _clcompile_lines
      REGEX "<ClCompile Include=\"[^\"]+\"")
@@ -85,30 +83,16 @@ set_target_properties(emule PROPERTIES
 )
 
 # ---------------------------------------------------------------------------
-# C++23 - the point of this branch. emule.vcxproj sets no <LanguageStandard>
+# C++23. emule.vcxproj sets no <LanguageStandard>
 # at all, so the baseline being left behind here is MSVC's own default,
 # C++14: this single line jumps three rounds of standard-library removals
 # (C++17, C++20, C++23) at once.
-#
-# Deliberately a target_compile_features() on emule and NOT a top-level
-# CMAKE_CXX_STANDARD: the latter would drag cryptopp, id3lib and
-# resizablelib along too (C++98-era codebases with no reason to move), and
-# would fight mbedtls/tf-psa-crypto, which pin their own CMAKE_CXX_STANDARD
-# 11 for their C++ bits. Scoped like this, every dependency keeps building
-# at the MSVC default and only eMule's own 244 translation units change
-# standard - which also keeps any build break attributable to one target.
 #
 # CMake maps cxx_std_23 to /std:c++23preview on toolsets that have it and to
 # /std:c++latest otherwise; both are fine here, since nothing in this build
 # depends on the standard being final rather than preview.
 # ---------------------------------------------------------------------------
 target_compile_features(emule PRIVATE cxx_std_23)
-
-# KNOWN LIMITATION: id3lib.vcxproj wants PlatformToolset v141 and
-# ResizableLib.vcxproj wants v140_xp (emule.vcxproj uses v145 on every platform
-# since 88za). Those toolsets are not installed here - every target in this
-# build uses whatever toolset ships with the installed VS generator (confirmed:
-# only MSVC 14.50/14.51 are present). Accepted as-is.
 
 # Stdafx.h directly #includes <afximpl.h>, an MFC *implementation* header
 # under ATLMFC\src\mfc - not part of the public ATLMFC\include tree that
@@ -155,11 +139,6 @@ target_compile_definitions(emule PRIVATE
 # anyway (mbedTLS 4 imports bcrypt.dll), so all it did was pin the SDK headers
 # to XP and, on Win32, force a 32-bit time_t that mbedTLS does not share - its
 # mbedtls_ssl_ticket_context came out smaller in eMule than in the library.
-# _DEBUG is deliberately NOT in the list above for C++ compilation: emule.vcxproj's
-# Debug <ClCompile> block does not define it either (confirmed - absent from its
-# PreprocessorDefinitions), so MFC's ASSERT/VERIFY/TRACE stay compiled out even in
-# a Debug build, matching the original project. (Its Debug <ResourceCompile> block
-# DOES set "/D _DEBUG" - see CMAKE_RC_FLAGS above add_executable().)
 
 # WarningLevel=EnableAllWarnings in the vcxproj -> /Wall (very noisy: enables
 # every MSVC warning, including ones off by default at /W4). Kept faithful
@@ -233,6 +212,12 @@ target_link_options(emule PRIVATE
     $<$<CONFIG:Release>:/OPT:REF>                                     # OptimizeReferences=true (Release only; Debug's explicit "false" is CMake's default anyway)
     $<$<CONFIG:Release>:/OPT:ICF>                                     # EnableCOMDATFolding=true (Release only)
     /SUBSYSTEM:WINDOWS,10.00
+    # Control Flow Guard (the compile side is in the top-level CMakeLists.txt),
+    # which does not go with incremental linking, CMake's default in Debug
+    /guard:cf
+    $<$<CONFIG:Debug>:/INCREMENTAL:NO>
+    # CET shadow stack compatible: x86 and x64 only, ARM64 has no such flag
+    $<$<NOT:$<STREQUAL:${EMULE_PLATFORM_DIR},ARM64>>:/CETCOMPAT>
 )
 # WIN32 on add_executable() already implies /SUBSYSTEM:WINDOWS; the explicit one
 # above adds the version. Windows 10 is the minimum eMule is built for, so the
@@ -300,8 +285,8 @@ endif()
 # (or empty) in the language DLL by falling back to the English resource in
 # emule.exe - GetResString(), I18n.cpp - so an out-of-date translation degrades
 # into a half-English UI rather than into an error. EMULE_LANGUAGES therefore
-# lists the locales whose .rc was audited against emule.rc and found aligned
-# with the current string table; the rest are still globbed and reported, but
+# lists the locales whose .rc was audited against emule.rc; the rest are
+# still globbed and reported, but
 # no DLL is produced for them, so eMule shows those users a fully English UI
 # instead of a partly stale one. The excluded set is ba_BA, es_AS, fr_BR,
 # lv_LV, mt_MT, ug_CN, va_ES and va_ES_RACV: each carries the strings added

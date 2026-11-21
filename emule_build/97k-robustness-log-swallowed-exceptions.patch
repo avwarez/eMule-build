@@ -722,14 +722,14 @@ diff --git a/srchybrid/MediaInfo.cpp b/srchybrid/MediaInfo.cpp
 index 3fef67d..f815222 100644
 --- a/srchybrid/MediaInfo.cpp
 +++ b/srchybrid/MediaInfo.cpp
-@@ -21,6 +21,7 @@
+@@ -20,6 +20,7 @@
+ #include "OtherFunctions.h"
  #include "resource.h"
  #include "MediaInfo.h"
- #include "SafeFile.h"
 +#include "Log.h"
+ #include "SafeFile.h"
  #ifdef HAVE_WMSDK_H
  #include <wmsdk.h>
- #endif//HAVE_WMSDK_H
 @@ -573,6 +574,7 @@ static bool ParseStreamHeader(int hAviFile, DWORD dwLengthLeft, STREAMHEADER *pS
  				pStrmHdr->dwFormatLen = dwLength;
  				pStrmHdr->fmt.dat = new BYTE[dwLength];

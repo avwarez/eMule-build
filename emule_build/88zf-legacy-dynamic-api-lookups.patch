@@ -153,17 +153,14 @@ diff --git a/srchybrid/EmuleDlg.cpp b/srchybrid/EmuleDlg.cpp
 index 270663c..8a8fc6f 100644
 --- a/srchybrid/EmuleDlg.cpp
 +++ b/srchybrid/EmuleDlg.cpp
-@@ -31,6 +31,8 @@
- #include <share.h>
+@@ -32,4 +32,6 @@
  #include <dbt.h>
  #include <uxtheme.h>
 +#include <dwmapi.h>
 +#pragma comment(lib, "dwmapi.lib")
  #include "emule.h"
  #include "emuleDlg.h"
- #include "otherfunctions.h"
-@@ -366,13 +368,8 @@ BOOL CemuleDlg::OnInitDialog()
- 	// allow the TaskbarButtonCreated- & (tbb-)WM_COMMAND message to be sent to our window if our app is running elevated
+@@ -367,11 +369,6 @@ BOOL CemuleDlg::OnInitDialog()
  	m_bInitedCOM = SUCCEEDED(::CoInitialize(NULL));
  	if (m_bInitedCOM) {
 -		typedef BOOL(WINAPI *PChangeWindowMessageFilter)(UINT message, DWORD dwFlag);
@@ -177,9 +174,7 @@ index 270663c..8a8fc6f 100644
 +		::ChangeWindowMessageFilter(WM_COMMAND, MSGFLT_ADD);
  	} else
  		ASSERT(0);
- 
-@@ -3742,26 +3739,18 @@ void CemuleDlg::SetTaskbarIconColor()
- 	bool bTransparent = false;
+@@ -3743,24 +3740,16 @@ void CemuleDlg::SetTaskbarIconColor()
  	COLORREF cr = RGB(0, 0, 0);
  	if (thePrefs.IsRunningAeroGlassTheme()) {
 -		HMODULE hDWMAPI = ::LoadLibrary(_T("dwmapi.dll"));
@@ -215,7 +210,6 @@ index 270663c..8a8fc6f 100644
 -			::FreeLibrary(hDWMAPI);
  		}
  	} else if (::IsThemeActive() && ::IsAppThemed()) {
- 		CWnd tmpWnd;
 diff --git a/srchybrid/Preferences.cpp b/srchybrid/Preferences.cpp
 index 8bfd98b..89c67e9 100644
 --- a/srchybrid/Preferences.cpp

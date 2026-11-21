@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 
 # ---------------------------------------------------------------------------
-# id3lib (avwarez/id3lib @ v3.9.1, vanilla submodule at eMule/id3lib) has no
+# id3lib (avwarez/id3lib @ v3.9.1) has no
 # CMakeLists.txt of its own - only libprj/id3lib.vcxproj (MSVC, static lib)
 # plus autotools. This file is our own, transcribed from that vcxproj, same
 # approach as cryptopp_build/CMakeLists.txt. The submodule itself is never
@@ -11,7 +11,7 @@ cmake_minimum_required(VERSION 3.20)
 # that copy is never built here: id3lib's zlib usage (io_decorators.cpp/.h,
 # frame_render.cpp - just compress()/uncompress()/Z_OK/uLong, all unchanged
 # since 1.1.x) is instead pointed at eMule's own zlib submodule (zlib/,
-# pinned to v1.3.2, added to the top-level CMakeLists.txt before this
+# pinned to v1.4, added to the top-level CMakeLists.txt before this
 # directory), via the target_link_libraries(id3lib ... zlibstatic) below -
 # one zlib in the final binary instead of two.
 # ---------------------------------------------------------------------------
@@ -22,7 +22,7 @@ set(ID3LIB_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../id3lib")
 # ---------------------------------------------------------------------------
 
 # Source list - read directly from libprj/id3lib.vcxproj so this can never
-# drift (same technique as srchybrid/CMakeLists.txt and cryptopp_build).
+# drift (same technique as cryptopp_build).
 file(STRINGS "${ID3LIB_SRC_DIR}/libprj/id3lib.vcxproj" _clcompile_lines
      REGEX "<ClCompile Include=\"[^\"]+\\.cpp\"")
 

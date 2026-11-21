@@ -14,10 +14,7 @@ diff --git a/srchybrid/UpdownClient.h b/srchybrid/UpdownClient.h
 index 014a414..b5b7e51 100644
 --- a/srchybrid/UpdownClient.h
 +++ b/srchybrid/UpdownClient.h
-@@ -230,6 +230,11 @@ public:
- 	UINT			GetUploadDatarate() const						{ return m_nUpDatarate; }
- 	UINT			GetScore(bool sysvalue, bool isdownloading = false, bool onlybasevalue = false) const;
- 	bool			IsPowerShareRequest() const;
+@@ -233,2 +233,7 @@ public:
 +	// A PowerShare client keeps its slot for one more SESSIONMAXTRANS at a time while nobody who
 +	// outranks the ordinary clients waits for it; this counts the stretches added to the session.
 +	UINT			GetPowerShareStretches() const					{ return m_uPowerShareStretches; }
@@ -25,29 +22,23 @@ index 014a414..b5b7e51 100644
 +	bool			IsReadyForUploadSlot() const;
  	void			AddReqBlock(Requested_Block_Struct *reqblock, bool bSignalIOThread);
  	DWORD			GetUpStartTime() const							{ return m_dwUploadTime; }
- 	DWORD			GetUpStartTimeDelay() const						{ return ::GetTickCount() - m_dwUploadTime; }
-@@ -257,6 +262,7 @@ public:
- 						m_nCurSessionUp = m_nTransferredUp;
+@@ -258,4 +263,5 @@ public:
  						m_addedPayloadQueueSession = 0;
  						m_nCurQueueSessionPayloadUp = 0;
 +						m_uPowerShareStretches = 0;
  					}
  
- 	uint64			GetSessionDown() const							{ return m_nTransferredDown - m_nCurSessionDown; }
-@@ -538,6 +544,7 @@ protected:
- 	uint64		m_nCurSessionDown;
+@@ -539,4 +545,5 @@ protected:
  	uint64		m_nCurQueueSessionPayloadUp;
  	uint64		m_addedPayloadQueueSession;
 +	UINT		m_uPowerShareStretches;
  	DWORD		m_dwUploadTime;
  	DWORD		m_dwLastUpRequest;
- 	UINT		m_cAsked;
 diff --git a/srchybrid/UploadClient.cpp b/srchybrid/UploadClient.cpp
 index 3f3b6ba..b78d84c 100644
 --- a/srchybrid/UploadClient.cpp
 +++ b/srchybrid/UploadClient.cpp
-@@ -246,6 +246,16 @@ bool CUpDownClient::IsPowerShareRequest() const
- 	return pReqFile != NULL && pReqFile->IsPowerShared();
+@@ -247,4 +247,14 @@ bool CUpDownClient::IsPowerShareRequest() const
  }
  
 +// Whether a slot that frees up now could go to this waiting client. FindBestClientInQueue() passes
@@ -62,7 +53,6 @@ index 3f3b6ba..b78d84c 100644
 +
  bool CUpDownClient::ProcessExtendedInfo(CSafeMemFile &data, CKnownFile *tempreqfile)
  {
- 	delete[] m_abyUpPartStatus;
 diff --git a/srchybrid/UploadQueue.cpp b/srchybrid/UploadQueue.cpp
 index 903715a..10b7294 100644
 --- a/srchybrid/UploadQueue.cpp

@@ -11,10 +11,8 @@ on:
     branches:
       - v0.72a
 
-# Branches whose pushes publish a public pre-release on their own. There is one
-# line of development: v0.72a-cpp23 and v0.72a-cpp23-fix were folded into
-# v0.72a on 2026-09-01 and deleted (their last heads are kept as the
-# archive/* tags). Consumed by the "Create GitHub Release" step below; a branch
+# Branches whose pushes publish a public pre-release on their own. Consumed by
+# the "Create GitHub Release" step below; a branch
 # added to the push trigger without being added here builds and leaves the
 # per-platform zips as run artifacts, but never reaches the Releases page -
 # which is the safe direction to get it wrong in, and the right shape for a
@@ -191,13 +189,9 @@ jobs:
         run: git submodule foreach --recursive 'git fetch --tags --force origin || true'
 
       - name: Resolve submodule versions
-        # Prefer an exact tag match (cryptopp/mbedtls/resizablelib/
-        # zlib/emule are all pinned to real tags). avwarez/id3lib pins to a
-        # *branch* named v3.9.1 instead of a tag (confirmed locally - no tag
-        # object exists there at all, `git tag -l` is empty for that repo),
-        # and avwarez/libplum to the branch v0.6.0-mapping-refresh -
-        # fall back to any remote branch pointing at the same commit, and
-        # only fall back further to the bare short SHA if neither exists.
+        # Prefer an exact tag match, fall back to any remote branch pointing
+        # at the same commit, and only fall back further to the bare short SHA
+        # if neither exists.
         #
         # The changes are in CHANGELOG.md, which the notes link to at this
         # commit instead of repeating it.
