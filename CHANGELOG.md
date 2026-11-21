@@ -66,7 +66,6 @@ This build is eMule 0.72a with the changes below, compiled for x64, Win32 and AR
 - **Ignored errors:** errors that were silently ignored are now written to the debug log.
 - **ARM64 safety:** on ARM64, values shared between threads and data read from network packets at odd addresses are handled safely.
 - **Packet logging:** detailed packet logging no longer reads past the end of a short packet.
-- **Music tags:** the title, artist and album that eMule reads from the ID3 tags of an MP3 written in UTF-8 or UTF-16BE no longer take in memory beyond the converted text. That memory could end up in the file details eMule publishes to servers and other clients.
 
 ### Windows and Wine
 
