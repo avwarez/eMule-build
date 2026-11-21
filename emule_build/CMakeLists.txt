@@ -134,7 +134,8 @@ target_compile_definitions(emule PRIVATE
     _UNICODE
     $<$<CONFIG:Release>:NDEBUG>
 )
-# XP_BUILD, which emule.vcxproj set for Win32 and x64 until 88za removed it, was
+# XP_BUILD, which emule.vcxproj set for Win32 and x64 until 88za (a commit on
+# v0.72a-maint) removed it, was
 # left out here on every platform, as it already was on ARM64. The binaries cannot run on XP
 # anyway (mbedTLS 4 imports bcrypt.dll), so all it did was pin the SDK headers
 # to XP and, on Win32, force a 32-bit time_t that mbedTLS does not share - its
