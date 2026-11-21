@@ -25,6 +25,16 @@ endif()
 cmake_policy(SET CMP0091 NEW)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
+# Control Flow Guard: /guard:cf on every C and C++ translation unit of every
+# target below, ours and the upstream ones alike (directory-scoped, like the
+# runtime above). The linker builds the table of valid indirect-call targets
+# only from objects compiled with it. Not on MASM sources (Crypto++'s .asm on
+# Win32/x64): ml/ml64 have no such option. The link side, with /CETCOMPAT, is
+# in emule_build/CMakeLists.txt.
+if(MSVC)
+    add_compile_options("$<$<COMPILE_LANGUAGE:C,CXX>:/guard:cf>")
+endif()
+
 # ---------------------------------------------------------------------------
 # Submodule patching
 #

@@ -212,6 +212,12 @@ target_link_options(emule PRIVATE
     $<$<CONFIG:Release>:/OPT:REF>                                     # OptimizeReferences=true (Release only; Debug's explicit "false" is CMake's default anyway)
     $<$<CONFIG:Release>:/OPT:ICF>                                     # EnableCOMDATFolding=true (Release only)
     /SUBSYSTEM:WINDOWS,10.00
+    # Control Flow Guard (the compile side is in the top-level CMakeLists.txt),
+    # which does not go with incremental linking, CMake's default in Debug
+    /guard:cf
+    $<$<CONFIG:Debug>:/INCREMENTAL:NO>
+    # CET shadow stack compatible: x86 and x64 only, ARM64 has no such flag
+    $<$<NOT:$<STREQUAL:${EMULE_PLATFORM_DIR},ARM64>>:/CETCOMPAT>
 )
 # WIN32 on add_executable() already implies /SUBSYSTEM:WINDOWS; the explicit one
 # above adds the version. Windows 10 is the minimum eMule is built for, so the

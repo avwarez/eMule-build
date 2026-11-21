@@ -83,5 +83,6 @@ This build is eMule 0.72a with the changes below, compiled for x64, Win32 and AR
 ### Build
 
 - **Toolchain:** built with C++23, Mbed TLS 4 and the current Windows SDK. Native ARM64 build.
+- **Exploit protection:** eMule and the libraries in it are built with Control Flow Guard, and on x64 and Win32 eMule is marked compatible with the CET shadow stack.
 - **Warnings:** a large set of compiler warnings fixed: format strings, uninitialized variables, pointer-width casts and others.
 - **Third-party licenses:** the licenses of the libraries built into eMule (Crypto++, id3lib, KCP, libplum, Mbed TLS, ResizableLib, zlib) are in the `licenses` folder.
