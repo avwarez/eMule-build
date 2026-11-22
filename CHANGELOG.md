@@ -58,6 +58,7 @@ This build is eMule 0.72a with the changes below, compiled for x64, Win32 and AR
 - **Certificate files:** the HTTPS certificate and key can be in any folder. A folder whose name has characters outside the system code page kept HTTPS from starting.
 - **Column changes:** a column change with an out-of-range index is ignored instead of writing outside the settings.
 - **Search results:** file names in the search results are escaped, so a name with HTML characters can no longer alter the page.
+- **Large pages:** a page or file that the connection can take only in part is sent to the end. Over HTTP the connection could be closed halfway, or the rest was never sent and the page hung; over HTTPS a large page could arrive corrupted, and a connection that broke while sending kept a thread busy at full CPU.
 
 ### Stability
 
