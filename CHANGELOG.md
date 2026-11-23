@@ -63,6 +63,7 @@ This build is eMule 0.72a with the changes below, compiled for x64, Win32 and AR
 ### Stability
 
 - **UPnP shutdown:** UPnP discovery is stopped by waiting for it to end, not by killing its thread.
+- **Long uptime:** the Windows millisecond counter that eMule's timers use goes back to 0 every 49.7 days of Windows uptime, and fast startup does not reset it. Around that point the connections could all be dropped at once, and a timer could stop until eMule was restarted. The timers now work across it.
 - **Kad searches:** a Kad search that fails while starting is removed cleanly.
 - **Ignored errors:** errors that were silently ignored are now written to the debug log.
 - **ARM64 safety:** on ARM64, values shared between threads and data read from network packets at odd addresses are handled safely.
