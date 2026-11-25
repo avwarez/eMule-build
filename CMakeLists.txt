@@ -44,6 +44,15 @@ endif()
 # removed - the fix lives as a .patch file in that submodule's *_build/
 # directory here, and is applied at configure time by the function below.
 #
+# eMule itself is the exception for maintenance: the emule submodule points
+# at the v0.72a-maint branch of the avwarez/eMule fork, which is irwir's
+# v0.72a with one commit per maintenance change on top - every correction,
+# every /Wall warning brought back to zero, C++23 conformance, the legacy
+# code taken out, the language resources completed. That branch builds on
+# its own; its history is never rewritten (a newer upstream gets a new
+# branch), so every commit here keeps pointing at a tree that exists.
+# Only the features added to eMule stay as patches, in emule_build/.
+#
 # --ignore-whitespace: these patches are generated against the repository's
 # own bytes (LF line endings), but a Windows checkout with core.autocrlf=true
 # - the default on GitHub's windows runner images - rewrites the working tree
@@ -55,19 +64,14 @@ endif()
 # filename order; give them a numeric prefix if two of them ever have to
 # touch the same hunk in a defined sequence.
 #
-# The numeric prefixes in emule_build/ also group the patches by why they
-# exist, which is the first thing you want to know when one of them stops
-# applying after a submodule bump:
-#   00-87  the code does not compile as-is (a dependency's API changed, or
-#          the C++ standard we build at removed the construct).
-#   88     legacy features taken out: code that only ever ran on Windows
-#          versions we no longer target, or that nothing calls any more.
-#          Each patch takes out one thing: a feature, down to its resources
-#          and ini keys (the translated strings stay, the language DLLs still
-#          carry them); the Windows version detection together with every
-#          branch taken on it (88x), as on every supported Windows each of
-#          them goes the same way; the run-time lookups of APIs every
-#          supported Windows has (88zf).
+# The patches in emule_build/ are features, applied on v0.72a-maint in
+# sorted filename order. The numeric prefixes keep the bands the commits on
+# v0.72a-maint are named after, so one name means one change wherever it
+# lives:
+#   00-87  (v0.72a-maint) the code does not compile as-is (a dependency's
+#          API changed, or the C++ standard we build at removed it).
+#   88     (v0.72a-maint) legacy code taken out: code that only ever ran on
+#          Windows versions we no longer target, or that nothing calls.
 #   89     features added. 89a puts libplum in the place of miniupnpc:
 #          one library that tries PCP, NAT-PMP and UPnP-IGD in turn and
 #          keeps the mappings alive on its own. 89b reads the Windows
@@ -111,14 +115,15 @@ endif()
 #          CNatdSocketLayer: keepalives at natd's interval, dead after three
 #          silent ones (then the public endpoint is checked again), FINs at
 #          the end and when eMule closes.
-#   90-94  the code compiles but /Wall flags it; these bring the warning
-#          count back to zero.
-#   95-96  the code compiles and is warning-clean but is not correct on
-#          every target we build.
-#   97     the code is wrong on every target; a file here goes away when the
-#          same change reaches a released v0.72x.
-#   98     corrections to the shipped language resources - source data for
-#          the `languages` target rather than code.
+#   90-94  (v0.72a-maint) the code compiles but /Wall flags it; these
+#          bring the warning count back to zero.
+#   95-96  (v0.72a-maint) the code compiles and is warning-clean but is not
+#          correct on every target we build.
+#   97     (v0.72a-maint) the code is wrong on every target; the commit
+#          goes away when the same change reaches a released v0.72x.
+#   98     (v0.72a-maint) corrections and missing strings in the shipped
+#          language resources - source data for the `languages` target
+#          rather than code.
 #   99     reserved for temporary diagnostics - a patch that makes a build
 #          report something rather than fix it; whatever lands here is meant
 #          to be deleted once it has been read.

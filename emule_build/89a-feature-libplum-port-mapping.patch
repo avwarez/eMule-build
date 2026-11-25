@@ -935,10 +935,10 @@ index 3594a08..0000000
 \ No newline at end of file
 diff --git a/srchybrid/UPnPImplMiniLib.h b/srchybrid/UPnPImplMiniLib.h
 deleted file mode 100644
-index a556108..0000000
+index 8479edd..0000000
 --- a/srchybrid/UPnPImplMiniLib.h
 +++ /dev/null
-@@ -1,71 +0,0 @@
+@@ -1,72 +0,0 @@
 -//this file is part of eMule
 -//Copyright (C)2002-2026 Merkur ( strEmail.Format("%s@%s", "devteam", "emule-project.net") / https://www.emule-project.net )
 -//
@@ -956,6 +956,7 @@ index a556108..0000000
 -//along with this program; if not, write to the Free Software
 -//Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 -#pragma once
+-#include <atomic>
 -#include "UPnPImpl.h"
 -
 -struct UPNPUrls;
@@ -1008,7 +1009,7 @@ index a556108..0000000
 -	char m_achWanIP[40];
 -
 -	bool m_bSucceededOnce;
--	volatile bool m_bAbortDiscovery;
+-	std::atomic<bool> m_bAbortDiscovery;
 -};
 \ No newline at end of file
 diff --git a/srchybrid/UPnPImplWrapper.cpp b/srchybrid/UPnPImplWrapper.cpp

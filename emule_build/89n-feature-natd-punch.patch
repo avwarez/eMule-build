@@ -2306,7 +2306,7 @@ index 0053cff..5b8c256 100644
 +				// and we cannot punch to it either: if we can, it goes back on queue and is asked again at its re-ask time
 +				if (cur_src->HasLowID() && !theApp.CanDoCallback(cur_src) && !theApp.nattraversal->CanPunchTo(*cur_src)) {
  					//If we are almost maxed on sources, slowly remove these clients to see if we can find a better source.
- 					if ((curTick >= m_lastpurgetime + SEC2MS(30)) && (GetSourceCount() >= GetMaxSources() * 4 / 5)) {
+ 					if ((curTick - m_lastpurgetime >= SEC2MS(30)) && (GetSourceCount() >= GetMaxSources() * 4 / 5)) {
  						theApp.downloadqueue->RemoveSource(cur_src);
 @@ -2317,6 +2319,14 @@ uint32 CPartFile::Process(uint32 factor, UINT icounter)
  			case DS_NONE:
@@ -2314,7 +2314,7 @@ index 0053cff..5b8c256 100644
  			case DS_WAITCALLBACKKAD:
 +				// a LowID source whose punched connection failed: asked again at its own time
 +				if (cur_src->IsNatdRetryPending()) {
-+					if (theApp.IsConnected() && curTick >= cur_src->GetNatdRetryAt()) {
++					if (theApp.IsConnected() && (LONG)(curTick - cur_src->GetNatdRetryAt()) >= 0) {
 +						cur_src->ClearNatdRetry();
 +						cur_src->AskForDownload(); // NOTE: This may *delete* the client!!
 +					}

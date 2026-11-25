@@ -74,7 +74,7 @@ index 903715a..10b7294 100644
 +		const CUpDownClient *cur_client = waitinglist.GetNext(pos);
 +		if (cur_client->GetScore(false) < 0x08000000u)
 +			continue;
-+		if (!cur_client->IsReadyForUploadSlot() || curTick >= cur_client->GetLastUpRequest() + MAX_PURGEQUEUETIME) {
++		if (!cur_client->IsReadyForUploadSlot() || curTick - cur_client->GetLastUpRequest() >= MAX_PURGEQUEUETIME) {
 +			++nNotReady;
 +			continue;
 +		}

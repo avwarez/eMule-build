@@ -18,7 +18,7 @@
 [submodule "emule"]
 	path = emule
 	url = git@github.com:avwarez/eMule.git
-	branch = v0.72a
+	branch = v0.72a-maint
 [submodule "libplum"]
 	path = libplum
 	url = https://github.com/avwarez/libplum.git

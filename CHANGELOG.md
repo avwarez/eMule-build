@@ -58,10 +58,14 @@ This build is eMule 0.72a with the changes below, compiled for x64, Win32 and AR
 - **Certificate files:** the HTTPS certificate and key can be in any folder. A folder whose name has characters outside the system code page kept HTTPS from starting.
 - **Column changes:** a column change with an out-of-range index is ignored instead of writing outside the settings.
 - **Search results:** file names in the search results are escaped, so a name with HTML characters can no longer alter the page.
+- **Large pages:** a page or file that the connection can take only in part is sent to the end. Over HTTP the connection could be closed halfway, or the rest was never sent and the page hung; over HTTPS a large page could arrive corrupted, and a connection that broke while sending kept a thread busy at full CPU.
 
 ### Stability
 
 - **UPnP shutdown:** UPnP discovery is stopped by waiting for it to end, not by killing its thread.
+- **Long uptime:** the Windows millisecond counter that eMule's timers use goes back to 0 every 49.7 days of Windows uptime, and fast startup does not reset it. Around that point the connections could all be dropped at once, and a timer could stop until eMule was restarted. The timers now work across it.
+- **Kad callback:** sending a message, asking for the shared files or connecting to a friend no longer closes eMule when the other client is a LowID found through Kad that is no longer a source of ours. The connection now fails instead, as for any LowID that cannot be reached.
+- **Compressed blocks:** compressed blocks from sources are unpacked within the size of their block; data that does not fit is refused earlier.
 - **Kad searches:** a Kad search that fails while starting is removed cleanly.
 - **Ignored errors:** errors that were silently ignored are now written to the debug log.
 - **ARM64 safety:** on ARM64, values shared between threads and data read from network packets at odd addresses are handled safely.

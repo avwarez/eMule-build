@@ -1,0 +1,146 @@
+diff --git a/srchybrid/ListenSocket.cpp b/srchybrid/ListenSocket.cpp
+index f322328..2db2ca1 100644
+--- a/srchybrid/ListenSocket.cpp
++++ b/srchybrid/ListenSocket.cpp
+@@ -15,6 +15,7 @@
+ //along with this program; if not, write to the Free Software
+ //Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ #include "stdafx.h"
++#include <timeapi.h> // 99b
+ #include "emule.h"
+ #include "ListenSocket.h"
+ #include "opcodes.h"
+@@ -126,6 +127,8 @@ bool CClientReqSocket::CheckTimeOut()
+ 	// ahead of curTick: a signed difference counts that as no idle time, where an unsigned one
+ 	// would wrap to 49 days and time out a socket that is sending.
+ 	const LONG lIdle = (LONG)(curTick - timeout_timer);
++	if (lIdle < 0)
++		DiagTimeoutAhead(lIdle, m_nOnConnect == SS_Half ? CEMSocket::GetTimeOut() * 4 : GetTimeOut()); // 99b
+ 	if (m_nOnConnect == SS_Half) {
+ 		//This socket is still in a half connection state. Because of SP2, we don't know
+ 		//if this socket is actually failing, or if this socket is just queued in SP2's new
+@@ -133,6 +136,7 @@ bool CClientReqSocket::CheckTimeOut()
+ 		//the connection error, or finally make it through SP2's new queued socket system.
+ 		if (lIdle < (LONG)(CEMSocket::GetTimeOut() * 4))
+ 			return false;
++		DiagTimeoutFire(lIdle, CEMSocket::GetTimeOut() * 4); // 99b
+ 		timeout_timer = curTick;
+ 		CString str;
+ 		str.Format(_T("Timeout: State:%u = SS_Half"), m_nOnConnect);
+@@ -152,6 +156,7 @@ bool CClientReqSocket::CheckTimeOut()
+ 
+ 	if (lIdle < (LONG)uTimeout)
+ 		return false;
++	DiagTimeoutFire(lIdle, uTimeout); // 99b
+ 	timeout_timer = curTick;
+ 	CString str;
+ 	str.Format(_T("Timeout: State:%u (0 = SS_Other, 1 = SS_Half, 2 = SS_Complete)"), m_nOnConnect);
+@@ -159,6 +164,56 @@ bool CClientReqSocket::CheckTimeOut()
+ 	return true;
+ }
+ 
++// 99b-diag-timeout (temporary) -------------------------------------------------------------
++// Lines "UPDIAG|timeout <event>:" in the verbose log, to see what 97w changed in CheckTimeOut()
++// and what the client sockets that time out were doing:
++//   ahead  timeout_timer was ahead of the tick by "by" ms (the upload throttler reset it
++//          meanwhile): 97t closed the socket here as timed out, 97w counts it as no idle time.
++//          Logged the first time on each socket; n= counts them on the socket, all= in eMule.
++//   fire   a socket timed out: idle and limit in ms, ext = the extension of the limit (buddy,
++//          upstart = the first minutes of an upload slot, chat, half = still connecting, none),
++//          send = ms since the throttler last asked it to send, busy = its send buffer is full,
++//          queued = it still has packets to send, ahead = the times its timer was found ahead,
++//          then the upload and download state, the slot's age and what it carried.
++
++static UINT s_uDiagAheadAll = 0;
++
++void CClientReqSocket::DiagTimeoutAhead(LONG lIdle, DWORD uTimeout)
++{
++	++s_uDiagAheadAll;
++	if (m_uDiagAhead++ > 0 || !thePrefs.GetVerbose())
++		return;
++	AddDebugLogLine(false, _T("UPDIAG|timeout ahead: by=%ldms base=%lums state=%u n=%u all=%u us=%s Client: %s")
++		, -lIdle, uTimeout, m_nOnConnect, m_uDiagAhead, s_uDiagAheadAll
++		, client ? client->DbgGetUploadState() : _T("-"), (LPCTSTR)DbgGetClientInfo());
++}
++
++void CClientReqSocket::DiagTimeoutFire(LONG lIdle, DWORD uTimeout)
++{
++	if (!thePrefs.GetVerbose())
++		return;
++	LPCTSTR pszExt;
++	const DWORD uExt = uTimeout - GetTimeOut();
++	if (m_nOnConnect == SS_Half)
++		pszExt = _T("half");
++	else if (uExt == MIN2MS(15))
++		pszExt = _T("buddy");
++	else if (uExt == 4 * CONNECTION_TIMEOUT)
++		pszExt = _T("upstart");
++	else if (uExt == CONNECTION_TIMEOUT)
++		pszExt = _T("chat");
++	else
++		pszExt = _T("none");
++	const LONG lSend = (LONG)(timeGetTime() - GetLastCalledSend());
++	const bool bUploading = client != NULL && client->GetUploadState() == US_UPLOADING;
++	AddDebugLogLine(false, _T("UPDIAG|timeout fire: idle=%ldms limit=%lums ext=%s send=%ldms busy=%u queued=%u ahead=%u us=%s ds=%s slot=%us up=%I64u Client: %s")
++		, lIdle, uTimeout, pszExt, lSend, IsBusyQuickCheck() ? 1u : 0u, HasQueues() ? 1u : 0u, m_uDiagAhead
++		, client ? client->DbgGetUploadState() : _T("-"), client ? client->DbgGetDownloadState() : _T("-")
++		, bUploading ? client->GetUpStartTimeDelay() / SEC2MS(1) : 0u, client ? client->GetSessionUp() : 0ui64
++		, (LPCTSTR)DbgGetClientInfo());
++}
++// end of 99b ---------------------------------------------------------------------------------
++
+ void CClientReqSocket::OnClose(int nErrorCode)
+ {
+ 	ASSERT(theApp.listensocket->IsValidSocket(this));
+diff --git a/srchybrid/ListenSocket.h b/srchybrid/ListenSocket.h
+index 7a0311d..057b40a 100644
+--- a/srchybrid/ListenSocket.h
++++ b/srchybrid/ListenSocket.h
+@@ -74,6 +74,10 @@ protected:
+ 
+ 	DWORD	timeout_timer;
+ 	DWORD	deltimer;
++	// 99b-diag-timeout (temporary): see ListenSocket.cpp
++	void	DiagTimeoutAhead(LONG lIdle, DWORD uTimeout);
++	void	DiagTimeoutFire(LONG lIdle, DWORD uTimeout);
++	UINT	m_uDiagAhead = 0;	// times timeout_timer was found ahead of the tick on this socket
+ 	uint32	m_nOnConnect;
+ 	bool	deletethis;
+ 	bool	m_bPortTestCon;
+diff --git a/srchybrid/UploadBandwidthThrottler.cpp b/srchybrid/UploadBandwidthThrottler.cpp
+index c8b6310..1712329 100644
+--- a/srchybrid/UploadBandwidthThrottler.cpp
++++ b/srchybrid/UploadBandwidthThrottler.cpp
+@@ -316,6 +316,8 @@ UINT UploadBandwidthThrottler::RunInternal()
+ 
+ 	lastTickReachedBandwidth = lastLoopTick = timeGetTime();
+ 	DWORD lastAbandonedSendsTick = lastLoopTick;
++	DWORD dwDiagTrickleTick = lastLoopTick; // 99b
++	UINT uDiagTrickleAhead = 0; // 99b
+ 	while (m_bRun) {
+ 		//m_eventPaused.Lock();
+ 
+@@ -473,6 +475,14 @@ UINT UploadBandwidthThrottler::RunInternal()
+ 
+ 		const DWORD thisLoopTick = timeGetTime();
+ 		timeSinceLastLoop = thisLoopTick - lastLoopTick;
++		// 99b-diag-timeout (temporary): once a minute, how many trickle checks found a socket
++		// whose last send came after the start of the loop. Line "UPDIAG|timeout trickle:".
++		if (thisLoopTick - dwDiagTrickleTick >= MIN2MS(1)) {
++			if (uDiagTrickleAhead > 0)
++				theApp.QueueDebugLogLine(false, _T("UPDIAG|timeout trickle: ahead=%u in %us"), uDiagTrickleAhead, (thisLoopTick - dwDiagTrickleTick) / SEC2MS(1));
++			uDiagTrickleAhead = 0;
++			dwDiagTrickleTick = thisLoopTick;
++		}
+ 
+ 		// 97o: free the sends that ended after their socket had let go of them
+ 		if (thisLoopTick - lastAbandonedSendsTick >= SEC2MS(1)) {
+@@ -549,6 +559,8 @@ UINT UploadBandwidthThrottler::RunInternal()
+ 					theApp.QueueDebugLogLine(false, _T("UploadBandwidthThrottler: a NULL socket in the Standard list (trickle)! Prevented usage. Index: %u Size: %u"), (unsigned)slotCounter, (unsigned)GetStandardListSize());
+ 				// A socket that sent control data earlier in this loop has its last send after
+ 				// thisLoopTick; the signed difference keeps that one from counting as idle.
++				else if (!socket->IsBusyQuickCheck() && (LONG)(thisLoopTick - socket->GetLastCalledSend()) < 0)
++					++uDiagTrickleAhead; // 99b: 97t trickled this socket, 97w does not
+ 				else if (!socket->IsBusyQuickCheck() && (LONG)(thisLoopTick - socket->GetLastCalledSend()) >= (LONG)SEC2MS(1)) {
+ 					// trickle
+ 					uint32 neededBytes = socket->GetNeededBytes();

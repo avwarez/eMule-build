@@ -1,0 +1,263 @@
+diff --git a/srchybrid/BaseClient.cpp b/srchybrid/BaseClient.cpp
+index cb45655..29f613d 100644
+--- a/srchybrid/BaseClient.cpp
++++ b/srchybrid/BaseClient.cpp
+@@ -1244,6 +1244,7 @@ bool CUpDownClient::Disconnected(LPCTSTR pszReason, bool bFromSocket)
+ 	m_eConnectingState = CCS_NONE;
+ 	theApp.clientlist->RemoveConnectingClient(this);
+ 
++	DiagStandDownEnd(pszReason); // 99a
+ 	if (bDelete) {
+ 		if (thePrefs.GetDebugClientTCPLevel() > 0)
+ 			Debug(_T("--- Deleted client            %s; Reason=%s\n"), (LPCTSTR)DbgGetClientInfo(true), pszReason);
+diff --git a/srchybrid/ListenSocket.cpp b/srchybrid/ListenSocket.cpp
+index fa7be85..13eba0e 100644
+--- a/srchybrid/ListenSocket.cpp
++++ b/srchybrid/ListenSocket.cpp
+@@ -476,6 +476,7 @@ void CClientReqSocket::ProcessPacket(const BYTE *packet, uint32 size, UINT opcod
+ 					client->SetCommentDirty();
+ 				client->SetUploadFileID(reqfile);
+ 				client->SendCommentInfo(reqfile);
++				client->DiagStandDownReask(); // 99a
+ 				theApp.uploadqueue->AddClientToQueue(client);
+ 			} else
+ 				client->CheckFailedFileIdReqs(packet);
+diff --git a/srchybrid/UpdownClient.h b/srchybrid/UpdownClient.h
+index 0ea07f8..e13a827 100644
+--- a/srchybrid/UpdownClient.h
++++ b/srchybrid/UpdownClient.h
+@@ -325,6 +325,27 @@ public:
+ 	// carried that packet ends. The flag was already kept for exactly that span and had
+ 	// no reader; see CUploadQueue::FindBestClientInQueue().
+ 	bool			HasSentOutOfPartReqs() const					{ return m_fSentOutOfPartReqs != 0; }
++	// 99a-diag-upload-standdown (temporary): a stand-down runs from OP_OUTOFPARTREQS until
++	// m_fSentOutOfPartReqs falls; these report it, the upload slot that follows it and the
++	// picks it lost meanwhile. See UploadClient.cpp.
++	void			DiagStandDownBegin();
++	void			DiagStandDownWouldWin(bool bSlotLeftEmpty);
++	void			DiagStandDownReask();
++	void			DiagStandDownEnd(LPCTSTR pszReason);
++	void			DiagUploadSlotBegin();
++	void			DiagUploadSlotEnd();
++private:
++	DWORD			m_dwDiagSdBegin = 0;
++	DWORD			m_dwDiagSdFirstWin = 0;
++	DWORD			m_dwDiagSdEnd = 0;
++	UINT			m_uDiagSdWins = 0;
++	UINT			m_uDiagSdReasks = 0;
++	bool			m_bDiagSd = false;			// a stand-down is running
++	bool			m_bDiagSdWon = false;		// it would have won a pick of a free slot
++	bool			m_bDiagSdSource = false;	// we were downloading from this client when it began
++	bool			m_bDiagSdEnded = false;		// one has ended and no upload slot came since
++	bool			m_bDiagSlotAfterSd = false;	// the current upload slot is the first after one
++public:
+ 	UINT			CalculateDownloadRate();
+ 	uint16			GetAvailablePartCount() const;
+ 	bool			SwapToAnotherFile(LPCTSTR reason, bool bIgnoreNoNeeded, bool ignoreSuspensions, bool bRemoveCompletely, CPartFile *toFile = NULL, bool allowSame = true, bool isAboutToAsk = false, bool debug = false); // ZZ:DownloadManager
+diff --git a/srchybrid/UploadClient.cpp b/srchybrid/UploadClient.cpp
+index 1a5f81c..6d69f51 100644
+--- a/srchybrid/UploadClient.cpp
++++ b/srchybrid/UploadClient.cpp
+@@ -116,13 +116,16 @@ void CUpDownClient::SetUploadState(EUploadState eNewState)
+ {
+ 	if (eNewState != m_eUploadState) {
+ 		if (m_eUploadState == US_UPLOADING) {
++			DiagUploadSlotEnd(); // 99a
+ 			// Reset upload data rate computation
+ 			m_nUpDatarate = 0;
+ 			m_nSumForAvgUpDataRate = 0;
+ 			m_AverageUDR_hist.RemoveAll();
+ 		}
+-		if (eNewState == US_UPLOADING)
++		if (eNewState == US_UPLOADING) {
++			DiagUploadSlotBegin(); // 99a
+ 			m_fSentOutOfPartReqs = 0;
++		}
+ 
+ 		// don't add any final cleanups for US_NONE here
+ 		m_eUploadState = eNewState;
+@@ -522,9 +525,105 @@ void CUpDownClient::SendOutOfPartReqsAndAddToWaitingQueue()
+ 	theStats.AddUpDataOverheadFileRequest(pPacket->size);
+ 	SendPacket(pPacket);
+ 	m_fSentOutOfPartReqs = 1;
++	DiagStandDownBegin(); // 99a
+ 	theApp.uploadqueue->AddClientToQueue(this, true);
+ }
+ 
++// 99a-diag-upload-standdown (temporary) ------------------------------------------------------
++// Lines "UPDIAG|standdown <event>:" in the verbose log; with Verbose off AddDebugLogLine
++// writes nothing. Per client and per stand-down:
++//   begin   OP_OUTOFPARTREQS sent: the session it ended, what we download from this client,
++//           the waiting clients at that moment and how many of them were stood down too
++//   pick    the first pick of a free upload slot this client would have won without the flag
++//   reask   the first OP_STARTUPLOADREQ it sent while stood down
++//   end     the flag fell: why, how long it lasted, the picks it would have won, the time from
++//           the first of them (denied), the re-asks, src=1 if we were downloading from it at
++//           the start
++// and then, once: slot (its next upload slot, how long after the end) and slotend (what that
++// slot carried, up=0 is a slot that never started).
++
++void CUpDownClient::DiagStandDownBegin()
++{
++	m_bDiagSd = true;
++	m_bDiagSdWon = false;
++	m_bDiagSdEnded = false;
++	m_dwDiagSdBegin = ::GetTickCount();
++	m_uDiagSdWins = 0;
++	m_uDiagSdReasks = 0;
++	m_bDiagSdSource = (GetDownloadState() == DS_DOWNLOADING);
++	if (!thePrefs.GetVerbose())
++		return;
++	UINT uWaiting = 0;
++	UINT uStoodDown = 0;
++	for (POSITION pos = theApp.uploadqueue->GetFirstFromWaitingList(); pos != NULL;) {
++		++uWaiting;
++		if (theApp.uploadqueue->GetNextFromWaitingList(pos)->HasSentOutOfPartReqs())
++			++uStoodDown;
++	}
++	AddDebugLogLine(false, _T("UPDIAG|standdown begin: session=%us up=%I64u dl=%s waiting=%u stooddown=%u Client: %s")
++		, GetUpStartTimeDelay() / SEC2MS(1), GetSessionUp(), DbgGetDownloadState()
++		, uWaiting, uStoodDown, (LPCTSTR)DbgGetClientInfo());
++}
++
++void CUpDownClient::DiagStandDownWouldWin(bool bSlotLeftEmpty)
++{
++	if (!m_bDiagSd)
++		return;
++	++m_uDiagSdWins;
++	if (m_bDiagSdWon)
++		return;
++	m_bDiagSdWon = true;
++	m_dwDiagSdFirstWin = ::GetTickCount();
++	AddDebugLogLine(false, _T("UPDIAG|standdown pick: after=%us slot=%s dl=%s Client: %s")
++		, (m_dwDiagSdFirstWin - m_dwDiagSdBegin) / SEC2MS(1)
++		, bSlotLeftEmpty ? _T("left-empty") : _T("to-lower-score")
++		, DbgGetDownloadState(), (LPCTSTR)DbgGetClientInfo());
++}
++
++void CUpDownClient::DiagStandDownReask()
++{
++	if (!m_bDiagSd)
++		return;
++	if (m_uDiagSdReasks++ == 0)
++		AddDebugLogLine(false, _T("UPDIAG|standdown reask: after=%us dl=%s Client: %s")
++			, (::GetTickCount() - m_dwDiagSdBegin) / SEC2MS(1), DbgGetDownloadState(), (LPCTSTR)DbgGetClientInfo());
++}
++
++void CUpDownClient::DiagStandDownEnd(LPCTSTR pszReason)
++{
++	if (!m_bDiagSd)
++		return;
++	m_bDiagSd = false;
++	m_bDiagSdEnded = true;
++	m_dwDiagSdEnd = ::GetTickCount();
++	const DWORD dwDenied = m_bDiagSdWon ? (m_dwDiagSdEnd - m_dwDiagSdFirstWin) / SEC2MS(1) : 0;
++	AddDebugLogLine(false, _T("UPDIAG|standdown end: dur=%us picks=%u denied=%us reasks=%u src=%u dl=%s why=\"%s\" Client: %s")
++		, (m_dwDiagSdEnd - m_dwDiagSdBegin) / SEC2MS(1), m_uDiagSdWins, dwDenied, m_uDiagSdReasks
++		, m_bDiagSdSource ? 1u : 0u, DbgGetDownloadState(), pszReason != NULL ? pszReason : _T("")
++		, (LPCTSTR)DbgGetClientInfo());
++}
++
++void CUpDownClient::DiagUploadSlotBegin()
++{
++	DiagStandDownEnd(_T("upload slot given while stood down"));
++	if (!m_bDiagSdEnded)
++		return;
++	m_bDiagSdEnded = false;
++	m_bDiagSlotAfterSd = true;
++	AddDebugLogLine(false, _T("UPDIAG|standdown slot: after=%us dl=%s Client: %s")
++		, (::GetTickCount() - m_dwDiagSdEnd) / SEC2MS(1), DbgGetDownloadState(), (LPCTSTR)DbgGetClientInfo());
++}
++
++void CUpDownClient::DiagUploadSlotEnd()
++{
++	if (!m_bDiagSlotAfterSd)
++		return;
++	m_bDiagSlotAfterSd = false;
++	AddDebugLogLine(false, _T("UPDIAG|standdown slotend: session=%us up=%I64u Client: %s")
++		, GetUpStartTimeDelay() / SEC2MS(1), GetSessionUp(), (LPCTSTR)DbgGetClientInfo());
++}
++// end of 99a ---------------------------------------------------------------------------------
++
+ /*
+  * See description for CEMSocket::TruncateQueues().
+  */
+diff --git a/srchybrid/UploadQueue.cpp b/srchybrid/UploadQueue.cpp
+index 9a11609..70abcf5 100644
+--- a/srchybrid/UploadQueue.cpp
++++ b/srchybrid/UploadQueue.cpp
+@@ -95,6 +95,39 @@ CUploadQueue::~CUploadQueue()
+ 		::KillTimer(0, h_timer);
+ }
+ 
++// 99a-diag-upload-standdown (temporary): what the stand-down flag changed in one pick of
++// FindBestClientInQueue(). pSkipped, the best client passed over for the flag, would have won
++// the pick when its score beats the chosen one; the slot then goes to a lower score, or stays
++// empty when nobody else can take it. A run of empty picks (one every 100 ms while a slot is
++// free) is reported once: "empty" at its first pick, "emptyend" at the first pick after it,
++// with dur = first to last empty pick.
++static void DiagStandDownPick(CUpDownClient *pSkipped, uint32 uSkippedScore, const CUpDownClient *pChosen, uint32 uChosenScore, INT_PTR nWaiting)
++{
++	static bool s_bEmpty = false;
++	static DWORD s_dwEmptyFirst = 0;
++	static DWORD s_dwEmptyLast = 0;
++	static UINT s_uEmptyPicks = 0;
++	const bool bWins = pSkipped != NULL && uSkippedScore > uChosenScore;
++	const bool bEmpty = bWins && pChosen == NULL;
++	if (bWins)
++		pSkipped->DiagStandDownWouldWin(bEmpty);
++	if (bEmpty) {
++		s_dwEmptyLast = ::GetTickCount();
++		if (!s_bEmpty) {
++			s_bEmpty = true;
++			s_dwEmptyFirst = s_dwEmptyLast;
++			s_uEmptyPicks = 0;
++			AddDebugLogLine(false, _T("UPDIAG|standdown empty: a free upload slot is left empty for a stood-down client, waiting=%u Client: %s")
++				, (UINT)nWaiting, (LPCTSTR)pSkipped->DbgGetClientInfo());
++		}
++		++s_uEmptyPicks;
++	} else if (s_bEmpty) {
++		s_bEmpty = false;
++		AddDebugLogLine(false, _T("UPDIAG|standdown emptyend: dur=%us picks=%u next=%s")
++			, (s_dwEmptyLast - s_dwEmptyFirst) / SEC2MS(1), s_uEmptyPicks, pChosen != NULL ? _T("client") : _T("nobody"));
++	}
++}
++
+ /**
+  * Find the highest ranking client in the waiting queue, and return it.
+  *
+@@ -111,6 +144,8 @@ CUpDownClient* CUploadQueue::FindBestClientInQueue()
+ 	uint32 bestlowscore = 0;
+ 	CUpDownClient *newclient = NULL;
+ 	CUpDownClient *lowclient = NULL;
++	CUpDownClient *pDiagSkipped = NULL; // 99a
++	uint32 uDiagSkippedScore = 0; // 99a
+ 	const DWORD curTick = ::GetTickCount();
+ 
+ 	for (POSITION pos = waitinglist.GetHeadPosition(); pos != NULL;) {
+@@ -131,8 +166,15 @@ CUpDownClient* CUploadQueue::FindBestClientInQueue()
+ 			//block request follows and the slot stays empty until the socket times out. The
+ 			//flag falls when the connection ends, and from then on this client asks for a slot
+ 			//the way every other client on this list did.
+-			if (cur_client->HasSentOutOfPartReqs())
++			if (cur_client->HasSentOutOfPartReqs()) {
++				// 99a: the best of the clients passed over for the flag
++				const uint32 uDiagScore = cur_client->GetScore(false);
++				if (pDiagSkipped == NULL || uDiagScore > uDiagSkippedScore) {
++					pDiagSkipped = cur_client;
++					uDiagSkippedScore = uDiagScore;
++				}
+ 				continue;
++			}
+ 			uint32 cur_score = cur_client->GetScore(false);
+ 
+ 			if (cur_score > bestscore) {
+@@ -158,6 +200,8 @@ CUpDownClient* CUploadQueue::FindBestClientInQueue()
+ 		}
+ 	}
+ 
++	DiagStandDownPick(pDiagSkipped, uDiagSkippedScore, newclient, bestscore, waitinglist.GetCount()); // 99a
++
+ 	if (lowclient && bestlowscore > bestscore) {
+ 		lowclient->m_bAddNextConnect = true;
+ 		if (thePrefs.GetLogUlDlEvents() && lowclient->IsPowerShareRequest())
